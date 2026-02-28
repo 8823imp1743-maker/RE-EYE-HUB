@@ -1,36 +1,65 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>RE-EYE-HUB</title>
-    <style>
-        body { margin: 0; background-color: #0a0a0a; color: #e5e4e2; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .header { padding: 60px 25px 0; }
-        .header h1 { font-size: 26px; letter-spacing: 3px; margin: 0; font-weight: 300; }
-        .header .status { color: #9b59b6; font-size: 12px; letter-spacing: 2px; margin-top: 5px; }
-        .main-visual { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        /* あなたが選んだオーロラの再現 */
-        .aurora-crystal {
-            width: 280px; height: 280px;
-            background: linear-gradient(135deg, rgba(26,188,156,0.6), rgba(155,89,182,0.6));
-            clip-path: polygon(50% 0%, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%);
-            box-shadow: 0 0 100px rgba(155, 89, 182, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .title { margin-top: 40px; font-size: 32px; letter-spacing: 8px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 20px; }
-        .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 4px; display: flex; justify-content: space-between; align-items: flex-end; }
-        .card-label { font-size: 10px; opacity: 0.5; }
-        .card-value { font-size: 14px; color: #1abc9c; font-weight: bold; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RE-EYE-HUB</title>
+
+<style>
+body{
+margin:0;
+background:#050505;
+color:white;
+font-family:Arial;
+}
+
+.header{
+padding:40px;
+letter-spacing:3px;
+}
+
+.main{
+display:flex;
+justify-content:center;
+align-items:center;
+height:60vh;
+}
+
+.crystal{
+width:420px;
+height:420px;
+background-image:url("/prism.png");
+background-size:contain;
+background-repeat:no-repeat;
+background-position:center;
+}
+
+.hero-image{
+position:fixed;
+top:50%;
+left:50%;
+transform:translate(-50%,-50%);
+width:420px;
+max-width:80%;
+opacity:0.9;
+pointer-events:none;
+}
+</style>
+
 </head>
+
 <body>
-    <div class="header"><h1>RE-EYE-HUB //</h1><div class="status">SCANNING</div></div>
-    <div class="main-visual"><div class="aurora-crystal"></div><div class="title">PRISM FLOW</div></div>
-    <div class="grid">
-        <div class="card"><div class="card-label">MID3D 600G</div><div class="card-value">$8.00</div></div>
-        <div class="card"><div class="card-label">RAQUO 10</div><div class="card-value" style="color:#9b59b6">EROS</div></div>
-    </div>
+
+<div class="header">
+RE-EYE-HUB //<br>
+SCANNING
+</div>
+
+<div class="main">
+<div class="crystal"></div>
+</div>
+
+<img src="/prism.png" class="hero-image">
+
 </body>
 </html>
