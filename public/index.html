@@ -2,64 +2,29 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>RE-EYE-HUB</title>
-
 <style>
-body{
-margin:0;
-background:#050505;
-color:white;
-font-family:Arial;
-}
-
-.header{
-padding:40px;
-letter-spacing:3px;
-}
-
-.main{
-display:flex;
-justify-content:center;
-align-items:center;
-height:60vh;
-}
-
-.crystal{
-width:420px;
-height:420px;
-background-image:url("/prism.png");
-background-size:contain;
-background-repeat:no-repeat;
-background-position:center;
-}
-
-.hero-image{
-position:fixed;
-top:50%;
-left:50%;
-transform:translate(-50%,-50%);
-width:420px;
-max-width:80%;
-opacity:0.9;
-pointer-events:none;
+body { margin: 0; background: #050505; color: white; font-family: Arial, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+.header { padding: 60px 40px 20px; letter-spacing: 3px; font-weight: 200; }
+.main { flex-grow: 1; display: flex; justify-content: center; align-items: center; position: relative; }
+/* hero.png を中央に配置 */
+.hero-image {
+    width: 320px;
+    max-width: 90%;
+    height: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 30px rgba(155, 89, 182, 0.3));
 }
 </style>
-
 </head>
-
 <body>
-
 <div class="header">
 RE-EYE-HUB //<br>
 SCANNING
 </div>
-
 <div class="main">
-<div class="crystal"></div>
+    <img src="/hero.png" class="hero-image">
 </div>
-
-<img src="/prism.png" class="hero-image">
-
 </body>
 </html>
