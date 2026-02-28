@@ -4,97 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RE-EYE-HUB</title>
-    <link rel="manifest" href="/manifest.json">
     <style>
-        :root {
-            --obsidian: #0a0a0a;
-            --amethyst: #9b59b6;
-            --cyan: #1abc9c;
-            --platinum: #e5e4e2;
-        }
-        body {
-            margin: 0;
-            background-color: var(--obsidian);
-            color: var(--platinum);
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            padding: 60px 20px;
-            box-sizing: border-box;
-            overflow: hidden;
-        }
-
-        /* ヘッダーセクション */
-        .header { margin-bottom: 30px; }
-        .header h1 { font-size: 26px; font-weight: 300; letter-spacing: 3px; margin: 0; }
-        .header .status { font-size: 13px; letter-spacing: 2px; opacity: 0.6; margin-top: 5px; }
-
-        /* 中央のオーロラクリスタル（静止） */
-        .crystal-container {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
+        body { margin: 0; background-color: #0a0a0a; color: #e5e4e2; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .header { padding: 60px 25px 0; }
+        .header h1 { font-size: 26px; letter-spacing: 3px; margin: 0; font-weight: 300; }
+        .header .status { color: #9b59b6; font-size: 12px; letter-spacing: 2px; margin-top: 5px; }
+        .main-visual { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        /* あなたが選んだオーロラの再現 */
         .aurora-crystal {
-            width: 260px;
-            height: 260px;
-            position: relative;
-            background: linear-gradient(135deg, rgba(26,188,156,0.4), rgba(155,89,182,0.4));
-            clip-path: polygon(50% 0%, 90% 20%, 100% 50%, 90% 80%, 50% 100%, 10% 80%, 0% 50%, 10% 20%);
-            box-shadow: 0 0 80px rgba(155, 89, 182, 0.4);
-            border: 0.5px solid rgba(255, 255, 255, 0.1);
-            /* 動きは一切なし */
+            width: 280px; height: 280px;
+            background: linear-gradient(135deg, rgba(26,188,156,0.6), rgba(155,89,182,0.6));
+            clip-path: polygon(50% 0%, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%);
+            box-shadow: 0 0 100px rgba(155, 89, 182, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
-        .prism-title {
-            margin-top: 50px;
-            font-size: 32px;
-            letter-spacing: 8px;
-            font-weight: 400;
-        }
-
-        /* 下部のステータスカード群 */
-        .status-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            width: 100%;
-        }
-        .card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 15px;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-        }
-        .card-info { font-size: 10px; opacity: 0.5; line-height: 1.4; }
-        .card-value { font-size: 14px; font-weight: bold; color: var(--cyan); }
+        .title { margin-top: 40px; font-size: 32px; letter-spacing: 8px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 20px; }
+        .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 4px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .card-label { font-size: 10px; opacity: 0.5; }
+        .card-value { font-size: 14px; color: #1abc9c; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>RE-EYE-HUB //</h1>
-        <div class="status">SCANNING</div>
+    <div class="header"><h1>RE-EYE-HUB //</h1><div class="status">SCANNING</div></div>
+    <div class="main-visual"><div class="aurora-crystal"></div><div class="title">PRISM FLOW</div></div>
+    <div class="grid">
+        <div class="card"><div class="card-label">MID3D 600G</div><div class="card-value">$8.00</div></div>
+        <div class="card"><div class="card-label">RAQUO 10</div><div class="card-value" style="color:#9b59b6">EROS</div></div>
     </div>
-
-    <div class="crystal-container">
-        <div class="aurora-crystal"></div>
-        <div class="prism-title">PRISM FLOW</div>
-    </div>
-
-    <div class="status-grid">
-        <div class="card">
-            <div class="card-info">MID3D 600G<br>Finscrtn</div>
-            <div class="card-value">$8.00</div>
-        </div>
-        <div class="card">
-            <div class="card-info">RAQUO10<br>Smetcarro</div>
-            <div class="card-value" style="color:var(--amethyst)">EROS</div>
-        </div>
-        </div>
 </body>
 </html>
