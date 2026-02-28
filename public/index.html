@@ -5,27 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RE-EYE-HUB</title>
     <style>
-        body { margin: 0; background: #000000; color: white; font-family: Arial, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        body { margin: 0; background: #000; color: white; font-family: Arial; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
         .header { padding: 60px 40px 10px; letter-spacing: 4px; font-weight: 200; font-size: 24px; }
-        .scanning { color: #9b59b6; font-size: 12px; letter-spacing: 2px; margin-top: 5px; opacity: 0.8; }
+        .scanning { color: #9b59b6; font-size: 11px; letter-spacing: 2px; margin-top: 5px; opacity: 0.8; }
         .main { flex-grow: 1; display: flex; justify-content: center; align-items: center; }
-        /* あなたの hero.png を中央に大きく表示する設定 */
-        .aurora-image {
+        /* 100%表示されるための設定 */
+        .aurora-frame {
             width: 380px;
             max-width: 95%;
-            height: auto;
-            object-fit: contain;
-            filter: drop-shadow(0 0 40px rgba(155, 89, 182, 0.4));
+            aspect-ratio: 1/1;
+            background-image: url("/hero.png");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            filter: drop-shadow(0 0 30px rgba(155, 89, 182, 0.4));
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        RE-EYE-HUB //
-        <div class="scanning">SCANNING</div>
-    </div>
+    <div class="header">RE-EYE-HUB // <div class="scanning">SCANNING</div></div>
     <div class="main">
-        <img src="/hero.png" class="aurora-image">
+        <div class="aurora-frame"></div>
     </div>
 </body>
 </html>
