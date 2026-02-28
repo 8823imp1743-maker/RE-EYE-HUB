@@ -2,49 +2,56 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RE-EYE-HUB</title>
+
 <style>
-/* 背景を漆黒に設定 */
-body { 
-    margin: 0; 
-    background: #000000; 
-    color: white; 
-    font-family: 'Helvetica Neue', Arial, sans-serif; 
-    height: 100vh; 
-    overflow: hidden; 
-    display: flex; 
-    flex-direction: column; 
-}
-.header { padding: 60px 40px 20px; letter-spacing: 3px; font-weight: 200; }
-.header .scanning { color: #9b59b6; font-size: 12px; margin-top: 5px; opacity: 0.8; }
-
-.main { 
-    flex-grow: 1; 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
+body{
+margin:0;
+background:#050505;
+color:white;
+font-family:Arial;
 }
 
-/* オーロラ画像 (hero.png) を画面中央に大きく表示 */
-.hero-image {
-    width: 85vw; /* iPhoneの画面幅に合わせて調整 */
-    height: auto;
-    max-height: 60vh;
-    object-fit: contain;
-    /* ぼんやりと光らせる演出 */
-    filter: drop-shadow(0 0 20px rgba(155, 89, 182, 0.4));
+.header{
+padding:60px 40px 20px;
+letter-spacing:3px;
+}
+
+.scanning{
+color:#9b59b6;
+font-size:12px;
+margin-top:5px;
+}
+
+.main{
+flex-grow:1;
+display:flex;
+justify-content:center;
+align-items:center;
+height:60vh;
+}
+
+/* ← ここ重要：先頭に . を付ける */
+.hero-image{
+width:85vw;
+height:auto;
+max-height:60vh;
+object-fit:contain;
+filter:drop-shadow(0 0 20px rgba(155,89,182,0.4));
 }
 </style>
 </head>
+
 <body>
+
 <div class="header">
-    RE-EYE-HUB //<br>
-    <div class="scanning">SCANNING</div>
+RE-EYE-HUB //<br>
+<div class="scanning">SCANNING</div>
 </div>
 
 <div class="main">
-    <img src="./hero.png" class="hero-image" alt="AURORA">
+<img src="/hero.png" class="hero-image" alt="AURORA">
 </div>
 
 </body>
