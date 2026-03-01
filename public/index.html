@@ -5,29 +5,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>RE-EYE-HUB</title>
 <style>
-/* 背景を漆黒に */
-body { margin: 0; background: #000; color: white; font-family: Arial; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
-.header { padding: 60px 40px 20px; letter-spacing: 3px; }
-.scanning { color: #9b59b6; font-size: 12px; margin-top: 5px; }
-
-.main { flex-grow: 1; display: flex; justify-content: center; align-items: center; position: relative; }
-
-/* 1枚に3つの問題を解決するため、コードでオーロラを生成 */
-.aurora-crystal {
-    width: 300px;
-    height: 300px;
-    background: linear-gradient(135deg, rgba(26,188,156,0.6), rgba(155,89,182,0.6));
-    clip-path: polygon(50% 0%, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%);
-    box-shadow: 0 0 60px rgba(155, 89, 182, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+/* Background is Obsidian Black */
+body { 
+    margin: 0; 
+    background: #000000; 
+    color: white; 
+    font-family: 'Helvetica Neue', Arial, sans-serif; 
+    height: 100vh; 
+    display: flex; 
+    flex-direction: column; 
+    overflow: hidden; 
 }
-.prism-title { position: absolute; bottom: 15%; font-size: 32px; letter-spacing: 8px; font-weight: bold; }
+.header { padding: 60px 40px 10px; letter-spacing: 4px; font-weight: 200; }
+.scanning { color: #9b59b6; font-size: 12px; margin-top: 5px; opacity: 0.8; }
+
+.main { 
+    flex-grow: 1; 
+    display: flex; 
+    flex-direction: column; 
+    justify-content: center; 
+    align-items: center; 
+}
+
+/* Displaying your original hero.png centrally */
+.hero-image {
+    width: 90vw;
+    height: auto;
+    max-height: 55vh;
+    object-fit: contain;
+    /* Gentle glow effect */
+    filter: drop-shadow(0 0 30px rgba(155, 89, 182, 0.3));
+}
+
+.prism-title {
+    margin-top: 30px;
+    font-size: 32px;
+    letter-spacing: 12px;
+    font-weight: 400;
+}
 </style>
 </head>
 <body>
-<div class="header">RE-EYE-HUB //<br><div class="scanning">SCANNING</div></div>
+<div class="header">
+    RE-EYE-HUB //<br>
+    <div class="scanning">SCANNING</div>
+</div>
+
 <div class="main">
-    <div class="aurora-crystal"></div>
+    <img src="/hero.png" class="hero-image">
     <div class="prism-title">PRISM FLOW</div>
 </div>
 </body>
