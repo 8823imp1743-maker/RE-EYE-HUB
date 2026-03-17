@@ -5,6 +5,7 @@
   "type": "module",
   "main": "api/index.js",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@upstash/redis": "^1.34.3"
   }
 }

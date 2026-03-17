@@ -5,5 +5,11 @@
       "source": "/api/sources/:sourceId/baseline",
       "destination": "/api/sources-baseline"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/poll-status",
+      "schedule": "0 8 * * *"
+    }
   ]
 }

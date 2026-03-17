@@ -1,59 +1,1170 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>RE-EYE-HUB</title>
-<style>
-/* Background is Obsidian Black */
-body { 
-    margin: 0; 
-    background: #000000; 
-    color: white; 
-    font-family: 'Helvetica Neue', Arial, sans-serif; 
-    height: 100vh; 
-    display: flex; 
-    flex-direction: column; 
-    overflow: hidden; 
-}
-.header { padding: 60px 40px 10px; letter-spacing: 4px; font-weight: 200; }
-.scanning { color: #9b59b6; font-size: 12px; margin-top: 5px; opacity: 0.8; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>RE-EYE-HUB</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-.main { 
-    flex-grow: 1; 
-    display: flex; 
-    flex-direction: column; 
-    justify-content: center; 
-    align-items: center; 
-}
+    <style>
+        :root {
+            --obsidian: #000000;
+            --amethyst: #9b59b6;
+            --champagne-gold: #F7E7CE;
+            --dark-glass: rgba(255, 255, 255, 0.03);
+            --border-purple: rgba(155, 89, 182, 0.3);
+            --gap-11: 11px;
+            --header-height: 150px;
+            --nav-height: 85px;
+        }
 
-/* Displaying your original hero.png centrally */
-.hero-image {
-    width: 90vw;
-    height: auto;
-    max-height: 55vh;
-    object-fit: contain;
-    /* Gentle glow effect */
-    filter: drop-shadow(0 0 30px rgba(155, 89, 182, 0.3));
-}
+        /* 1. 基礎デザイン */
+        body { 
+            margin: 0; background: var(--obsidian); color: #fff; 
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; 
+            height: 100vh; overflow: hidden; display: flex; flex-direction: column; 
+            -webkit-font-smoothing: antialiased;
+        }
 
-.prism-title {
-    margin-top: 30px;
-    font-size: 32px;
-    letter-spacing: 12px;
-    font-weight: 400;
-}
-</style>
+        /* Amethyst Glass Scrollbar - 11pxの美学 / ヘッダー裏側までスクロール */
+        .screen {
+            display: none; flex-direction: column; position: relative; overflow-y: auto; overflow-x: hidden;
+            margin-top: 0;
+            height: calc(100vh - var(--nav-height));
+            padding-bottom: calc(var(--nav-height) + 35px);
+            z-index: 1;
+            overscroll-behavior-y: contain;
+            scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.3) transparent; direction: ltr;
+        }
+        /* スクロールバー：常時1px・スクロール中4px。白系で視認性向上。右端に常時うっすらラインを表示 */
+        .screen::-webkit-scrollbar { width: 1px; transition: width 0.25s ease; }
+        .screen::-webkit-scrollbar-track { background: linear-gradient(to left, rgba(255,255,255,0.1) 1px, transparent 1px); }
+        .screen::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 0; box-shadow: 0 0 8px rgba(255, 255, 255, 0.3); transition: width 0.25s ease, background 0.25s ease, box-shadow 0.25s ease; }
+        .screen.scrolling::-webkit-scrollbar { width: 4px; }
+        .screen.scrolling::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.8); box-shadow: 0 0 8px rgba(255, 255, 255, 0.3); }
+        .active { display: flex; }
+
+        /* コンテンツ最下部：ナビ直上に黒へ溶け込むグラデーション（続きがある視覚ヒント） */
+        .screen-fade-overlay {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: var(--nav-height);
+            height: 120px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0), var(--obsidian));
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .bg-layer { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+        .bg-image { width: 100%; height: 100%; object-fit: cover; transform: scale(1.1); filter: brightness(0.25); }
+        
+        /* 起動・復帰広告レイヤー */
+        #startup-ad-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--obsidian); 
+            z-index: 9999; display: none; flex-direction: column; align-items: center; justify-content: center; 
+            text-align: center; padding: 20px; box-sizing: border-box; 
+        }
+        .ad-content-box { border: 1px solid var(--champagne-gold); padding: 45px 25px; width: 85%; backdrop-filter: blur(15px); background: rgba(255,255,255,0.02); border-radius: 2px; }
+
+        /* 固定ヘッダー - 完全シールド（透過なし黒・下端blur） */
+        .fixed-header {
+            position: fixed; top: 0; left: 0; width: 100%; text-align: center; z-index: 9999;
+            padding: 48px 5% 14px; padding-top: max(48px, env(safe-area-inset-top, 48px));
+            box-sizing: border-box;
+            background: #000000;
+            box-shadow: 0 8px 24px -4px rgba(0,0,0,0.8);
+        }
+        .fixed-header::after {
+            content: '';
+            position: absolute; left: 0; right: 0; bottom: -20px; height: 20px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.4), transparent);
+            filter: blur(8px);
+            pointer-events: none;
+        }
+        .logo-text { font-family: 'Tenor Sans', sans-serif; font-size: 26px; letter-spacing: 0.35em; color: #fff; text-transform: uppercase; margin: 0; }
+        .catchcopy-text { font-size: 15px; color: rgba(247,231,206,0.85); letter-spacing: 1.5px; margin-top: 6px; font-family: 'Helvetica Neue', Arial, sans-serif; }
+
+        /* コンテンツエリア - 固定ヘッダー高さ + 11px を正確にあけて開始 */
+        .screen-content { position: relative; z-index: 1; padding-top: calc(var(--header-height) + var(--gap-11)); display: flex; flex-direction: column; gap: var(--gap-11); padding-left: 15px; padding-right: 15px; padding-bottom: var(--gap-11); }
+        .screen-content > * { margin-left: 0; margin-right: 0; }
+        .transparent-box { background: var(--dark-glass); border: 1px solid var(--border-purple); border-radius: 2px; backdrop-filter: blur(20px); box-sizing: border-box; margin: 0; padding: 18px 20px; }
+        .history-list-box { display: flex; flex-direction: column; gap: var(--gap-11); margin: 0; padding: 0; }
+        .history-card { 
+            border-radius: 2px; 
+            padding: var(--gap-11); 
+            margin: 0; 
+            border-width: 1px; 
+            border-style: solid; 
+            box-sizing: border-box; 
+            display: flex; 
+            flex-direction: column; 
+            gap: var(--gap-11);
+            transition: border-color 0.35s ease, color 0.35s ease, box-shadow 0.35s ease, background-color 0.35s ease;
+        }
+        .history-card-on { 
+            border-color: var(--amethyst); 
+            cursor: pointer; 
+            box-shadow: 0 0 14px rgba(155, 89, 182, 0.45);
+        }
+        .history-card-off { 
+            border-color: rgba(255,255,255,0.25); 
+            cursor: default; 
+            box-shadow: none;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        /* 売り切れセクション用・控えめなグレーラベル（11pxの美学） */
+        .gray-label {
+            font-size: 11px;
+            color: rgba(255,255,255,0.4);
+            letter-spacing: 1.5px;
+            margin-bottom: var(--gap-11);
+            font-weight: bold;
+            display: block;
+        }
+        /* 履歴画面：2枠＋免責の間隔を11pxで統一 */
+        .history-screen-content {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            gap: var(--gap-11);
+            padding-top: calc(var(--header-height) + var(--gap-11));
+            padding-left: 15px;
+            padding-right: 15px;
+            padding-bottom: var(--gap-11);
+        }
+        .history-screen-content .disclaimer-11px {
+            margin-top: 0;
+        }
+        .history-section-box {
+            padding: var(--gap-11);
+            background: var(--dark-glass);
+            border: 1px solid var(--border-purple);
+            border-radius: 2px;
+            backdrop-filter: blur(20px);
+            box-sizing: border-box;
+        }
+        .history-section-box .history-list-box {
+            display: flex;
+            flex-direction: column;
+            gap: var(--gap-11);
+            margin: 0;
+            padding: 0;
+        }
+        .history-card-header { display: flex; justify-content: space-between; align-items: center; }
+        .history-status-on { font-size: 11px; color: var(--champagne-gold); font-weight: bold; }
+        .history-status-off { font-size: 11px; color: rgba(255,255,255,0.5); font-weight: bold; }
+        .history-card-off .item-title { color: rgba(255,255,255,0.5); font-weight: bold; }
+        .history-card-off .item-meta { color: rgba(255,255,255,0.5); opacity: 0.5; }
+        .history-meta-row { font-size: 11px; color: var(--champagne-gold); opacity: 0.8; }
+
+        .meta-11px, .shop-status-text, .item-meta, .link-guide-11px, .error-text-11px { font-size: 11px; color: var(--champagne-gold); opacity: 0.7; letter-spacing: 0.5px; margin-top: 2px; }
+        .link-guide-11px { color: var(--amethyst); font-weight: bold; opacity: 1; margin-top: var(--gap-11); display: block; cursor: pointer; }
+        .error-text-11px { color: #ff6b6b; display: none; margin-bottom: 10px; }
+        input[type="text"]::placeholder { font-size: 11px; color: rgba(255,255,255,0.35); }
+
+        .gold-label { font-size: 14px; color: var(--champagne-gold); letter-spacing: 2.5px; margin-bottom: var(--gap-11); font-weight: bold; display: block; }
+        .item-title { font-size: 15px; font-weight: bold; letter-spacing: 0.8px; color: #fff; }
+        .category-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-11); margin-bottom: var(--gap-11); }
+        .category-item { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 16px 14px; border-radius: 2px; display: flex; flex-direction: column; justify-content: center; gap: 4px; transition: 0.3s; cursor: pointer; text-align: center; }
+        .category-item.selected { border-color: var(--amethyst); background: rgba(155, 89, 182, 0.2); box-shadow: 0 0 18px rgba(155, 89, 182, 0.4); }
+        /* 11pxの美学：カテゴリラベルは13px・letter-spacing 1.5px で洗練 */
+        .category-item span { font-size: 13px; color: #fff; letter-spacing: 1.5px; }
+        /* 11pxルール：プラン説明など補助テキストも11pxに統一 */
+        .category-item small { font-size: 11px; opacity: 0.8; line-height: 1.4; }
+
+        input[type="text"], textarea { background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 12px 16px; width: 100%; box-sizing: border-box; outline: none; font-size: 14px; border-radius: 2px; }
+        input.invalid { border-color: var(--amethyst); box-shadow: 0 0 10px rgba(155, 89, 182, 0.5); }
+        .btn-purple { background: var(--amethyst); color: #fff; border: none; padding: 15px; font-weight: bold; font-size: 12px; letter-spacing: 4px; width: 100%; cursor: pointer; margin-top: var(--gap-11); border-radius: 2px; }
+                
+        /* 報酬バナー（FREEプラン限定 / 見守り枠が5枠に達したら自動で非表示） */
+        #reward-video-banner {
+            display: none;
+            margin: var(--gap-11) 0 0 0;
+            background: linear-gradient(135deg, rgba(155,89,182,0.12) 0%, rgba(247,231,206,0.04) 100%);
+            border: 1px solid rgba(155,89,182,0.55);
+            border-radius: 2px;
+            padding: 14px 18px;
+            box-sizing: border-box;
+            cursor: pointer;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 0 18px rgba(155,89,182,0.18), inset 0 0 30px rgba(155,89,182,0.04);
+            transition: box-shadow 0.3s;
+        }
+        #reward-video-banner:active { box-shadow: 0 0 28px rgba(155,89,182,0.45); }
+        .reward-inner { display: flex; align-items: center; gap: 13px; }
+        .reward-icon { font-size: 20px; color: var(--amethyst); flex-shrink: 0; filter: drop-shadow(0 0 6px rgba(155,89,182,0.7)); }
+        .reward-text-block { display: flex; flex-direction: column; gap: 3px; }
+        .reward-main-text { font-size: 13px; font-weight: bold; letter-spacing: 1.2px; color: var(--champagne-gold); line-height: 1.4; }
+        .reward-sub-text { font-size: 11px; color: var(--amethyst); opacity: 0.85; letter-spacing: 0.5px; }
+        .reward-badge { margin-left: auto; background: var(--amethyst); color: #fff; font-size: 10px; font-weight: bold; letter-spacing: 1px; padding: 4px 8px; border-radius: 2px; flex-shrink: 0; }
+        
+        /* 常設バナー広告（アメジスト × ゴールド / 2px角丸・11px余白） */
+        #home-banner-ad,
+        #home-banner-ad-2 {
+            display: block;
+            margin: var(--gap-11) 0 0 0;
+            background: radial-gradient(circle at 0% 0%, rgba(247,231,206,0.16), transparent 55%),
+                        linear-gradient(135deg, rgba(155,89,182,0.45), rgba(155,89,182,0.18));
+            border-radius: 2px; /* 11pxの美学：角は極力尖らせる */
+            border: 1px solid rgba(155,89,182,0.75);
+            padding: 11px 14px;
+            box-sizing: border-box;
+            box-shadow: 0 0 22px rgba(155,89,182,0.45);
+        }
+        .home-banner-inner {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+        }
+        .home-banner-icon {
+            font-size: 18px;
+            color: var(--champagne-gold);
+            flex-shrink: 0;
+            filter: drop-shadow(0 0 6px rgba(247,231,206,0.9));
+        }
+        .home-banner-text-main {
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            color: #fff;
+            line-height: 1.5;
+        }
+        .home-banner-text-sub {
+            font-size: 11px;
+            color: var(--champagne-gold);
+            opacity: 0.86;
+            margin-top: 2px;
+            letter-spacing: 0.6px;
+        }
+        /* 11pxルール：バナーのAD表示メタも補助情報として11pxに統一 */
+        .home-banner-meta {
+            font-size: 11px;
+            color: rgba(247,231,206,0.7);
+            letter-spacing: 1.4px;
+            text-align: right;
+            margin-top: 4px;
+        }
+        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; height: 85px; background: rgba(0,0,0,0.96); display: flex; justify-content: space-around; align-items: center; border-top: 1px solid rgba(155, 89, 182, 0.2); z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; color: rgba(255,255,255,0.3); background: none; border: none; width: 16%; cursor: pointer; }
+        .nav-item i { font-size: 22px; margin-bottom: 8px; }
+        /* 11pxルール：ナビラベルも補助情報として11pxに統一 */
+        .nav-item span { font-size: 11px; font-weight: bold; }
+        .nav-item.active { color: var(--amethyst); text-shadow: 0 0 12px var(--amethyst); }
+
+        .insight-number { font-size: 54px; font-weight: bold; color: var(--amethyst); text-shadow: 0 0 25px rgba(155, 89, 182, 0.6); }
+        .calendar-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 14px; margin-top: var(--gap-11); border-radius: 2px; font-size: 13px; cursor: pointer; }
+
+        /* 11pxの美学：免責・補足テキスト */
+        .disclaimer-11px {
+            font-size: 11px;
+            color: rgba(255,255,255,0.8);
+            font-weight: 500;
+            text-align: center;
+            margin-top: 11px;
+            line-height: 1.6;
+            padding: 0 11px;
+        }
+        .plan-interval-note {
+            font-size: 11px;
+            opacity: 0.75;
+            margin-top: 4px;
+            color: var(--champagne-gold);
+        }
+
+        /* トレンド探索：発売予定アイテム「武器庫」スタイル（11pxの美学） */
+        .trend-intro-11px {
+            font-size: 11px;
+            color: var(--champagne-gold);
+            opacity: 0.9;
+            letter-spacing: 0.8px;
+            line-height: 1.6;
+            margin-bottom: 0;
+        }
+        .trend-armory-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--gap-11);
+            margin: 0;
+            padding: 0;
+        }
+        .trend-item-card {
+            background: var(--dark-glass);
+            border: 1px solid var(--border-purple);
+            border-radius: 2px;
+            padding: var(--gap-11);
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: var(--gap-11);
+            transition: border-color 0.35s ease, box-shadow 0.35s ease;
+        }
+        .trend-item-card:hover {
+            border-color: rgba(155, 89, 182, 0.5);
+            box-shadow: 0 0 14px rgba(155, 89, 182, 0.2);
+        }
+        .trend-item-card.watching {
+            border-color: var(--amethyst);
+            box-shadow: 0 0 18px rgba(155, 89, 182, 0.4);
+        }
+        .trend-item-card .item-title {
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 0.8px;
+            color: #fff;
+            margin: 0;
+        }
+        .trend-release-label {
+            font-size: 11px;
+            color: var(--amethyst);
+            font-weight: bold;
+            letter-spacing: 1px;
+            opacity: 1;
+        }
+        .trend-meta-11px {
+            font-size: 11px;
+            color: var(--champagne-gold);
+            opacity: 0.8;
+            letter-spacing: 0.5px;
+        }
+        .trend-item-card .btn-watch-trend {
+            margin-top: 4px;
+            font-size: 11px;
+            letter-spacing: 2px;
+            padding: 11px;
+        }
+        .trend-watching-badge {
+            font-size: 11px;
+            color: var(--amethyst);
+            font-weight: bold;
+            letter-spacing: 1px;
+            margin-top: 4px;
+        }
+    </style>
 </head>
 <body>
-<div class="header">
-    RE-EYE-HUB //<br>
-    <div class="scanning">SCANNING</div>
-</div>
+    <div id="startup-ad-overlay">
+        <div class="logo-text" style="margin-bottom: 45px; font-size: 18px;">広告</div>
+        <div class="ad-content-box">
+            <span class="gold-label">おすすめ情報</span>
+            <div id="ad-main-text" style="font-size: 17px; letter-spacing: 2px; line-height: 1.6;">最新の市場データを<br>同期しています...</div>
+            <div class="meta-11px" style="margin-top: 30px; color: var(--amethyst); opacity: 1;">※ 不適切な広告は一切配信されません</div>
+        </div>
+        <div id="ad-timer-text" class="meta-11px" style="margin-top: 35px;">3秒後に閉じます</div>
+    </div>
 
-<div class="main">
-    <img src="/hero.png" class="hero-image">
-    <div class="prism-title">PRISM FLOW</div>
-</div>
+    <div class="bg-layer"><img src="/hero.png" class="bg-image" onerror="this.style.display='none'"></div>
+    <div class="fixed-header">
+        <h1 class="logo-text">RE-EYE-HUB</h1>
+        <div class="catchcopy-text">新作・再入荷をいち早くお知らせ</div>
+    </div>
+
+    <div id="home" class="screen active">
+        <div class="screen-content">
+            <div class="transparent-box">
+                <span class="gold-label">見守る情報</span>
+                <div class="category-grid">
+                    <div class="category-item selected" onclick="this.classList.toggle('selected')"><span>新商品</span></div>
+                    <div class="category-item selected" onclick="this.classList.toggle('selected')"><span>再入荷</span></div>
+                    <div class="category-item selected" onclick="this.classList.toggle('selected')"><span>予約開始</span></div>
+                    <div class="category-item" onclick="this.classList.toggle('selected')"><span>セール</span></div>
+                    <div class="category-item" onclick="this.classList.toggle('selected')"><span>懸賞</span></div>
+                    <div class="category-item" onclick="this.classList.toggle('selected')"><span>推し活</span></div>
+                </div>
+                <span class="gold-label">追いかけたい情報</span>
+                <div id="monitor-error-msg" class="error-text-11px">有効な製品名として認識できません</div>
+                <input type="text" id="monitor-input" placeholder="例：お気に入りブランドの新作バッグ">
+                <button class="btn-purple" onclick="executeMonitor()">見守りを開始</button>
+            </div>
+
+            <!-- リワード枠：見守り枠が5枠に達した瞬間に自動で消える「期間限定の特別枠」 -->
+            <div id="reward-video-banner" onclick="watchRewardVideo()">
+                <div class="reward-inner">
+                    <i class="fas fa-video reward-icon"></i>
+                    <div class="reward-text-block">
+                        <span class="reward-main-text">広告動画を視聴して、見守り枠を +1 追加</span>
+                        <span class="reward-sub-text">月1回 / 最大5枠まで拡張可能</span>
+                    </div>
+                    <span class="reward-badge">+1</span>
+                </div>
+            </div>
+
+            <!-- 常設バナー広告（1）：楽天関連・有料時は2つとも非表示 -->
+            <div id="home-banner-ad">
+                <div class="home-banner-inner">
+                    <i class="fas fa-bullseye home-banner-icon"></i>
+                    <div>
+                        <div id="home-banner-main" class="home-banner-text-main">楽天市場で見守り中のキーワードに連動した安全な広告を表示中</div>
+                        <div id="home-banner-sub" class="home-banner-text-sub">ウォッチしているブランドやカテゴリに合わせて最適化（ダミー挙動）</div>
+                    </div>
+                </div>
+                <div class="home-banner-meta">AD · 楽天連動 / BRAND SAFE</div>
+            </div>
+            <!-- 常設バナー広告（2）：1つ目から11px間隔・Amazon・Yahoo想定 -->
+            <div id="home-banner-ad-2">
+                <div class="home-banner-inner">
+                    <i class="fas fa-shopping-cart home-banner-icon"></i>
+                    <div>
+                        <div class="home-banner-text-main">Amazon・Yahooで見守り中のキーワードに連動した広告を表示中</div>
+                        <div class="home-banner-text-sub">複数ショップの再入荷・値下げ情報をシミュレーション表示（ダミー）</div>
+                    </div>
+                </div>
+                <div class="home-banner-meta">AD · Amazon・Yahoo連動 / BRAND SAFE</div>
+            </div>
+
+            <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。</p>
+        </div>
+    </div>
+
+    <div id="history" class="screen">
+        <div class="screen-content history-screen-content" id="history-list-container"></div>
+    </div>
+
+    <div id="insight" class="screen">
+        <div class="screen-content">
+            <div class="transparent-box">
+                <span class="gold-label">NEWS RADAR</span>
+                <p class="trend-intro-11px">最新の商品記事・ニュースをスキャン。気になったアイテムは記事から直接「見守り」に追加できる。</p>
+                <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
+                    <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み">
+                    <i class="fas fa-search" onclick="filterTrendItems()" style="position:absolute; right:20px; top:13px; color:var(--amethyst); font-size:20px; cursor:pointer;"></i>
+                </div>
+                <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">記事カードの「見守りに追加」をタップするだけで監視開始。</p>
+            </div>
+            <div class="transparent-box">
+                <span class="gold-label">注目アイテム記事</span>
+                <div class="trend-armory-list" id="trend-list-container"></div>
+            </div>
+            <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。発売日時の確約は各ショップに依存します。</p>
+        </div>
+    </div>
+
+    <div id="settings" class="screen">
+        <div class="screen-content">
+            <div class="transparent-box">
+                <span class="gold-label">見守りリスト</span>
+                <div id="settings-watch-list">
+                    <div style="background: rgba(155, 89, 182, 0.1); border: 1px solid var(--amethyst); padding: 18px; border-radius: 2px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size:15px; font-weight: bold;">ヴィトンの新作財布</span>
+                            <span id="current-interval-text" class="meta-11px" style="color: var(--amethyst); opacity: 1; font-weight: bold;">● 1分間隔で見守り中</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="settings-trend-watching" style="display: none; margin-top: var(--gap-11);">
+                    <span class="gold-label" style="margin-bottom: 6px;">トレンドから見守り中</span>
+                    <div id="settings-trend-watching-list"></div>
+                </div>
+            </div>
+            
+            <div class="transparent-box">
+                <span class="gold-label">スケジュール連携</span>
+                <div class="calendar-btn"><i class="fab fa-google"></i> Google Calendar</div>
+                <div class="calendar-btn"><i class="far fa-calendar-alt"></i> その他のカレンダー</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="link" class="screen">
+        <div class="screen-content">
+            <div class="transparent-box">
+                <span class="gold-label">見守りプラン選択</span>
+                <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
+                    <div class="category-item" onclick="selectPlan('FREE', this)">
+                        <span>FREE / 広告有 (3件)</span>
+                        <small>08:00 - 19:00 / 60分間隔<br>19:00 - 08:00 / 🌙 スリープモード</small>
+                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                    </div>
+                    <div class="category-item" onclick="selectPlan('STANDARD', this)">
+                        <span>STANDARD / ¥500 (5件)</span>
+                        <small>08:00 - 19:00 / 10分間隔<br>19:00 - 08:00 / 60分間隔</small>
+                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                    </div>
+                    <div class="category-item selected" onclick="selectPlan('PRO', this)">
+                        <span>PRO / ¥1,100 (10件)</span>
+                        <small>08:00 - 19:00 / 1分間隔<br>19:00 - 08:00 / 60分間隔<br>● 300名限定</small>
+                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                    </div>
+                    <div class="category-item" onclick="selectPlan('VIP', this)" style="border-color: var(--champagne-gold);">
+                        <span style="color: var(--champagne-gold);">VIP / ¥1,500 (10件)</span>
+                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 1分間隔監視<br>● 100名限定</small>
+                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                    </div>
+                </div>
+
+                <span class="gold-label">ショップ連携状況</span>
+                <div class="category-grid">
+                    <div class="category-item selected"><span class="shop-status-text">楽天: OK</span></div>
+                    <div class="category-item selected"><span class="shop-status-text">Amazon: OK</span></div>
+                    <div class="category-item"><span class="shop-status-text">Yahoo: OFF</span></div>
+                    <div class="category-item" style="border-style: dashed; border-color: rgba(255,255,255,0.2); background: none; justify-content: center;">
+                        <i class="fas fa-plus" style="font-size: 16px; color: var(--amethyst);"></i>
+                    </div>
+                </div>
+            </div>
+
+            <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。</p>
+        </div>
+    </div>
+
+    <div id="chat" class="screen">
+        <div class="screen-content">
+            <div class="transparent-box">
+                <span class="gold-label">ユーザー交流</span>
+                <textarea id="chat-input" placeholder="最新情報を共有しましょう"></textarea>
+                <button class="btn-purple" onclick="postChat()">情報を投稿する</button>
+            </div>
+            <div id="chat-error-msg" class="error-text-11px" style="text-align:center;">ガイドラインに沿わない内容が含まれています</div>
+        </div>
+    </div>
+
+    <div class="screen-fade-overlay" aria-hidden="true"></div>
+    <div class="nav-bar">
+        <button class="nav-item active" onclick="show('home', this)"><i class="fas fa-home"></i><span>ホーム</span></button>
+        <button class="nav-item" onclick="show('history', this)"><i class="fas fa-bell"></i><span>履歴</span></button>
+        <button class="nav-item" onclick="show('insight', this)"><i class="fas fa-search"></i><span>探索</span></button>
+        <button class="nav-item" onclick="show('settings', this)"><i class="fas fa-crosshairs"></i><span>見守り</span></button>
+        <button class="nav-item" onclick="show('link', this)"><i class="fas fa-link"></i><span>連携</span></button>
+        <button class="nav-item" onclick="show('chat', this)"><i class="fas fa-comments"></i><span>交流</span></button>
+    </div>
+
+    <script>
+        // ユーザーIDをlocalStorageで永続化（匿名・デバイス固有）
+        function getUserId() {
+            let uid = localStorage.getItem('re_eye_uid');
+            if (!uid) {
+                uid = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+                localStorage.setItem('re_eye_uid', uid);
+            }
+            return uid;
+        }
+
+        // ポーリングタイマー管理
+        let pollingTimers = {}; // keyword → setInterval ID
+
+        // プランに基づいたポーリング間隔でリアルAPIを定期呼び出し
+        function startPollingTimer(keyword) {
+            if (pollingTimers[keyword]) return; // 既に起動中
+            const intervalMs = getMonitoringIntervalMs();
+            pollingTimers[keyword] = setInterval(() => callPollApi(keyword), intervalMs);
+        }
+
+        function stopPollingTimer(keyword) {
+            if (pollingTimers[keyword]) {
+                clearInterval(pollingTimers[keyword]);
+                delete pollingTimers[keyword];
+            }
+        }
+
+        // リアルAPIを呼ぶ（非ブロッキング・バックグラウンド更新）
+        async function callPollApi(keyword) {
+            try {
+                const res = await fetch('/api/poll', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keyword, userId: getUserId(), plan: currentPlan })
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                mergeApiResultsToHistory(data.allItems || []);
+            } catch (e) {
+                console.error('[poll] 通信エラー:', e.message);
+            }
+        }
+
+        // APIから返ってきたアイテムを履歴にマージ（重複はitemIdで排除）
+        function mergeApiResultsToHistory(apiItems) {
+            const existingIds = new Set(historyItems.map(i => String(i.id)));
+            let added = 0;
+            const now = new Date();
+            const timeText = now.toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+
+            apiItems.forEach(item => {
+                const key = `${item.sourceId}:${item.itemId}`;
+                if (!existingIds.has(key)) {
+                    historyItems.unshift({
+                        id: key,
+                        title: item.title,
+                        status: item.available ? 'ON' : 'OFF',
+                        shop: item.shopName,
+                        price: item.price,
+                        time: timeText,
+                        url: item.url,
+                        lastCheckedAt: item.checkedAt || Date.now()
+                    });
+                    existingIds.add(key);
+                    added++;
+                } else {
+                    // 既存アイテムの在庫状態を更新
+                    const existing = historyItems.find(i => String(i.id) === key);
+                    if (existing) {
+                        existing.status = item.available ? 'ON' : 'OFF';
+                        existing.lastCheckedAt = item.checkedAt || Date.now();
+                    }
+                }
+            });
+
+            // 履歴画面が開いていれば即時リフレッシュ
+            const histScreen = document.getElementById('history');
+            if (histScreen && histScreen.classList.contains('active')) {
+                renderHistory(historyItems);
+            }
+        }
+
+        let currentPlan = 'PRO';
+        // リワード枠：月1回 / 最大5枠まで。5枠に達した瞬間にリワード枠は自動で非表示。
+        let rewardSlots = 0;
+        let rewardUsesThisMonth = 0;
+        const MAX_REWARD_SLOTS = 5;
+        const MAX_REWARD_USES_PER_MONTH = 1;
+        let lastMonitorKeyword = '';
+
+        let lastActiveTime = Date.now(); 
+        const RESUME_AD_THRESHOLD = 30 * 60 * 1000; 
+        const restrictedKeywords = ['アダルト', '18禁', '成人', 'ポルノ', 'デリヘル', 'ソープ']; 
+
+        // トレンド探索：発売予定アイテム（在庫なし・発売日時確定）
+        let trendItems = [
+            { id: 't1', title: '限定トリプルジップバッグ', releaseLabel: '3/20 10:00 発売予定', shop: '楽天', releaseAt: null },
+            { id: 't2', title: '新作スモールウォレット', releaseLabel: '3/22 09:00 発売予定', shop: 'Amazon', releaseAt: null },
+            { id: 't3', title: '春限定ミニトート', releaseLabel: '3/25 14:00 発売予定', shop: '楽天', releaseAt: null },
+            { id: 't4', title: 'プレミアムレザー財布', releaseLabel: '3/28 11:00 発売予定', shop: 'Yahoo', releaseAt: null },
+            { id: 't5', title: 'コラボドロップキャップ', releaseLabel: '4/01 10:00 発売予定', shop: '楽天', releaseAt: null }
+        ];
+        let trendWatching = new Set();
+        let trendTimers = {};
+
+        function getMonitoringIntervalMs() {
+            if (currentPlan === 'FREE') return 60 * 60 * 1000;
+            if (currentPlan === 'STANDARD') return 10 * 60 * 1000;
+            if (currentPlan === 'PRO' || currentPlan === 'VIP') return 1 * 60 * 1000;
+            return 1 * 60 * 1000;
+        }
+
+        function renderTrendItems(filterKeyword) {
+            const container = document.getElementById('trend-list-container');
+            if (!container) return;
+            const kw = (filterKeyword || '').toLowerCase().trim();
+            const list = kw
+                ? trendItems.filter(t => t.title.toLowerCase().includes(kw) || (t.shop && t.shop.toLowerCase().includes(kw)))
+                : trendItems;
+
+            container.innerHTML = '';
+            list.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'trend-item-card' + (trendWatching.has(item.id) ? ' watching' : '');
+                card.dataset.trendId = item.id;
+
+                const titleEl = document.createElement('span');
+                titleEl.className = 'item-title';
+                titleEl.textContent = item.title;
+
+                const releaseEl = document.createElement('div');
+                releaseEl.className = 'trend-release-label';
+                releaseEl.textContent = item.releaseLabel;
+
+                // 記事ソース・カテゴリバッジ（11pxの美学）
+                const sourceEl = document.createElement('div');
+                sourceEl.className = 'trend-meta-11px';
+                sourceEl.textContent = item.shop + ' / ' + item.releaseLabel;
+
+                card.appendChild(titleEl);
+                card.appendChild(releaseEl);
+                card.appendChild(sourceEl);
+
+                if (trendWatching.has(item.id)) {
+                    const badge = document.createElement('div');
+                    badge.className = 'trend-watching-badge';
+                    badge.textContent = '● 見守り中 — 発売瞬間に通知';
+                    card.appendChild(badge);
+                } else {
+                    // 「見守りに追加」ボタン — 記事からワンタップで登録する導線
+                    const btn = document.createElement('button');
+                    btn.className = 'btn-purple btn-watch-trend';
+                    btn.textContent = '+ 見守りに追加';
+                    btn.onclick = () => addToWatchFromTrend(item);
+                    card.appendChild(btn);
+                }
+                container.appendChild(card);
+            });
+        }
+
+        function addToWatchFromTrend(item) {
+            if (trendWatching.has(item.id)) return;
+            trendWatching.add(item.id);
+            if (!item.releaseAt) {
+                var now = Date.now();
+                var mins = [3, 8, 12, 20, 45][trendItems.findIndex(t => t.id === item.id)] || 5;
+                item.releaseAt = now + mins * 60 * 1000;
+            }
+            startTrendReleaseSimulation(item);
+            renderTrendItems(document.getElementById('insight-search').value);
+            var settingsScreen = document.getElementById('settings');
+            if (settingsScreen && settingsScreen.classList.contains('active')) renderSettingsTrendWatching();
+            alert('「' + item.title + '」を見守りリストに追加しました。発売時刻までプラン間隔で監視します。');
+        }
+
+        function startTrendReleaseSimulation(item) {
+            if (trendTimers[item.id]) return;
+            var intervalMs = getMonitoringIntervalMs();
+
+            function check() {
+                if (Date.now() < item.releaseAt) return;
+                clearInterval(trendTimers[item.id]);
+                delete trendTimers[item.id];
+                trendWatching.delete(item.id);
+
+                var t = new Date();
+                var timeText = t.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                historyItems.unshift({
+                    id: Date.now(),
+                    title: item.title,
+                    status: 'ON',
+                    shop: item.shop,
+                    time: timeText,
+                    url: 'https://www.rakuten.co.jp',
+                    lastCheckedAt: Date.now()
+                });
+                var historyScreen = document.getElementById('history');
+                if (historyScreen && historyScreen.classList.contains('active')) renderHistory(historyItems);
+                renderTrendItems(document.getElementById('insight-search').value);
+                var settingsScreen = document.getElementById('settings');
+                if (settingsScreen && settingsScreen.classList.contains('active')) renderSettingsTrendWatching();
+                alert('【発売】「' + item.title + '」が発売開始されました。履歴の「購入可能」に追加されています。');
+            }
+
+            trendTimers[item.id] = setInterval(check, intervalMs);
+            check();
+        }
+
+        function filterTrendItems() {
+            var word = document.getElementById('insight-search').value;
+            renderTrendItems(word);
+            if (word) updateBannerAdContent(word);
+        }
+
+        // デモ用：同一商品のマルチサイト状況を含む履歴データ
+        let historyItems = [
+            {
+                id: 1,
+                title: '限定トリプルジップバッグ',
+                status: 'ON',
+                shop: '楽天',
+                time: '2026/03/15 10:45',
+                url: 'https://www.rakuten.co.jp',
+                lastCheckedAt: Date.now()
+            },
+            {
+                id: 2,
+                title: '限定トリプルジップバッグ',
+                status: 'OFF',
+                shop: 'Yahoo',
+                time: '2026/03/15 11:02',
+                url: 'https://shopping.yahoo.co.jp',
+                lastCheckedAt: Date.now()
+            },
+            {
+                id: 3,
+                title: '新作スモールウォレット',
+                status: 'ON',
+                shop: 'Amazon',
+                time: '2026/03/14 22:30',
+                url: 'https://www.amazon.co.jp',
+                lastCheckedAt: Date.now()
+            }
+        ];
+
+        // 履歴監視用のタイマーID
+        let historyObserverTimer = null;
+
+        function show(id, btn) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+
+            const target = document.getElementById(id);
+            if(target) {
+                target.classList.add('active');
+                target.scrollTop = 0;
+            }
+            btn.classList.add('active');
+
+            if (id === 'history') renderHistory(historyItems);
+            if (id === 'insight') renderTrendItems(document.getElementById('insight-search') && document.getElementById('insight-search').value);
+            if (id === 'settings') renderSettingsTrendWatching();
+            updateAdVisibility();
+        }
+
+        function renderSettingsTrendWatching() {
+            var block = document.getElementById('settings-trend-watching');
+            var listEl = document.getElementById('settings-trend-watching-list');
+            if (!block || !listEl) return;
+            var watching = trendItems.filter(t => trendWatching.has(t.id));
+            if (watching.length === 0) {
+                block.style.display = 'none';
+                return;
+            }
+            block.style.display = 'block';
+            var intervalLabel = currentPlan === 'FREE' ? '60分' : currentPlan === 'STANDARD' ? '10分' : '1分';
+            listEl.innerHTML = watching.map(t => '<div style="background: rgba(155, 89, 182, 0.1); border: 1px solid var(--amethyst); padding: 11px; border-radius: 2px; margin-top: 11px;"><span style="font-size: 13px;">' + t.title + '</span><span class="meta-11px" style="display:block; color: var(--amethyst); opacity: 1;">● ' + intervalLabel + '間隔で発売を監視中</span></div>').join('');
+        }
+
+        // --- 履歴レンダリング（配列引数で動的生成） ---
+        function formatLastChecked(ts) {
+            if (!ts) return 'たった今';
+            const diffMs = Date.now() - ts;
+            const diffMin = Math.floor(diffMs / 60000);
+            if (diffMin <= 0) return 'たった今';
+            if (diffMin === 1) return '1分前';
+            if (diffMin < 60) return `${diffMin}分前`;
+            const diffHour = Math.floor(diffMin / 60);
+            if (diffHour < 24) return `${diffHour}時間前`;
+            const diffDay = Math.floor(diffHour / 24);
+            return `${diffDay}日前`;
+        }
+
+        /** プランに基づく「〇分前」シミュレート（在庫確認ステータス用） */
+        function getSimulatedCheckLabel() {
+            const plan = currentPlan || 'PRO';
+            if (plan === 'FREE') {
+                const min = 45 + Math.floor(Math.random() * 15);
+                return `● 在庫ありを確認（プランに基づき${min}分前に確認）`;
+            }
+            if (plan === 'STANDARD') {
+                const min = 5 + Math.floor(Math.random() * 5);
+                return `● 在庫ありを確認（プランに基づき${min}分前に確認）`;
+            }
+            if (plan === 'PRO' || plan === 'VIP') {
+                const suffix = Math.random() < 0.6 ? 'たった今確認' : '1分前に確認';
+                return `● 在庫ありを確認（プランに基づき${suffix}）`;
+            }
+            return '● 在庫ありを確認（プランに基づき確認）';
+        }
+
+        const DISCLAIMER_TEXT = '本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。';
+
+        /** キャッチした時間の文字列で降順ソート（新しい順） */
+        function sortByCaughtTimeDesc(a, b) {
+            return (b.time || '').localeCompare(a.time || '');
+        }
+
+        function renderHistory(items) {
+            const container = document.getElementById('history-list-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const raw = items || [];
+            const onItems = raw.filter(i => i.status === 'ON').sort(sortByCaughtTimeDesc);
+            const offItems = raw.filter(i => i.status === 'OFF').sort(sortByCaughtTimeDesc);
+
+            // 上段：購入可能（ゴールドラベル）
+            const boxOn = document.createElement('div');
+            boxOn.className = 'history-section-box';
+            const labelOn = document.createElement('span');
+            labelOn.className = 'gold-label';
+            labelOn.textContent = '購入可能';
+            boxOn.appendChild(labelOn);
+            const listOn = document.createElement('div');
+            listOn.className = 'history-list-box';
+
+            onItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'history-card history-card-on';
+                if (item.url) card.onclick = () => window.open(item.url, '_blank');
+                const header = document.createElement('div');
+                header.className = 'history-card-header';
+                const titleEl = document.createElement('span');
+                titleEl.className = 'item-title';
+                titleEl.textContent = item.title;
+                const statusEl = document.createElement('span');
+                statusEl.className = 'history-status-on';
+                statusEl.textContent = getSimulatedCheckLabel();
+                header.appendChild(titleEl);
+                header.appendChild(statusEl);
+                const meta = document.createElement('div');
+                meta.className = 'item-meta history-meta-row';
+                meta.textContent = `${item.time} / ${item.shop} ｜ 最終確認：${formatLastChecked(item.lastCheckedAt)}`;
+                card.appendChild(header);
+                card.appendChild(meta);
+                listOn.appendChild(card);
+            });
+            boxOn.appendChild(listOn);
+            container.appendChild(boxOn);
+
+            // 下段：売り切れ（控えめなグレーラベル）・枠間は親の gap で 11px
+            const boxOff = document.createElement('div');
+            boxOff.className = 'history-section-box';
+            const labelOff = document.createElement('span');
+            labelOff.className = 'gray-label';
+            labelOff.textContent = '売り切れ';
+            boxOff.appendChild(labelOff);
+            const listOff = document.createElement('div');
+            listOff.className = 'history-list-box';
+
+            offItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'history-card history-card-off';
+                const header = document.createElement('div');
+                header.className = 'history-card-header';
+                const titleEl = document.createElement('span');
+                titleEl.className = 'item-title';
+                titleEl.textContent = item.title;
+                const statusEl = document.createElement('span');
+                statusEl.className = 'history-status-off';
+                statusEl.textContent = '売り切れ';
+                header.appendChild(titleEl);
+                header.appendChild(statusEl);
+                const meta = document.createElement('div');
+                meta.className = 'item-meta history-meta-row';
+                meta.textContent = `${item.time} / ${item.shop}`;
+                card.appendChild(header);
+                card.appendChild(meta);
+                listOff.appendChild(card);
+            });
+            boxOff.appendChild(listOff);
+            container.appendChild(boxOff);
+
+            // 免責：2枠のさらに下・スクロール最後に配置（gap で 11px）
+            const disclaimer = document.createElement('p');
+            disclaimer.className = 'disclaimer-11px';
+            disclaimer.textContent = DISCLAIMER_TEXT;
+            disclaimer.style.marginTop = '0';
+            container.appendChild(disclaimer);
+        }
+
+        // 見守り中アイテムの状態をバックグラウンドで再監視（シミュレーション）
+        function startHistoryObserver() {
+            if (historyObserverTimer) return;
+
+            // 初回の「最終確認」時刻を揃える
+            const now = Date.now();
+            historyItems = historyItems.map(item => ({
+                ...item,
+                lastCheckedAt: item.lastCheckedAt || now
+            }));
+
+            historyObserverTimer = setInterval(() => {
+                const nowTs = Date.now();
+
+                historyItems = historyItems.map(item => {
+                    const updated = { ...item, lastCheckedAt: nowTs };
+                    const random = Math.random();
+
+                    // シミュレーション：購入可能 → 売り切れ（下段へ自動移動）
+                    if (item.status === 'ON' && random < 0.15) {
+                        updated.status = 'OFF';
+                    }
+                    // シミュレーション：売り切れ → 在庫あり（上段へ自動移動）
+                    if (item.status === 'OFF' && random >= 0.85) {
+                        updated.status = 'ON';
+                    }
+
+                    return updated;
+                });
+
+                // 画面のリロードなしで、その場のカードを更新
+                const historyScreen = document.getElementById('history');
+                if (historyScreen && historyScreen.classList.contains('active')) {
+                    renderHistory(historyItems);
+                }
+            }, 30000); // 30秒ごとに再監視・最終確認ラベル更新
+        }
+
+        // --- その他基本ロジック ---
+        function runStartupAd(isResume = false) {
+            if (currentPlan !== 'FREE') return;
+            const overlay = document.getElementById('startup-ad-overlay');
+            overlay.style.display = 'flex';
+            let count = 3;
+            const interval = setInterval(() => {
+                count--;
+                if (count <= 0) { clearInterval(interval); overlay.style.display = 'none'; }
+            }, 1000);
+        }
+
+        // 広告エリアの表示ロジック
+        function updateAdVisibility() {
+            const isFree = currentPlan === 'FREE';
+            const banner = document.getElementById('home-banner-ad');
+            const banner2 = document.getElementById('home-banner-ad-2');
+            const reward = document.getElementById('reward-video-banner');
+
+            // 有料プラン（STANDARD以上）の場合は、リワード枠・2つの常設バナーをセットで非表示
+            if (!isFree) {
+                if (banner) banner.style.display = 'none';
+                if (banner2) banner2.style.display = 'none';
+                if (reward) reward.style.display = 'none';
+                return;
+            }
+
+            // FREEプラン時のみ、常設バナー広告2つを表示
+            if (banner) banner.style.display = 'block';
+            if (banner2) banner2.style.display = 'block';
+
+            // リワード枠はFREEプラン + 見守り枠が上限5枠に達するまで表示
+            if (reward) {
+                if (rewardSlots < MAX_REWARD_SLOTS) {
+                    reward.style.display = 'block';
+                } else {
+                    reward.style.display = 'none';
+                }
+            }
+        }
+
+        // バナー広告内容の更新
+        // バナー広告はアダルト禁止。NGワードに該当するキーワードは広告連動対象から除外する。
+        function updateBannerAdContent(sourceKeyword) {
+            const bannerMain = document.getElementById('home-banner-main');
+            const bannerSub = document.getElementById('home-banner-sub');
+            if (!bannerMain || !bannerSub) return;
+
+            const monitorInput = document.getElementById('monitor-input');
+            const insightInput = document.getElementById('insight-search');
+
+            let keyword = (sourceKeyword || lastMonitorKeyword || (monitorInput && monitorInput.value) || (insightInput && insightInput.value) || '人気アイテム').trim();
+
+            // アダルトNGフィルタ（簡易版）
+            const isAdult = restrictedKeywords.some(ng => keyword.includes(ng));
+            if (isAdult) {
+                keyword = '人気アイテム';
+            }
+
+            bannerMain.textContent = `「${keyword}」を追いかける人向けの安全な広告を表示中`;
+            bannerSub.textContent = `監視中の「${keyword}」に連動したショップやセール情報をシミュレーション表示（ダミー）`;
+        }
+
+        function watchRewardVideo() {
+            if (rewardUsesThisMonth >= MAX_REWARD_USES_PER_MONTH) {
+                alert('今月分のリワード枠はすでに利用済みです。翌月までお待ちください。');
+                return;
+            }
+            if (rewardSlots >= MAX_REWARD_SLOTS) {
+                alert('見守り枠はすでに上限の5枠に達しています。');
+                return;
+            }
+
+            alert('広告動画を視聴しました。見守り枠を +1 追加しました。');
+            rewardSlots = Math.min(MAX_REWARD_SLOTS, rewardSlots + 1);
+            rewardUsesThisMonth += 1;
+
+            // 5枠に達したらリワード枠を即座に非表示
+            if (rewardSlots >= MAX_REWARD_SLOTS) {
+                const reward = document.getElementById('reward-video-banner');
+                if (reward) reward.style.display = 'none';
+            }
+
+            updateAdVisibility();
+        }
+
+        async function executeMonitor() {
+            const input = document.getElementById('monitor-input');
+            const val = input ? input.value.trim() : '';
+            if (!val) { alert('製品名を入力してください'); return; }
+
+            lastMonitorKeyword = val;
+            updateBannerAdContent(val);
+
+            // ボタンをローディング状態に
+            const btn = document.querySelector('#home .btn-purple');
+            if (btn) { btn.disabled = true; btn.textContent = '検索中...'; }
+
+            try {
+                // リアルAPIを呼んで3強ショップを横断検索
+                const res = await fetch('/api/poll', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keyword: val, userId: getUserId(), plan: currentPlan })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    mergeApiResultsToHistory(data.allItems || []);
+                    const newCount = (data.newItems || []).length;
+                    alert(`見守りを開始しました。${newCount > 0 ? newCount + '件の新着を発見。' : ''}11pxの繊細な通知でお知らせします。`);
+                } else {
+                    // APIエラー時もポーリングは開始する
+                    alert('見守りを開始しました。11pxの繊細な通知でお知らせします。');
+                }
+            } catch (e) {
+                // オフライン時はモックを追加してポーリング開始
+                const now = new Date();
+                const timeText = now.toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+                historyItems.unshift({ id: Date.now(), title: val, status: 'ON', shop: '楽天', time: timeText, url: 'https://www.rakuten.co.jp', lastCheckedAt: Date.now() });
+                const historyScreen = document.getElementById('history');
+                if (historyScreen && historyScreen.classList.contains('active')) renderHistory(historyItems);
+                alert('見守りを開始しました。11pxの繊細な通知でお知らせします。');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '見守りを開始'; }
+            }
+
+            // プランに基づく定期ポーリング開始
+            startPollingTimer(val);
+        }
+
+        // チャット投稿：Gemini API 経由で送信し、NGワードをフロントでも事前チェック
+        async function postChat() {
+            const input = document.getElementById('chat-input');
+            const errorEl = document.getElementById('chat-error-msg');
+            const val = input ? input.value.trim() : '';
+            if (!val) { alert('内容を入力してください'); return; }
+
+            const isRestricted = restrictedKeywords.some(ng => val.includes(ng));
+            if (isRestricted) {
+                errorEl.style.display = 'block';
+                return;
+            }
+            errorEl.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: val })
+                });
+                if (!res.ok) throw new Error('通信エラー');
+                if (input) input.value = '';
+                alert('投稿しました。');
+            } catch (e) {
+                errorEl.textContent = '送信に失敗しました。再度お試しください。';
+                errorEl.style.display = 'block';
+            }
+        }
+
+        function selectPlan(plan, el) {
+            currentPlan = plan;
+            el.parentElement.querySelectorAll('.category-item').forEach(p => p.classList.remove('selected'));
+            el.classList.add('selected');
+            updateAdVisibility();
+            if (document.getElementById('settings') && document.getElementById('settings').classList.contains('active')) renderSettingsTrendWatching();
+            alert(`プランを ${plan} に同期しました。`);
+        }
+
+
+        /* Amethyst Scrollbar: スクロール中のみ4pxに膨らむ・宝石カット光沢 */
+        let scrollTimeout;
+        let lastScrollingEl = null;
+        document.querySelectorAll('.screen').forEach(el => {
+            el.addEventListener('scroll', () => {
+                if (lastScrollingEl && lastScrollingEl !== el) lastScrollingEl.classList.remove('scrolling');
+                lastScrollingEl = el;
+                el.classList.add('scrolling');
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => { el.classList.remove('scrolling'); lastScrollingEl = null; }, 200);
+            });
+        });
+
+        window.onload = () => {
+            runStartupAd();
+            updateAdVisibility();
+            updateBannerAdContent();
+            startHistoryObserver();
+        };
+    </script>
 </body>
 </html>
