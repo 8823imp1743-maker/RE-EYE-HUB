@@ -8,8 +8,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
+    <link rel="manifest" href="/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#000000">
 
     <style>
         :root {
@@ -24,11 +27,12 @@
         }
 
         /* 1. 基礎デザイン */
-        body { 
-            margin: 0; background: var(--obsidian); color: #fff; 
-            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; 
-            height: 100vh; overflow: hidden; display: flex; flex-direction: column; 
+        body {
+            margin: 0; background: var(--obsidian); color: #fff;
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;
+            height: 100vh; overflow: hidden; display: flex; flex-direction: column;
             -webkit-font-smoothing: antialiased;
+            -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
         }
 
         /* Amethyst Glass Scrollbar - 11pxの美学 / ヘッダー裏側までスクロール */
@@ -39,24 +43,32 @@
             padding-bottom: calc(var(--nav-height) + 35px);
             z-index: 1;
             overscroll-behavior-y: contain;
-            scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.3) transparent; direction: ltr;
+            scrollbar-width: none; direction: ltr;
         }
-        /* スクロールバー：常時1px・スクロール中4px。白系で視認性向上。右端に常時うっすらラインを表示 */
-        .screen::-webkit-scrollbar { width: 1px; transition: width 0.25s ease; }
-        .screen::-webkit-scrollbar-track { background: linear-gradient(to left, rgba(255,255,255,0.1) 1px, transparent 1px); }
-        .screen::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 0; box-shadow: 0 0 8px rgba(255, 255, 255, 0.3); transition: width 0.25s ease, background 0.25s ease, box-shadow 0.25s ease; }
-        .screen.scrolling::-webkit-scrollbar { width: 4px; }
-        .screen.scrolling::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.8); box-shadow: 0 0 8px rgba(255, 255, 255, 0.3); }
+        /* 標準スクロールバーを完全非表示（カスタム実装に置換） */
+        .screen::-webkit-scrollbar { width: 0; display: none; }
+        /* カスタムスクロールバー（JS生成・常時表示） */
+        .custom-sb-track {
+            position: fixed; right: 0; top: 0; bottom: var(--nav-height);
+            width: 2px; background: rgba(155,89,182,0.1);
+            z-index: 500; pointer-events: none; display: none;
+        }
+        .custom-sb-thumb {
+            position: absolute; right: 0; width: 2px;
+            background: rgba(155,89,182,0.75); border-radius: 2px;
+            box-shadow: 0 0 5px rgba(155,89,182,0.5);
+            transition: top 0.08s linear;
+        }
         .active { display: flex; }
 
-        /* コンテンツ最下部：ナビ直上に黒へ溶け込むグラデーション（続きがある視覚ヒント） */
+        /* コンテンツ最下部：ナビ直上に深アメジストへ溶け込むグラデーション（続きがある視覚ヒント） */
         .screen-fade-overlay {
             position: fixed;
             left: 0;
             right: 0;
             bottom: var(--nav-height);
-            height: 120px;
-            background: linear-gradient(to bottom, rgba(0,0,0,0), var(--obsidian));
+            height: 80px;
+            background: linear-gradient(to bottom, rgba(10,0,18,0), rgba(10,0,18,0.08));
             pointer-events: none;
             z-index: 100;
         }
@@ -91,13 +103,14 @@
         .catchcopy-text { font-size: 15px; color: rgba(247,231,206,0.85); letter-spacing: 1.5px; margin-top: 6px; font-family: 'Helvetica Neue', Arial, sans-serif; }
 
         /* コンテンツエリア - 固定ヘッダー高さ + 11px を正確にあけて開始 */
-        .screen-content { position: relative; z-index: 1; padding-top: calc(var(--header-height) + var(--gap-11)); display: flex; flex-direction: column; gap: var(--gap-11); padding-left: 15px; padding-right: 15px; padding-bottom: var(--gap-11); }
+        .screen-content { position: relative; z-index: 1; padding-top: calc(var(--header-height) + var(--gap-11)); display: flex; flex-direction: column; gap: var(--gap-11); padding-left: 15px; padding-right: 15px; padding-bottom: 80px; }
         .screen-content > * { margin-left: 0; margin-right: 0; }
-        .transparent-box { background: var(--dark-glass); border: 1px solid var(--border-purple); border-radius: 2px; backdrop-filter: blur(20px); box-sizing: border-box; margin: 0; padding: 18px 20px; }
+        .transparent-box { background: var(--dark-glass); border: 1px solid var(--border-purple); border-radius: 2px; backdrop-filter: blur(20px); box-sizing: border-box; margin: 0; padding: 18px 20px; box-shadow: 0 0 14px rgba(155,89,182,0.25); }
         .history-list-box { display: flex; flex-direction: column; gap: var(--gap-11); margin: 0; padding: 0; }
-        .history-card { 
-            border-radius: 2px; 
-            padding: var(--gap-11); 
+        .history-card {
+            position: relative;
+            border-radius: 2px;
+            padding: var(--gap-11);
             margin: 0; 
             border-width: 1px; 
             border-style: solid; 
@@ -107,10 +120,11 @@
             gap: var(--gap-11);
             transition: border-color 0.35s ease, color 0.35s ease, box-shadow 0.35s ease, background-color 0.35s ease;
         }
-        .history-card-on { 
-            border-color: var(--amethyst); 
-            cursor: pointer; 
-            box-shadow: 0 0 14px rgba(155, 89, 182, 0.45);
+        .history-card-on {
+            border-color: rgba(155,89,182,0.6);
+            background: rgba(155,89,182,0.05);
+            cursor: pointer;
+            box-shadow: 0 0 14px rgba(155,89,182,0.45);
         }
         .history-card-off { 
             border-color: rgba(255,255,255,0.25); 
@@ -138,7 +152,7 @@
             padding-top: calc(var(--header-height) + var(--gap-11));
             padding-left: 15px;
             padding-right: 15px;
-            padding-bottom: var(--gap-11);
+            padding-bottom: 80px;
         }
         .history-screen-content .disclaimer-11px {
             margin-top: 0;
@@ -172,11 +186,11 @@
 
         .gold-label { font-size: 14px; color: var(--champagne-gold); letter-spacing: 2.5px; margin-bottom: var(--gap-11); font-weight: bold; display: block; }
         .item-title { font-size: 15px; font-weight: bold; letter-spacing: 0.8px; color: #fff; }
-        .category-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-11); margin-bottom: var(--gap-11); }
-        .category-item { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 16px 14px; border-radius: 2px; display: flex; flex-direction: column; justify-content: center; gap: 4px; transition: 0.3s; cursor: pointer; text-align: center; }
-        .category-item.selected { border-color: var(--amethyst); background: rgba(155, 89, 182, 0.2); box-shadow: 0 0 18px rgba(155, 89, 182, 0.4); }
-        /* 11pxの美学：カテゴリラベルは13px・letter-spacing 1.5px で洗練 */
-        .category-item span { font-size: 13px; color: #fff; letter-spacing: 1.5px; }
+        .category-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--gap-11); margin-bottom: var(--gap-11); }
+        .category-item { background: rgba(155,89,182,0.05); border: 1px solid rgba(155,89,182,0.4); box-shadow: 0 0 6px rgba(155,89,182,0.15); padding: 16px 8px; border-radius: 2px; display: flex; flex-direction: column; justify-content: center; gap: 4px; transition: 0.3s; text-align: center; }
+        .category-item.selected { border-color: var(--amethyst); background: rgba(155,89,182,0.18); box-shadow: 0 0 24px rgba(155,89,182,0.65), inset 0 0 12px rgba(155,89,182,0.06); }
+        /* 11pxの美学：カテゴリラベルは12px・letter-spacing 1.5px で洗練 */
+        .category-item span { font-size: 12px; color: #fff; letter-spacing: 1.5px; }
         /* 11pxルール：プラン説明など補助テキストも11pxに統一 */
         .category-item small { font-size: 11px; opacity: 0.8; line-height: 1.4; }
 
@@ -252,7 +266,7 @@
             text-align: right;
             margin-top: 4px;
         }
-        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; height: 85px; background: rgba(0,0,0,0.96); display: flex; justify-content: space-around; align-items: center; border-top: 1px solid rgba(155, 89, 182, 0.2); z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
+        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; height: 85px; background: rgba(14,4,22,0.88); backdrop-filter: blur(12px); display: flex; justify-content: space-around; align-items: center; border-top: 1px solid rgba(155, 89, 182, 0.35); z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
         .nav-item { display: flex; flex-direction: column; align-items: center; color: rgba(255,255,255,0.3); background: none; border: none; width: 16%; cursor: pointer; }
         .nav-item i { font-size: 22px; margin-bottom: 8px; }
         /* 11pxルール：ナビラベルも補助情報として11pxに統一 */
@@ -260,7 +274,10 @@
         .nav-item.active { color: var(--amethyst); text-shadow: 0 0 12px var(--amethyst); }
 
         .insight-number { font-size: 54px; font-weight: bold; color: var(--amethyst); text-shadow: 0 0 25px rgba(155, 89, 182, 0.6); }
-        .calendar-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 14px; margin-top: var(--gap-11); border-radius: 2px; font-size: 13px; cursor: pointer; }
+        .watch-item-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(155,89,182,0.12); }
+        .watch-item-row:last-child { border-bottom: none; }
+        .watch-item-name { font-size: 13px; font-weight: 600; color: var(--champagne-gold); letter-spacing: 0.5px; }
+        .watch-plan-status { font-size: 11px; color: var(--amethyst); opacity: 1; letter-spacing: 0.8px; padding: 7px 0 9px; border-bottom: 1px solid rgba(155,89,182,0.2); margin-bottom: 4px; }
 
         /* 11pxの美学：免責・補足テキスト */
         .disclaimer-11px {
@@ -296,6 +313,7 @@
             padding: 0;
         }
         .trend-item-card {
+            position: relative;
             background: var(--dark-glass);
             border: 1px solid var(--border-purple);
             border-radius: 2px;
@@ -347,6 +365,306 @@
             letter-spacing: 1px;
             margin-top: 4px;
         }
+        /* 監視モード選択チェックボックス */
+        .monitor-mode-row {
+            display: flex; flex-direction: column; gap: 8px; margin-top: var(--gap-11);
+        }
+        .monitor-mode-item {
+            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+            background: rgba(155,89,182,0.05); border: 1px solid rgba(155,89,182,0.35);
+            border-radius: 2px; cursor: pointer;
+        }
+        .monitor-mode-item input[type="checkbox"] {
+            width: 14px; height: 14px; accent-color: var(--amethyst); flex-shrink: 0; cursor: pointer;
+        }
+        #monitor-input[readonly] { opacity: 0.2; cursor: not-allowed; background: rgba(0,0,0,0.3); caret-color: transparent; }
+        #monitor-access-warn { font-size: 11px; color: var(--amethyst); opacity: 1; margin-top: 4px; display: none; letter-spacing: 0.8px; }
+        @keyframes modeGuidePulse { 0%,100%{ opacity:0.8; } 50%{ opacity:0.25; } }
+        .mode-guide-hint { font-size: 11px; color: var(--amethyst); letter-spacing: 0.8px; transition: opacity 0.4s, color 0.4s; }
+        .mode-guide-hint.pulsing { animation: modeGuidePulse 1.8s ease-in-out infinite; }
+        .mode-guide-hint.done { opacity: 0.4; color: rgba(155,89,182,0.5); animation: none; }
+        .monitor-mode-item label {
+            font-size: 11px; color: var(--champagne-gold); letter-spacing: 0.8px; cursor: pointer;
+            line-height: 1.5;
+        }
+        /* 広告注記（11pxの美学） */
+        .ad-note-11px {
+            font-size: 11px; color: rgba(247,231,206,0.45); letter-spacing: 0.5px;
+            text-align: center; margin-top: 6px; line-height: 1.5;
+        }
+        /* 目的選択モーダル */
+        #purpose-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88); z-index: 8000;
+            flex-direction: column; align-items: center; justify-content: center;
+            padding: 20px; box-sizing: border-box;
+        }
+        #purpose-modal.open { display: flex; }
+        .purpose-box {
+            width: 100%; max-width: 400px;
+            background: rgba(14,4,22,0.97); border: 1px solid rgba(155,89,182,0.5);
+            box-shadow: 0 0 28px rgba(155,89,182,0.35); border-radius: 2px;
+            padding: 22px 18px; box-sizing: border-box;
+        }
+        .purpose-btn-row { display: flex; gap: var(--gap-11); margin-top: 8px; }
+        .purpose-btn {
+            flex: 1; background: rgba(155,89,182,0.08); border: 1px solid rgba(155,89,182,0.5);
+            border-radius: 2px; color: #fff; font-size: 12px; letter-spacing: 2px;
+            padding: 12px 4px; cursor: pointer; transition: 0.3s;
+        }
+        .purpose-btn.selected {
+            background: rgba(155,89,182,0.25); border-color: var(--amethyst);
+            box-shadow: 0 0 12px rgba(155,89,182,0.4);
+        }
+        .profile-form-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-11); margin-top: var(--gap-11);
+        }
+        .profile-select {
+            background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15);
+            color: #fff; padding: 10px 12px; width: 100%; box-sizing: border-box;
+            font-size: 12px; border-radius: 2px; outline: none; appearance: none;
+        }
+        .profile-input { padding: 10px 12px; font-size: 12px; }
+        /* 最終確認枠 */
+        .confirm-glow-box {
+            margin-top: var(--gap-11); padding: 14px 16px; border-radius: 2px;
+            background: rgba(155,89,182,0.05); border: 1px solid rgba(155,89,182,0.6);
+            box-shadow: 0 0 14px rgba(155,89,182,0.45);
+        }
+        .confirm-row { font-size: 11px; color: var(--champagne-gold); letter-spacing: 0.8px; margin-bottom: 4px; }
+        .confirm-row span { color: #fff; font-weight: bold; }
+        /* 通知済みカード — シャンパンゴールドの繊細な発光 */
+        .history-card-notified {
+            border-color: rgba(247,231,206,0.5);
+            background: rgba(247,231,206,0.04);
+            box-shadow: 0 0 12px rgba(247,231,206,0.2);
+        }
+        .history-status-notified {
+            font-size: 11px;
+            color: var(--champagne-gold);
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+        /* 削除ボタン（×） */
+        .delete-btn-x {
+            position: absolute; top: 8px; right: 8px;
+            background: none; border: 1px solid rgba(155,89,182,0.35); color: var(--amethyst);
+            font-size: 11px; width: 22px; height: 22px; border-radius: 2px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            transition: 0.3s; line-height: 1; padding: 0;
+        }
+        .delete-btn-x:hover { border-color: var(--amethyst); box-shadow: 0 0 10px rgba(155,89,182,0.55); }
+        /* 削除確認モーダル */
+        #delete-confirm-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9100;
+            background: rgba(0,0,0,0.65); display: none; align-items: center; justify-content: center;
+        }
+        .delete-confirm-box {
+            background: #050008; border: 1px solid var(--amethyst);
+            box-shadow: 0 0 24px rgba(155,89,182,0.55); border-radius: 2px;
+            padding: 28px 22px; width: 280px; text-align: center;
+        }
+        .delete-confirm-title {
+            font-size: 11px; color: var(--champagne-gold); letter-spacing: 1.5px; line-height: 1.9; margin-bottom: 18px;
+        }
+        .delete-confirm-btns { display: flex; gap: 11px; }
+        .delete-confirm-btn {
+            flex: 1; font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
+            padding: 11px 0; border-radius: 2px; cursor: pointer; transition: 0.3s; background: none;
+        }
+        .delete-confirm-btn-yes {
+            border: 1px solid var(--amethyst); color: var(--amethyst);
+            box-shadow: 0 0 10px rgba(155,89,182,0.3);
+        }
+        .delete-confirm-btn-yes:hover { box-shadow: 0 0 20px rgba(155,89,182,0.65); }
+        .delete-confirm-btn-no {
+            border: 1px solid rgba(247,231,206,0.2); color: rgba(247,231,206,0.45);
+        }
+        /* フェードアウト */
+        @keyframes fadeOutCard { to { opacity: 0; transform: translateX(12px); } }
+        .fading-out { animation: fadeOutCard 0.3s ease forwards; pointer-events: none; }
+        /* カレンダー連携ボタン（非推奨・参照のみ残す） */
+        .cal-btn-row {
+            display: flex;
+            gap: var(--gap-11);
+            margin-top: 4px;
+        }
+        .cal-btn {
+            flex: 1;
+            font-size: 11px;
+            letter-spacing: 1.5px;
+            color: var(--champagne-gold);
+            background: rgba(247,231,206,0.06);
+            border: 1px solid rgba(247,231,206,0.3);
+            border-radius: 2px;
+            padding: 8px 4px;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+            display: block;
+        }
+
+        /* ============================================================
+           TOOLBOX MANAGER UI — RE-EYE-HUB CORE SYSTEM
+           11pxの美学: border-radius:2px / amethyst / champagne-gold
+        ============================================================ */
+        .tbx-wrap { display:flex; flex-direction:column; gap:var(--gap-11); }
+
+        /* Glass panel — shared base */
+        .tbx-panel {
+            background:var(--dark-glass); border:1px solid var(--border-purple);
+            border-radius:2px; backdrop-filter:blur(20px); box-sizing:border-box;
+        }
+
+        /* Header */
+        .tbx-header {
+            height:56px; padding:0 16px;
+            display:flex; align-items:center; justify-content:space-between;
+        }
+        .tbx-header-left { display:flex; align-items:center; gap:12px; }
+        .tbx-header-icon {
+            width:32px; height:32px; border-radius:2px;
+            background:rgba(155,89,182,0.3); border:1px solid rgba(155,89,182,0.5);
+            display:flex; align-items:center; justify-content:center; flex-shrink:0;
+        }
+        .tbx-header-right { display:flex; align-items:center; gap:20px; }
+        .tbx-si { display:flex; align-items:center; gap:6px; }
+        .tbx-si-vals { display:flex; flex-direction:column; }
+
+        /* Body: palette + grid + details */
+        .tbx-body { display:flex; gap:var(--gap-11); min-height:440px; }
+        .tbx-palette {
+            width:176px; flex-shrink:0; padding:12px;
+            display:flex; flex-direction:column; overflow-y:auto;
+        }
+        .tbx-grid-panel { flex:1; min-width:0; padding:14px; }
+        .tbx-details {
+            width:196px; flex-shrink:0; padding:12px;
+            overflow-y:auto; display:flex; flex-direction:column;
+        }
+
+        /* Palette buttons */
+        .tbx-tool-btn {
+            width:100%; display:flex; align-items:center; gap:8px;
+            padding:7px 8px; border-radius:2px; border:1px solid transparent;
+            background:transparent; cursor:pointer; transition:all 0.2s ease;
+            text-align:left; margin-bottom:2px;
+        }
+        .tbx-tool-btn:hover:not(:disabled) { background:rgba(155,89,182,0.2); }
+        .tbx-tool-btn.tbx-selected {
+            background:rgba(155,89,182,0.4); border-color:var(--amethyst);
+            box-shadow:0 0 18px rgba(155,89,182,0.4);
+        }
+        .tbx-tool-btn:disabled { opacity:0.28; cursor:not-allowed; }
+        .tbx-tool-icon {
+            width:30px; height:30px; border-radius:2px;
+            background:rgba(155,89,182,0.2); display:flex; align-items:center;
+            justify-content:center; flex-shrink:0; transition:background 0.2s;
+        }
+        .tbx-tool-btn:disabled .tbx-tool-icon { background:rgba(247,231,206,0.04); }
+        .tbx-tool-meta { flex:1; min-width:0; }
+        .tbx-tool-name { color:var(--champagne-gold); font-size:12px; font-weight:500; line-height:1.2; }
+        .tbx-tool-cat { font-size:11px; color:rgba(247,231,206,0.5); line-height:1.2; }
+
+        /* Status dots */
+        .tbx-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+        .tbx-dot.active  { background:var(--amethyst); box-shadow:0 0 6px rgba(155,89,182,0.8); }
+        .tbx-dot.idle    { background:rgba(247,231,206,0.35); }
+        .tbx-dot.warning { background:#f39c12; box-shadow:0 0 6px rgba(243,156,18,0.6); }
+
+        /* Inventory grid */
+        .tbx-grid {
+            display:grid; grid-template-columns:repeat(6,1fr); gap:5px;
+        }
+        .tbx-slot {
+            aspect-ratio:1/1; border-radius:2px;
+            border:1px solid rgba(247,231,206,0.08);
+            background:rgba(247,231,206,0.02);
+            cursor:pointer; transition:all 0.2s ease;
+            display:flex; align-items:center; justify-content:center;
+            position:relative; overflow:hidden;
+        }
+        .tbx-slot i { font-size:17px; color:var(--champagne-gold); pointer-events:none; }
+        .tbx-slot.tbx-occupied {
+            background:rgba(155,89,182,0.18); border-color:rgba(155,89,182,0.45);
+        }
+        .tbx-slot.tbx-can-place {
+            border:1px dashed rgba(247,231,206,0.25);
+        }
+        .tbx-slot.tbx-can-place:hover {
+            border-color:var(--amethyst); background:rgba(155,89,182,0.1);
+        }
+        .tbx-slot .tbx-slot-dot {
+            position:absolute; top:4px; right:4px;
+            width:5px; height:5px; border-radius:50%;
+        }
+        .tbx-slot .tbx-remove-hint {
+            position:absolute; inset:0;
+            background:rgba(231,76,60,0); border-radius:2px;
+            transition:background 0.2s; display:flex; align-items:center;
+            justify-content:center; color:#e74c3c; font-size:14px;
+            font-weight:bold; opacity:0; transition:all 0.2s;
+        }
+        .tbx-slot:hover .tbx-remove-hint { background:rgba(231,76,60,0.22); opacity:1; }
+
+        /* Pulse animation on tool activation */
+        @keyframes tbxActivate {
+            0%   { box-shadow:0 0 0 0 rgba(155,89,182,0); }
+            40%  { box-shadow:0 0 0 10px rgba(155,89,182,0.4); }
+            100% { box-shadow:0 0 18px 0 rgba(155,89,182,0.3); }
+        }
+        .tbx-slot.tbx-activating { animation:tbxActivate 0.6s ease forwards; }
+
+        /* Details panel */
+        .tbx-detail-header {
+            display:flex; align-items:center; gap:10px; margin-bottom:12px;
+        }
+        .tbx-detail-icon {
+            width:44px; height:44px; border-radius:2px;
+            background:rgba(155,89,182,0.2); border:1px solid rgba(155,89,182,0.3);
+            display:flex; align-items:center; justify-content:center; flex-shrink:0;
+        }
+        .tbx-efficiency-bar {
+            height:3px; background:rgba(247,231,206,0.08);
+            border-radius:2px; overflow:hidden; margin-top:8px;
+        }
+        .tbx-efficiency-fill {
+            height:100%; border-radius:2px;
+            background:linear-gradient(90deg, var(--amethyst), rgba(155,89,182,0.4));
+            transition:width 0.5s ease;
+        }
+        .tbx-placed-item {
+            display:flex; align-items:center; gap:6px; padding:5px 6px;
+            border-radius:2px; background:rgba(247,231,206,0.04); margin-bottom:2px;
+        }
+        .tbx-placed-item i { font-size:11px; color:var(--amethyst); }
+
+        /* Status bar */
+        .tbx-statusbar {
+            height:32px; padding:0 14px;
+            display:flex; align-items:center; justify-content:space-between;
+        }
+        .tbx-metric { display:flex; align-items:center; gap:4px; margin-right:12px; }
+
+        /* Placing hint banner */
+        .tbx-placing-hint {
+            display:none; margin-bottom:10px; padding:7px 10px;
+            border-radius:2px; background:rgba(155,89,182,0.18);
+            border:1px solid rgba(155,89,182,0.5);
+        }
+
+        /* Separator line inside details */
+        .tbx-sep { border-top:1px solid rgba(247,231,206,0.1); margin:12px 0 10px; }
+
+        /* Monitoring status pulse in header */
+        @keyframes tbxPulse {
+            0%,100% { opacity:1; } 50% { opacity:0.4; }
+        }
+        .tbx-live-dot {
+            display:inline-block; width:6px; height:6px; border-radius:50%;
+            background:var(--amethyst); margin-right:4px;
+            animation:tbxPulse 1.6s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
@@ -368,60 +686,70 @@
 
     <div id="home" class="screen active">
         <div class="screen-content">
+          <div class="tbx-wrap">
+
+
+
+            <!-- ── MONITOR INPUT ── -->
             <div class="transparent-box">
-                <span class="gold-label">見守る情報</span>
-                <div class="category-grid">
-                    <div class="category-item selected" onclick="this.classList.toggle('selected')"><span>新商品</span></div>
-                    <div class="category-item selected" onclick="this.classList.toggle('selected')"><span>再入荷</span></div>
-                    <div class="category-item selected" onclick="this.classList.toggle('selected')"><span>予約開始</span></div>
-                    <div class="category-item" onclick="this.classList.toggle('selected')"><span>セール</span></div>
-                    <div class="category-item" onclick="this.classList.toggle('selected')"><span>懸賞</span></div>
-                    <div class="category-item" onclick="this.classList.toggle('selected')"><span>推し活</span></div>
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:var(--gap-11);">
+                    <span class="gold-label" style="margin-bottom:0;display:inline;">見守り設定</span>
+                    <span id="mode-guide-hint" class="mode-guide-hint pulsing">（どちらか一方を選択）</span>
                 </div>
-                <span class="gold-label">追いかけたい情報</span>
-                <div id="monitor-error-msg" class="error-text-11px">有効な製品名として認識できません</div>
-                <input type="text" id="monitor-input" placeholder="例：お気に入りブランドの新作バッグ">
+                <div class="monitor-mode-row">
+                    <div class="monitor-mode-item">
+                        <input type="checkbox" id="mode-trend" onchange="onModeChange()">
+                        <label for="mode-trend">新作・予約・キャンペーンを追う</label>
+                    </div>
+                    <div class="monitor-mode-item">
+                        <input type="checkbox" id="mode-stock" onchange="onModeChange()">
+                        <label for="mode-stock">入荷・再販・推し活を追う</label>
+                    </div>
+                </div>
+                <div id="monitor-mode-hint" class="meta-11px" style="color:var(--amethyst);opacity:1;margin:8px 0 4px;display:none;"></div>
+                <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
+                <input type="text" id="monitor-input" placeholder="モードを選択してください" readonly onfocus="onMonitorInputFocus()">
+                <div id="monitor-access-warn">どちらかの見守りモードを選択してください</div>
                 <button class="btn-purple" onclick="executeMonitor()">見守りを開始</button>
             </div>
 
-            <!-- リワード枠：見守り枠が5枠に達した瞬間に自動で消える「期間限定の特別枠」 -->
+            <!-- ── AD BANNERS (FREE plan only, existing logic) ── -->
             <div id="reward-video-banner" onclick="watchRewardVideo()">
-                <div class="reward-inner">
-                    <i class="fas fa-video reward-icon"></i>
-                    <div class="reward-text-block">
-                        <span class="reward-main-text">広告動画を視聴して、見守り枠を +1 追加</span>
-                        <span class="reward-sub-text">月1回 / 最大5枠まで拡張可能</span>
-                    </div>
-                    <span class="reward-badge">+1</span>
+              <div class="reward-inner">
+                <i class="fas fa-video reward-icon"></i>
+                <div class="reward-text-block">
+                  <span class="reward-main-text">広告動画を視聴して、見守り枠を +1 追加</span>
+                  <span class="reward-sub-text">FREE/STANDARD限定 / 1視聴につき、24h周期 予約・新作探索枠を1つ追加（月最大：FREE 3枠・STANDARD 5枠）</span>
                 </div>
+                <span class="reward-badge">+1</span>
+              </div>
+              <div class="ad-note-11px">※サービスの継続と無料枠維持のための広告です</div>
             </div>
-
-            <!-- 常設バナー広告（1）：楽天関連・有料時は2つとも非表示 -->
             <div id="home-banner-ad">
-                <div class="home-banner-inner">
-                    <i class="fas fa-bullseye home-banner-icon"></i>
-                    <div>
-                        <div id="home-banner-main" class="home-banner-text-main">楽天市場で見守り中のキーワードに連動した安全な広告を表示中</div>
-                        <div id="home-banner-sub" class="home-banner-text-sub">ウォッチしているブランドやカテゴリに合わせて最適化（ダミー挙動）</div>
-                    </div>
+              <div class="home-banner-inner">
+                <i class="fas fa-bullseye home-banner-icon"></i>
+                <div>
+                  <div id="home-banner-main" class="home-banner-text-main">楽天市場で見守り中のキーワードに連動した安全な広告を表示中</div>
+                  <div id="home-banner-sub" class="home-banner-text-sub">ウォッチしているブランドやカテゴリに合わせて最適化（ダミー挙動）</div>
                 </div>
-                <div class="home-banner-meta">AD · 楽天連動 / BRAND SAFE</div>
+              </div>
+              <div class="home-banner-meta">AD · 楽天連動 / BRAND SAFE</div>
             </div>
-            <!-- 常設バナー広告（2）：1つ目から11px間隔・Amazon・Yahoo想定 -->
             <div id="home-banner-ad-2">
-                <div class="home-banner-inner">
-                    <i class="fas fa-shopping-cart home-banner-icon"></i>
-                    <div>
-                        <div class="home-banner-text-main">Amazon・Yahooで見守り中のキーワードに連動した広告を表示中</div>
-                        <div class="home-banner-text-sub">複数ショップの再入荷・値下げ情報をシミュレーション表示（ダミー）</div>
-                    </div>
+              <div class="home-banner-inner">
+                <i class="fas fa-shopping-cart home-banner-icon"></i>
+                <div>
+                  <div class="home-banner-text-main">Amazon・Yahooで見守り中のキーワードに連動した広告を表示中</div>
+                  <div class="home-banner-text-sub">複数ショップの再入荷・値下げ情報をシミュレーション表示（ダミー）</div>
                 </div>
-                <div class="home-banner-meta">AD · Amazon・Yahoo連動 / BRAND SAFE</div>
+              </div>
+              <div class="home-banner-meta">AD · Amazon・Yahoo連動 / BRAND SAFE</div>
             </div>
-
             <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。</p>
-        </div>
-    </div>
+
+          </div><!-- /.tbx-wrap -->
+        </div><!-- /.screen-content -->
+    </div><!-- /#home -->
 
     <div id="history" class="screen">
         <div class="screen-content history-screen-content" id="history-list-container"></div>
@@ -430,16 +758,16 @@
     <div id="insight" class="screen">
         <div class="screen-content">
             <div class="transparent-box">
-                <span class="gold-label">NEWS RADAR</span>
-                <p class="trend-intro-11px">最新の商品記事・ニュースをスキャン。気になったアイテムは記事から直接「見守り」に追加できる。</p>
+                <span class="gold-label">24h周期 予約・新作探索</span>
+                <p class="trend-intro-11px">24時間に1回、広域キーワードで市場の「予感」を自動スキャンします。未発売・予約前の情報を捉え、発売日が確定した瞬間に通知します。</p>
                 <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
                     <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み">
                     <i class="fas fa-search" onclick="filterTrendItems()" style="position:absolute; right:20px; top:13px; color:var(--amethyst); font-size:20px; cursor:pointer;"></i>
                 </div>
-                <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">記事カードの「見守りに追加」をタップするだけで監視開始。</p>
+                <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで発売通知が届く。</p>
             </div>
             <div class="transparent-box">
-                <span class="gold-label">注目アイテム記事</span>
+                <span class="gold-label">未発売・注目アイテム</span>
                 <div class="trend-armory-list" id="trend-list-container"></div>
             </div>
             <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。発売日時の確約は各ショップに依存します。</p>
@@ -451,23 +779,16 @@
             <div class="transparent-box">
                 <span class="gold-label">見守りリスト</span>
                 <div id="settings-watch-list">
-                    <div style="background: rgba(155, 89, 182, 0.1); border: 1px solid var(--amethyst); padding: 18px; border-radius: 2px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size:15px; font-weight: bold;">ヴィトンの新作財布</span>
-                            <span id="current-interval-text" class="meta-11px" style="color: var(--amethyst); opacity: 1; font-weight: bold;">● 1分間隔で見守り中</span>
-                        </div>
+                    <div id="settings-plan-status" class="watch-plan-status"></div>
+                    <div class="watch-item-row">
+                        <span class="watch-item-name">ヴィトンの新作財布</span>
+                        <span id="current-interval-text" class="meta-11px" style="color:var(--amethyst);opacity:1;font-weight:bold;white-space:nowrap;"></span>
                     </div>
                 </div>
                 <div id="settings-trend-watching" style="display: none; margin-top: var(--gap-11);">
-                    <span class="gold-label" style="margin-bottom: 6px;">トレンドから見守り中</span>
+                    <span class="gold-label" style="font-size:11px;margin-bottom:6px;">24h周期 予約・新作探索</span>
                     <div id="settings-trend-watching-list"></div>
                 </div>
-            </div>
-            
-            <div class="transparent-box">
-                <span class="gold-label">スケジュール連携</span>
-                <div class="calendar-btn"><i class="fab fa-google"></i> Google Calendar</div>
-                <div class="calendar-btn"><i class="far fa-calendar-alt"></i> その他のカレンダー</div>
             </div>
         </div>
     </div>
@@ -478,24 +799,24 @@
                 <span class="gold-label">見守りプラン選択</span>
                 <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
                     <div class="category-item" onclick="selectPlan('FREE', this)">
-                        <span>FREE / 広告有 (3件)</span>
-                        <small>08:00 - 19:00 / 60分間隔<br>19:00 - 08:00 / 🌙 スリープモード</small>
-                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                        <span>FREE / ¥0</span>
+                        <small>08:00–19:00 / 60分間隔 | 夜間 🌙 スリープ<br>24h周期 予約・新作探索 3枠</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 6 アイテムを監視可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('STANDARD', this)">
-                        <span>STANDARD / ¥500 (5件)</span>
-                        <small>08:00 - 19:00 / 10分間隔<br>19:00 - 08:00 / 60分間隔</small>
-                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                        <span>STANDARD / ¥500</span>
+                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (5件)<br>24h周期 予約・新作探索 5枠</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 10 アイテムを監視可能</span>
                     </div>
                     <div class="category-item selected" onclick="selectPlan('PRO', this)">
-                        <span>PRO / ¥1,100 (10件)</span>
-                        <small>08:00 - 19:00 / 1分間隔<br>19:00 - 08:00 / 60分間隔<br>● 300名限定</small>
-                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                        <span>PRO / ¥1,000</span>
+                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (10件)<br>24h周期 予約・新作探索 10枠</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 20 アイテムを監視可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('VIP', this)" style="border-color: var(--champagne-gold);">
-                        <span style="color: var(--champagne-gold);">VIP / ¥1,500 (10件)</span>
-                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 1分間隔監視<br>● 100名限定</small>
-                        <span class="plan-interval-note">※この間隔で最新の在庫状況をキャッチします。</span>
+                        <span style="color: var(--champagne-gold);">VIP / ¥1,500 <span style="font-size:10px;letter-spacing:1px;opacity:0.85;">● 100名限定</span></span>
+                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 / 10分間隔（変更なし）(15件)<br>24h周期 予約・新作探索 15枠</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 30 アイテムを監視可能</span>
                     </div>
                 </div>
 
@@ -522,6 +843,51 @@
                 <button class="btn-purple" onclick="postChat()">情報を投稿する</button>
             </div>
             <div id="chat-error-msg" class="error-text-11px" style="text-align:center;">ガイドラインに沿わない内容が含まれています</div>
+        </div>
+    </div>
+
+    <!-- 削除確認モーダル -->
+    <div id="delete-confirm-modal">
+        <div class="delete-confirm-box">
+            <div class="delete-confirm-title">このアイテムを<br>監視対象から除外しますか？</div>
+            <div class="delete-confirm-btns">
+                <button class="delete-confirm-btn delete-confirm-btn-no" onclick="cancelDelete()">いいえ</button>
+                <button class="delete-confirm-btn delete-confirm-btn-yes" onclick="confirmDelete()">はい</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 目的選択モーダル -->
+    <div id="purpose-modal">
+        <div class="purpose-box">
+            <span class="gold-label">誰のための見守りですか？</span>
+            <div class="purpose-btn-row">
+                <button class="purpose-btn" id="pbtn-self" onclick="selectPurpose('self')">自分用</button>
+                <button class="purpose-btn" id="pbtn-gift" onclick="selectPurpose('gift')">ギフト用</button>
+                <button class="purpose-btn" id="pbtn-child" onclick="selectPurpose('child')">子供用</button>
+            </div>
+            <div id="purpose-profile-form" style="display:none; margin-top:var(--gap-11);">
+                <span class="gold-label" style="font-size:11px; margin-bottom:8px;">対象者プロフィール（任意）</span>
+                <div class="profile-form-grid">
+                    <select id="p-gender" class="profile-select">
+                        <option value="">性別</option>
+                        <option value="female">女性</option>
+                        <option value="male">男性</option>
+                        <option value="unknown">不明</option>
+                    </select>
+                    <input type="text" id="p-height" class="profile-input" placeholder="身長 (cm)">
+                    <input type="text" id="p-cloth-size" class="profile-input" placeholder="服サイズ (S/M/L...)">
+                    <input type="text" id="p-shoe-size" class="profile-input" placeholder="靴サイズ (cm)">
+                </div>
+            </div>
+            <div id="purpose-confirm-box" class="confirm-glow-box" style="display:none;">
+                <div class="confirm-row">対象： <span id="conf-purpose">—</span></div>
+                <div class="confirm-row">性別： <span id="conf-gender">—</span></div>
+                <div class="confirm-row">サイズ： <span id="conf-size">—</span></div>
+                <div class="confirm-row">監視モード： <span id="conf-mode">—</span></div>
+            </div>
+            <button class="btn-purple" id="purpose-confirm-btn" onclick="confirmMonitor()" style="display:none;">この内容で見守りを開始</button>
+            <button onclick="closePurposeModal()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:11px;margin-top:var(--gap-11);cursor:pointer;width:100%;text-align:center;letter-spacing:1px;">キャンセル</button>
         </div>
     </div>
 
@@ -622,74 +988,227 @@
         // リワード枠：月1回 / 最大5枠まで。5枠に達した瞬間にリワード枠は自動で非表示。
         let rewardSlots = 0;
         let rewardUsesThisMonth = 0;
-        const MAX_REWARD_SLOTS = 5;
-        const MAX_REWARD_USES_PER_MONTH = 1;
+        function getMaxRewardSlots() { return currentPlan === 'FREE' ? 3 : currentPlan === 'STANDARD' ? 5 : 0; }
         let lastMonitorKeyword = '';
 
         let lastActiveTime = Date.now(); 
         const RESUME_AD_THRESHOLD = 30 * 60 * 1000; 
         const restrictedKeywords = ['アダルト', '18禁', '成人', 'ポルノ', 'デリヘル', 'ソープ']; 
 
-        // トレンド探索：発売予定アイテム（在庫なし・発売日時確定）
+        // ユーザー属性プロフィール
+        let userProfile = { gender: '', height: '', clothSize: '', shoeSize: '', hasChildren: false, timezone: 'JP' };
+
+        // 性別連動広告コンテンツプール（アダルト厳禁）
+        const AD_CONTENT = {
+            female: [
+                { main: 'ポケモン新作グッズが入荷予定 — 女の子に人気のキャラアイテム速報', sub: '推し活・限定コラボを逃さない' },
+                { main: 'ルイヴィトン・グッチ 春新作バッグ 入荷監視中', sub: '再入荷の瞬間をキャッチ' },
+                { main: 'コスメ・スキンケア 限定セット 発売予定', sub: 'ブランドコスメの発売日を見守る' },
+            ],
+            male: [
+                { main: 'スニーカー新作・限定コラボ リリース速報', sub: '即完売モデルを逃さない' },
+                { main: 'ポケモン新作おもちゃ・カード 入荷監視中', sub: 'コレクターアイテムの再入荷を通知' },
+                { main: 'ゲーミングデバイス 新作発売・再入荷', sub: '予約開始の瞬間に通知' },
+            ],
+            child: [
+                { main: 'ポケモン・ワンピース おもちゃ 新作入荷速報', sub: 'プレゼントに人気の限定トイ' },
+                { main: '子供服 新作・季節限定コレクション', sub: 'サイズ別に在庫をウォッチ' },
+                { main: 'キャラクターランドセル 予約開始通知', sub: '人気モデルの入荷を見守る' },
+            ],
+            unknown: [
+                { main: 'ブランド新作・再入荷 横断監視中', sub: '欲しいアイテムの発売日を確実にキャッチ' },
+            ]
+        };
+        function getAdForGender(gender) {
+            const pool = AD_CONTENT[gender] || AD_CONTENT.unknown;
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        // Queueベース監視スケジューラー（タイムゾーン・負荷分散対応）
+        const watchQueue = [];
+        const TIMEZONE_OFFSETS = { JP: 9, US: -5, EU: 1, AU: 10 };
+        function enqueueWatch(keyword, mode) {
+            const jitter = Math.floor(Math.random() * 60000); // 最大1分のランダムジッター
+            const baseInterval = mode === 'trend' ? 86400000 : getMonitoringIntervalMs();
+            watchQueue.push({
+                keyword, mode,
+                timezone: userProfile.timezone || 'JP',
+                nextCheckAt: Date.now() + jitter,
+                interval: baseInterval
+            });
+        }
+        function processWatchQueue() {
+            const now = Date.now();
+            watchQueue.forEach(entry => {
+                if (now < entry.nextCheckAt) return;
+                // タイムゾーンオフセットに基づく次回チェック時刻を計算（負荷分散）
+                const jitter = Math.floor(Math.random() * entry.interval * 0.1);
+                entry.nextCheckAt = now + entry.interval + jitter;
+                // 実際のAPIコールはここに追加
+            });
+        }
+        setInterval(processWatchQueue, 30000);
+
+        // リワード枠：24時間有効タイムスタンプ管理（全プラン共通）
+        let rewardExpiresAt = 0;
+
+        // モーダル制御
+        let _pendingKeyword = '';
+        let _pendingPurpose = '';
+        let _pendingMode = [];
+
+        function openPurposeModal(keyword, modes) {
+            _pendingKeyword = keyword;
+            _pendingMode = modes;
+            _pendingPurpose = '';
+            document.querySelectorAll('.purpose-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('purpose-profile-form').style.display = 'none';
+            document.getElementById('purpose-confirm-box').style.display = 'none';
+            document.getElementById('purpose-confirm-btn').style.display = 'none';
+            document.getElementById('purpose-modal').classList.add('open');
+        }
+        function closePurposeModal() {
+            document.getElementById('purpose-modal').classList.remove('open');
+        }
+        function selectPurpose(type) {
+            _pendingPurpose = type;
+            document.querySelectorAll('.purpose-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('pbtn-' + type).classList.add('selected');
+
+            const showProfile = (type === 'gift' || type === 'child');
+            document.getElementById('purpose-profile-form').style.display = showProfile ? 'block' : 'none';
+
+            // 確認ボックス生成
+            const genderVal = showProfile ? (document.getElementById('p-gender').value || '未入力') : userProfile.gender || '未設定';
+            const clothVal = showProfile ? (document.getElementById('p-cloth-size').value || '—') : userProfile.clothSize || '—';
+            const shoeVal = showProfile ? (document.getElementById('p-shoe-size').value || '—') : userProfile.shoeSize || '—';
+            const purposeLabel = { self: '自分用', gift: 'ギフト用', child: '子供用' }[type];
+            const modeLabel = _pendingMode.join(' + ') || '—';
+
+            document.getElementById('conf-purpose').textContent = purposeLabel;
+            document.getElementById('conf-gender').textContent = genderVal;
+            document.getElementById('conf-size').textContent = '服：' + clothVal + ' / 靴：' + shoeVal;
+            document.getElementById('conf-mode').textContent = modeLabel;
+            document.getElementById('purpose-confirm-box').style.display = 'block';
+            document.getElementById('purpose-confirm-btn').style.display = 'block';
+        }
+        function confirmMonitor() {
+            // プロフィール保存
+            if (_pendingPurpose === 'gift' || _pendingPurpose === 'child') {
+                userProfile.gender = document.getElementById('p-gender').value || userProfile.gender;
+                userProfile.height = document.getElementById('p-height').value || userProfile.height;
+                userProfile.clothSize = document.getElementById('p-cloth-size').value || userProfile.clothSize;
+                userProfile.shoeSize = document.getElementById('p-shoe-size').value || userProfile.shoeSize;
+                if (_pendingPurpose === 'child') userProfile.hasChildren = true;
+            }
+            closePurposeModal();
+            // 性別連動広告を更新
+            updateBannerAdContent(_pendingKeyword);
+            // キューに追加して監視開始
+            _pendingMode.forEach(mode => enqueueWatch(_pendingKeyword, mode));
+            _startMonitorCore(_pendingKeyword);
+        }
+
+        // プラン別・見守り枠上限
+        const PLAN_LIMITS = {
+            FREE:     { stock: 3,  trend: 3  },
+            STANDARD: { stock: 5,  trend: 5  },
+            PRO:      { stock: 10, trend: 10 },
+            VIP:      { stock: 15, trend: 15 }
+        };
+        function getTrendLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).trend; }
+        function getStockLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).stock; }
+
+        // アフィリエイトリンク生成（将来のタグ挿入を可能にする窓口）
+        function formatAffiliateLink(url) {
+            // TODO: ここに各ASPのタグを挿入する
+            return url;
+        }
+
+        // トレンド探索：曖昧な発売時期で「焦らし」フック
         let trendItems = [
-            { id: 't1', title: '限定トリプルジップバッグ', releaseLabel: '3/20 10:00 発売予定', shop: '楽天', releaseAt: null },
-            { id: 't2', title: '新作スモールウォレット', releaseLabel: '3/22 09:00 発売予定', shop: 'Amazon', releaseAt: null },
-            { id: 't3', title: '春限定ミニトート', releaseLabel: '3/25 14:00 発売予定', shop: '楽天', releaseAt: null },
-            { id: 't4', title: 'プレミアムレザー財布', releaseLabel: '3/28 11:00 発売予定', shop: 'Yahoo', releaseAt: null },
-            { id: 't5', title: 'コラボドロップキャップ', releaseLabel: '4/01 10:00 発売予定', shop: '楽天', releaseAt: null }
+            { id: 't1', title: '限定トリプルジップバッグ', releaseLabel: '3月中旬 発売予定', sourceUrl: 'https://www.rakuten.co.jp', shop: '楽天', category: '新商品', releaseAt: null },
+            { id: 't2', title: '新作スモールウォレット', releaseLabel: '3月下旬 発売予定', sourceUrl: 'https://www.amazon.co.jp', shop: 'Amazon', category: '新商品', releaseAt: null },
+            { id: 't3', title: '春限定ミニトート', releaseLabel: '3月末〜4月上旬 発売予定', sourceUrl: 'https://www.rakuten.co.jp', shop: '楽天', category: '新商品', releaseAt: null },
+            { id: 't4', title: 'プレミアムレザー財布', releaseLabel: '4月上旬 発売予定', sourceUrl: 'https://shopping.yahoo.co.jp', shop: 'Yahoo', category: '再入荷', releaseAt: null },
+            { id: 't5', title: 'コラボドロップキャップ', releaseLabel: '4月上旬〜中旬 発売予定', sourceUrl: 'https://www.rakuten.co.jp', shop: '楽天', category: 'セール', releaseAt: null }
         ];
         let trendWatching = new Set();
         let trendTimers = {};
 
         function getMonitoringIntervalMs() {
-            if (currentPlan === 'FREE') return 60 * 60 * 1000;
-            if (currentPlan === 'STANDARD') return 10 * 60 * 1000;
-            if (currentPlan === 'PRO' || currentPlan === 'VIP') return 1 * 60 * 1000;
-            return 1 * 60 * 1000;
+            const h = new Date().getHours();
+            const isNight = h < 8 || h >= 19;
+            if (currentPlan === 'FREE') return isNight ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+            if (currentPlan === 'STANDARD' || currentPlan === 'PRO') return isNight ? 60 * 60 * 1000 : 15 * 60 * 1000;
+            if (currentPlan === 'VIP') return 10 * 60 * 1000;
+            return 15 * 60 * 1000;
         }
 
         function renderTrendItems(filterKeyword) {
             const container = document.getElementById('trend-list-container');
             if (!container) return;
             const kw = (filterKeyword || '').toLowerCase().trim();
+
+            // アダルト排除フィルタ
+            const safe = trendItems.filter(t =>
+                !restrictedKeywords.some(rk => t.title.includes(rk) || (t.category || '').includes(rk))
+            );
+
             const list = kw
-                ? trendItems.filter(t => t.title.toLowerCase().includes(kw) || (t.shop && t.shop.toLowerCase().includes(kw)))
-                : trendItems;
+                ? safe.filter(t => t.title.toLowerCase().includes(kw) || (t.category && t.category.toLowerCase().includes(kw)) || (t.shop && t.shop.toLowerCase().includes(kw)))
+                : safe;
+
+            const limit = getTrendLimit();
+            const watchingCount = trendWatching.size;
 
             container.innerHTML = '';
             list.forEach(item => {
+                const isWatching = trendWatching.has(item.id);
                 const card = document.createElement('div');
-                card.className = 'trend-item-card' + (trendWatching.has(item.id) ? ' watching' : '');
+                card.className = 'trend-item-card' + (isWatching ? ' watching' : '');
                 card.dataset.trendId = item.id;
 
                 const titleEl = document.createElement('span');
                 titleEl.className = 'item-title';
                 titleEl.textContent = item.title;
 
-                const releaseEl = document.createElement('div');
-                releaseEl.className = 'trend-release-label';
-                releaseEl.textContent = item.releaseLabel;
-
-                // 記事ソース・カテゴリバッジ（11pxの美学）
-                const sourceEl = document.createElement('div');
-                sourceEl.className = 'trend-meta-11px';
-                sourceEl.textContent = item.shop + ' / ' + item.releaseLabel;
+                // 11px構成：「時期 ｜ [ソースを確認]」— 時刻は非表示
+                const metaEl = document.createElement('div');
+                metaEl.className = 'trend-meta-11px';
+                const sourceLink = document.createElement('a');
+                sourceLink.href = formatAffiliateLink(item.sourceUrl || '#');
+                sourceLink.target = '_blank';
+                sourceLink.rel = 'noopener';
+                sourceLink.textContent = 'ソースを確認';
+                sourceLink.style.cssText = 'color: var(--amethyst); text-decoration: none; opacity: 1;';
+                metaEl.appendChild(document.createTextNode(item.releaseLabel + '  ｜  '));
+                metaEl.appendChild(sourceLink);
 
                 card.appendChild(titleEl);
-                card.appendChild(releaseEl);
-                card.appendChild(sourceEl);
+                card.appendChild(metaEl);
 
-                if (trendWatching.has(item.id)) {
+                if (isWatching) {
                     const badge = document.createElement('div');
                     badge.className = 'trend-watching-badge';
-                    badge.textContent = '● 見守り中 — 発売瞬間に通知';
+                    badge.textContent = '● 見守り中 — 発売日確定で通知';
                     card.appendChild(badge);
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'delete-btn-x';
+                    delBtn.textContent = '×';
+                    delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('trend', item.id, card); };
+                    card.appendChild(delBtn);
                 } else {
-                    // 「見守りに追加」ボタン — 記事からワンタップで登録する導線
                     const btn = document.createElement('button');
                     btn.className = 'btn-purple btn-watch-trend';
-                    btn.textContent = '+ 見守りに追加';
-                    btn.onclick = () => addToWatchFromTrend(item);
+                    if (watchingCount >= limit) {
+                        btn.textContent = '枠上限（' + limit + '件）に達しました';
+                        btn.disabled = true;
+                        btn.style.opacity = '0.4';
+                    } else {
+                        btn.textContent = '+ 見守りに追加';
+                        btn.onclick = () => addToWatchFromTrend(item);
+                    }
                     card.appendChild(btn);
                 }
                 container.appendChild(card);
@@ -698,7 +1217,15 @@
 
         function addToWatchFromTrend(item) {
             if (trendWatching.has(item.id)) return;
+            // アダルト排除
+            if (restrictedKeywords.some(rk => item.title.includes(rk))) return;
+            // プラン別枠数チェック
+            if (trendWatching.size >= getTrendLimit()) {
+                alert('見守りトレンド枠の上限（' + getTrendLimit() + '件）に達しています。プランをアップグレードするか、既存の見守りを削除してください。');
+                return;
+            }
             trendWatching.add(item.id);
+            // デモ：1日1回ランダム時間の巡回をシミュレーション（実際は 1日1回・サーバー側実行）
             if (!item.releaseAt) {
                 var now = Date.now();
                 var mins = [3, 8, 12, 20, 45][trendItems.findIndex(t => t.id === item.id)] || 5;
@@ -708,36 +1235,47 @@
             renderTrendItems(document.getElementById('insight-search').value);
             var settingsScreen = document.getElementById('settings');
             if (settingsScreen && settingsScreen.classList.contains('active')) renderSettingsTrendWatching();
-            alert('「' + item.title + '」を見守りリストに追加しました。発売時刻までプラン間隔で監視します。');
         }
 
         function startTrendReleaseSimulation(item) {
             if (trendTimers[item.id]) return;
+            // デモ：実際は1日1回ランダム時間で巡回。ここではシミュレーション間隔で再現。
             var intervalMs = getMonitoringIntervalMs();
 
             function check() {
                 if (Date.now() < item.releaseAt) return;
                 clearInterval(trendTimers[item.id]);
                 delete trendTimers[item.id];
+                // 卒業：見守りリストから削除
                 trendWatching.delete(item.id);
 
                 var t = new Date();
-                var timeText = t.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                // 通知形式：「商品名：M/D に発売決定」（時刻は不要）
+                var releaseDateLabel = (t.getMonth() + 1) + '/' + t.getDate() + ' に発売決定';
+                var dateKey = t.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
+                // 履歴へ NOTIFIED として追加（在庫監視とは別セクション）
                 historyItems.unshift({
-                    id: Date.now(),
+                    id: 'notif-' + Date.now(),
                     title: item.title,
-                    status: 'ON',
+                    status: 'NOTIFIED',
                     shop: item.shop,
-                    time: timeText,
-                    url: 'https://www.rakuten.co.jp',
+                    time: dateKey,
+                    releaseLabel: releaseDateLabel,
+                    url: formatAffiliateLink(item.sourceUrl || 'https://www.rakuten.co.jp'),
                     lastCheckedAt: Date.now()
                 });
+
                 var historyScreen = document.getElementById('history');
                 if (historyScreen && historyScreen.classList.contains('active')) renderHistory(historyItems);
                 renderTrendItems(document.getElementById('insight-search').value);
                 var settingsScreen = document.getElementById('settings');
                 if (settingsScreen && settingsScreen.classList.contains('active')) renderSettingsTrendWatching();
-                alert('【発売】「' + item.title + '」が発売開始されました。履歴の「購入可能」に追加されています。');
+                // スマホ通知（PWA）
+                if (Notification && Notification.permission === 'granted') {
+                    new Notification(item.title + '：' + releaseDateLabel);
+                }
+                alert('📣 ' + item.title + '：' + releaseDateLabel + '\n履歴の「通知済み」に移動しました。');
             }
 
             trendTimers[item.id] = setInterval(check, intervalMs);
@@ -778,6 +1316,16 @@
                 time: '2026/03/14 22:30',
                 url: 'https://www.amazon.co.jp',
                 lastCheckedAt: Date.now()
+            },
+            {
+                id: 'notif-demo-1',
+                title: 'ヴィトン 春コレクション財布',
+                status: 'NOTIFIED',
+                shop: '楽天',
+                time: '2026/03/18',
+                releaseLabel: '3/28 に発売決定',
+                url: 'https://www.rakuten.co.jp',
+                lastCheckedAt: Date.now()
             }
         ];
 
@@ -799,6 +1347,8 @@
             if (id === 'insight') renderTrendItems(document.getElementById('insight-search') && document.getElementById('insight-search').value);
             if (id === 'settings') renderSettingsTrendWatching();
             updateAdVisibility();
+            // カスタムスクロールバーを画面切替後に更新
+            requestAnimationFrame(() => updateSb(document.getElementById(id)));
         }
 
         function renderSettingsTrendWatching() {
@@ -811,8 +1361,13 @@
                 return;
             }
             block.style.display = 'block';
-            var intervalLabel = currentPlan === 'FREE' ? '60分' : currentPlan === 'STANDARD' ? '10分' : '1分';
-            listEl.innerHTML = watching.map(t => '<div style="background: rgba(155, 89, 182, 0.1); border: 1px solid var(--amethyst); padding: 11px; border-radius: 2px; margin-top: 11px;"><span style="font-size: 13px;">' + t.title + '</span><span class="meta-11px" style="display:block; color: var(--amethyst); opacity: 1;">● ' + intervalLabel + '間隔で発売を監視中</span></div>').join('');
+            var h = new Date().getHours();
+            var isNight = h < 8 || h >= 19;
+            var intervalLabel;
+            if (currentPlan === 'FREE') intervalLabel = isNight ? '🌙 スリープ中' : '24h周期スキャン';
+            else if (currentPlan === 'VIP') intervalLabel = '10分間隔（変更なし）';
+            else intervalLabel = isNight ? '60分間隔（夜間）' : '15分間隔';
+            listEl.innerHTML = watching.map(t => '<div class="watch-item-row"><span class="watch-item-name">' + t.title + '</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● ' + intervalLabel + '</span></div>').join('');
         }
 
         // --- 履歴レンダリング（配列引数で動的生成） ---
@@ -854,6 +1409,35 @@
             return (b.time || '').localeCompare(a.time || '');
         }
 
+        function buildGoogleCalendarUrl(title, dateLabel) {
+            // dateLabel 例："3/18 に発売決定" → 今年のM/Dから日付生成
+            var now = new Date();
+            var match = dateLabel.match(/(\d+)\/(\d+)/);
+            var start = now.getFullYear() + (match ? String(parseInt(match[1])).padStart(2,'0') + String(parseInt(match[2])).padStart(2,'0') : String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0'));
+            var params = new URLSearchParams({ text: title + ' 発売日', dates: start + '/' + start, details: 'RE-EYE-HUB より通知' });
+            return 'https://calendar.google.com/calendar/render?action=TEMPLATE&' + params.toString();
+        }
+
+        function buildIcsContent(title, dateLabel) {
+            var now = new Date();
+            var match = dateLabel.match(/(\d+)\/(\d+)/);
+            var m = match ? String(parseInt(match[1])).padStart(2,'0') : String(now.getMonth()+1).padStart(2,'0');
+            var d = match ? String(parseInt(match[2])).padStart(2,'0') : String(now.getDate()).padStart(2,'0');
+            var dateStr = now.getFullYear() + m + d;
+            return ['BEGIN:VCALENDAR','VERSION:2.0','BEGIN:VEVENT',
+                'DTSTART;VALUE=DATE:' + dateStr,'DTEND;VALUE=DATE:' + dateStr,
+                'SUMMARY:' + title + ' 発売日','DESCRIPTION:RE-EYE-HUB より通知','END:VEVENT','END:VCALENDAR'].join('\r\n');
+        }
+
+        function downloadIcs(title, dateLabel) {
+            var content = buildIcsContent(title, dateLabel);
+            var blob = new Blob([content], { type: 'text/calendar' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = title + '.ics';
+            a.click();
+        }
+
         function renderHistory(items) {
             const container = document.getElementById('history-list-container');
             if (!container) return;
@@ -862,6 +1446,7 @@
             const raw = items || [];
             const onItems = raw.filter(i => i.status === 'ON').sort(sortByCaughtTimeDesc);
             const offItems = raw.filter(i => i.status === 'OFF').sort(sortByCaughtTimeDesc);
+            const notifiedItems = raw.filter(i => i.status === 'NOTIFIED').sort(sortByCaughtTimeDesc);
 
             // 上段：購入可能（ゴールドラベル）
             const boxOn = document.createElement('div');
@@ -890,8 +1475,13 @@
                 const meta = document.createElement('div');
                 meta.className = 'item-meta history-meta-row';
                 meta.textContent = `${item.time} / ${item.shop} ｜ 最終確認：${formatLastChecked(item.lastCheckedAt)}`;
+                const delBtn = document.createElement('button');
+                delBtn.className = 'delete-btn-x';
+                delBtn.textContent = '×';
+                delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('history', item.id, card); };
                 card.appendChild(header);
                 card.appendChild(meta);
+                card.appendChild(delBtn);
                 listOn.appendChild(card);
             });
             boxOn.appendChild(listOn);
@@ -923,14 +1513,55 @@
                 const meta = document.createElement('div');
                 meta.className = 'item-meta history-meta-row';
                 meta.textContent = `${item.time} / ${item.shop}`;
+                const delBtn = document.createElement('button');
+                delBtn.className = 'delete-btn-x';
+                delBtn.textContent = '×';
+                delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('history', item.id, card); };
                 card.appendChild(header);
                 card.appendChild(meta);
+                card.appendChild(delBtn);
                 listOff.appendChild(card);
             });
             boxOff.appendChild(listOff);
             container.appendChild(boxOff);
 
-            // 免責：2枠のさらに下・スクロール最後に配置（gap で 11px）
+            // 通知済みセクション（トレンド卒業アイテム・カレンダー連携ボタン付き）
+            if (notifiedItems.length > 0) {
+                const boxNotif = document.createElement('div');
+                boxNotif.className = 'history-section-box';
+                const labelNotif = document.createElement('span');
+                labelNotif.className = 'gold-label';
+                labelNotif.textContent = '通知済み';
+                boxNotif.appendChild(labelNotif);
+                const listNotif = document.createElement('div');
+                listNotif.className = 'history-list-box';
+
+                notifiedItems.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'history-card history-card-notified';
+                    const header = document.createElement('div');
+                    header.className = 'history-card-header';
+                    const titleEl = document.createElement('span');
+                    titleEl.className = 'item-title';
+                    titleEl.textContent = item.title;
+                    const statusEl = document.createElement('span');
+                    statusEl.className = 'history-status-notified';
+                    statusEl.textContent = item.releaseLabel || '発売日確定';
+                    header.appendChild(titleEl);
+                    header.appendChild(statusEl);
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'delete-btn-x';
+                    delBtn.textContent = '×';
+                    delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('history', item.id, card); };
+                    card.appendChild(header);
+                    card.appendChild(delBtn);
+                    listNotif.appendChild(card);
+                });
+                boxNotif.appendChild(listNotif);
+                container.appendChild(boxNotif);
+            }
+
+            // 免責：各枠のさらに下・スクロール最後に配置（gap で 11px）
             const disclaimer = document.createElement('p');
             disclaimer.className = 'disclaimer-11px';
             disclaimer.textContent = DISCLAIMER_TEXT;
@@ -995,116 +1626,187 @@
             const banner2 = document.getElementById('home-banner-ad-2');
             const reward = document.getElementById('reward-video-banner');
 
-            // 有料プラン（STANDARD以上）の場合は、リワード枠・2つの常設バナーをセットで非表示
-            if (!isFree) {
-                if (banner) banner.style.display = 'none';
-                if (banner2) banner2.style.display = 'none';
-                if (reward) reward.style.display = 'none';
-                return;
-            }
+            // バナー広告はFREEのみ
+            if (banner) banner.style.display = isFree ? 'block' : 'none';
+            if (banner2) banner2.style.display = isFree ? 'block' : 'none';
 
-            // FREEプラン時のみ、常設バナー広告2つを表示
-            if (banner) banner.style.display = 'block';
-            if (banner2) banner2.style.display = 'block';
-
-            // リワード枠はFREEプラン + 見守り枠が上限5枠に達するまで表示
+            // リワード枠はFREE/STANDARDのみ・月上限に達したら非表示
+            const maxSlots = getMaxRewardSlots();
             if (reward) {
-                if (rewardSlots < MAX_REWARD_SLOTS) {
-                    reward.style.display = 'block';
-                } else {
-                    reward.style.display = 'none';
-                }
+                reward.style.display = (maxSlots > 0 && rewardSlots < maxSlots) ? 'block' : 'none';
             }
         }
 
-        // バナー広告内容の更新
-        // バナー広告はアダルト禁止。NGワードに該当するキーワードは広告連動対象から除外する。
+        // バナー広告内容の更新（性別連動・アダルト厳禁）
         function updateBannerAdContent(sourceKeyword) {
             const bannerMain = document.getElementById('home-banner-main');
             const bannerSub = document.getElementById('home-banner-sub');
             if (!bannerMain || !bannerSub) return;
 
-            const monitorInput = document.getElementById('monitor-input');
-            const insightInput = document.getElementById('insight-search');
+            let keyword = (sourceKeyword || lastMonitorKeyword || '人気アイテム').trim();
+            if (restrictedKeywords.some(ng => keyword.includes(ng))) keyword = '人気アイテム';
 
-            let keyword = (sourceKeyword || lastMonitorKeyword || (monitorInput && monitorInput.value) || (insightInput && insightInput.value) || '人気アイテム').trim();
-
-            // アダルトNGフィルタ（簡易版）
-            const isAdult = restrictedKeywords.some(ng => keyword.includes(ng));
-            if (isAdult) {
-                keyword = '人気アイテム';
-            }
-
-            bannerMain.textContent = `「${keyword}」を追いかける人向けの安全な広告を表示中`;
-            bannerSub.textContent = `監視中の「${keyword}」に連動したショップやセール情報をシミュレーション表示（ダミー）`;
+            // 性別に応じたコンテンツを選択
+            const gender = userProfile.hasChildren ? 'child' : (userProfile.gender || 'unknown');
+            const ad = getAdForGender(gender);
+            bannerMain.textContent = ad.main;
+            bannerSub.textContent = ad.sub + '（' + keyword + '）';
         }
 
         function watchRewardVideo() {
-            if (rewardUsesThisMonth >= MAX_REWARD_USES_PER_MONTH) {
-                alert('今月分のリワード枠はすでに利用済みです。翌月までお待ちください。');
+            const maxSlots = getMaxRewardSlots();
+            if (maxSlots === 0) {
+                alert('PRO / VIP プランでは広告報酬枠の追加はありません。');
                 return;
             }
-            if (rewardSlots >= MAX_REWARD_SLOTS) {
-                alert('見守り枠はすでに上限の5枠に達しています。');
+            if (Date.now() < rewardExpiresAt) {
+                const remaining = Math.ceil((rewardExpiresAt - Date.now()) / 3600000);
+                alert('追加済みの枠は有効期間中です（残り約' + remaining + '時間）。');
                 return;
             }
-
-            alert('広告動画を視聴しました。見守り枠を +1 追加しました。');
-            rewardSlots = Math.min(MAX_REWARD_SLOTS, rewardSlots + 1);
+            if (rewardSlots >= maxSlots) {
+                alert('今月の24h周期 予約・新作探索枠の上限（' + maxSlots + '枠）に達しています。翌月までお待ちください。');
+                return;
+            }
+            rewardSlots = Math.min(maxSlots, rewardSlots + 1);
             rewardUsesThisMonth += 1;
-
-            // 5枠に達したらリワード枠を即座に非表示
-            if (rewardSlots >= MAX_REWARD_SLOTS) {
-                const reward = document.getElementById('reward-video-banner');
-                if (reward) reward.style.display = 'none';
-            }
-
+            rewardExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+            alert('広告動画を視聴しました。24h周期 予約・新作探索枠を +1 追加しました。');
             updateAdVisibility();
         }
 
-        async function executeMonitor() {
+        var _deleteTarget = null;
+        function showDeleteConfirm(type, id, cardEl) {
+            _deleteTarget = { type: type, id: id, cardEl: cardEl };
+            document.getElementById('delete-confirm-modal').style.display = 'flex';
+        }
+        function confirmDelete() {
+            if (!_deleteTarget) return;
+            var t = _deleteTarget;
+            document.getElementById('delete-confirm-modal').style.display = 'none';
+            t.cardEl.classList.add('fading-out');
+            setTimeout(function() {
+                if (t.type === 'history') {
+                    historyItems = historyItems.filter(function(i) { return String(i.id) !== String(t.id); });
+                    renderHistory(historyItems);
+                } else if (t.type === 'trend') {
+                    trendWatching.delete(t.id);
+                    renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : '');
+                    renderSettingsTrendWatching();
+                }
+            }, 300);
+            _deleteTarget = null;
+        }
+        function cancelDelete() {
+            document.getElementById('delete-confirm-modal').style.display = 'none';
+            _deleteTarget = null;
+        }
+
+        function updateNightModeStatus() {
+            var el = document.getElementById('current-interval-text');
+            var banner = document.getElementById('settings-plan-status');
+            var h = new Date().getHours();
+            var isNight = h < 8 || h >= 19;
+            var itemText, bannerText;
+            if (currentPlan === 'FREE') {
+                itemText   = isNight ? '🌙 スリープ中' : '● 60分間隔で見守り中';
+                bannerText = isNight ? '🌙 スリープモード：08:00に再開します' : '● 08:00–19:00 稼働中 / 60分間隔でスキャン';
+            } else if (currentPlan === 'STANDARD' || currentPlan === 'PRO') {
+                itemText   = isNight ? '夜間：60分間隔に変更済み' : '● 15分間隔で見守り中';
+                bannerText = isNight ? '夜間モード：60分間隔に変更済み' : '● 08:00–19:00 稼働中 / 15分間隔でスキャン';
+            } else if (currentPlan === 'VIP') {
+                itemText   = '● 10分間隔で巡回中（変更なし）';
+                bannerText = '24時間：10分間隔で巡回中（変更なし）';
+            }
+            if (el) el.textContent = itemText;
+            if (banner) banner.textContent = bannerText;
+        }
+
+        function onModeChange() {
+            var trendCb = document.getElementById('mode-trend');
+            var stockCb = document.getElementById('mode-stock');
+            var input = document.getElementById('monitor-input');
+            var hint = document.getElementById('monitor-mode-hint');
+            var warn = document.getElementById('monitor-access-warn');
+            // 排他制御：片方がONなら他方を自動でOFF（.checked直接代入はonchangeを発火しない）
+            if (trendCb.checked) stockCb.checked = false;
+            else if (stockCb.checked) trendCb.checked = false;
+            var anyOn = trendCb.checked || stockCb.checked;
+            input.readOnly = !anyOn;
+            warn.style.display = 'none';
+            var guideHint = document.getElementById('mode-guide-hint');
+            if (guideHint) {
+                guideHint.className = 'mode-guide-hint ' + (anyOn ? 'done' : 'pulsing');
+            }
+            if (!anyOn) {
+                hint.style.display = 'none';
+                input.placeholder = 'モードを選択してください';
+                return;
+            }
+            hint.style.display = 'block';
+            if (stockCb.checked) {
+                hint.textContent = 'プランの間隔で精密スキャン。情報の「事実」を捉えます。';
+                input.placeholder = '再入荷アイテム、販売中チケット、推しグッズ...';
+            } else {
+                hint.textContent = '24時間周期で広域スキャン。情報の「予感」を捉えます。';
+                input.placeholder = '新作バッグ、コンサート予約、限定キャンペーン...';
+            }
+            input.focus();
+        }
+
+        function onMonitorInputFocus() {
+            var trendCb = document.getElementById('mode-trend');
+            var stockCb = document.getElementById('mode-stock');
+            var warn = document.getElementById('monitor-access-warn');
+            if (!trendCb.checked && !stockCb.checked) {
+                warn.style.display = 'block';
+                document.getElementById('monitor-input').blur();
+            }
+        }
+
+        function executeMonitor() {
             const input = document.getElementById('monitor-input');
             const val = input ? input.value.trim() : '';
-            if (!val) { alert('製品名を入力してください'); return; }
-
+            const errEl = document.getElementById('monitor-error-msg');
+            if (!val) { if (errEl) errEl.style.display = 'block'; return; }
+            if (restrictedKeywords.some(rk => val.includes(rk))) { if (errEl) errEl.style.display = 'block'; return; }
+            if (errEl) errEl.style.display = 'none';
             lastMonitorKeyword = val;
-            updateBannerAdContent(val);
 
-            // ボタンをローディング状態に
+            // 監視モード収集
+            const modes = [];
+            if (document.getElementById('mode-trend') && document.getElementById('mode-trend').checked) modes.push('trend');
+            if (document.getElementById('mode-stock') && document.getElementById('mode-stock').checked) modes.push('stock');
+            if (modes.length === 0) modes.push('stock');
+
+            // 目的選択モーダルを表示
+            openPurposeModal(val, modes);
+        }
+
+        async function _startMonitorCore(val) {
             const btn = document.querySelector('#home .btn-purple');
-            if (btn) { btn.disabled = true; btn.textContent = '検索中...'; }
-
+            if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
             try {
-                // リアルAPIを呼んで3強ショップを横断検索
                 const res = await fetch('/api/poll', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ keyword: val, userId: getUserId(), plan: currentPlan })
                 });
-
                 if (res.ok) {
                     const data = await res.json();
                     mergeApiResultsToHistory(data.allItems || []);
-                    const newCount = (data.newItems || []).length;
-                    alert(`見守りを開始しました。${newCount > 0 ? newCount + '件の新着を発見。' : ''}11pxの繊細な通知でお知らせします。`);
-                } else {
-                    // APIエラー時もポーリングは開始する
-                    alert('見守りを開始しました。11pxの繊細な通知でお知らせします。');
                 }
             } catch (e) {
-                // オフライン時はモックを追加してポーリング開始
                 const now = new Date();
                 const timeText = now.toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
                 historyItems.unshift({ id: Date.now(), title: val, status: 'ON', shop: '楽天', time: timeText, url: 'https://www.rakuten.co.jp', lastCheckedAt: Date.now() });
                 const historyScreen = document.getElementById('history');
                 if (historyScreen && historyScreen.classList.contains('active')) renderHistory(historyItems);
-                alert('見守りを開始しました。11pxの繊細な通知でお知らせします。');
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '見守りを開始'; }
             }
-
-            // プランに基づく定期ポーリング開始
             startPollingTimer(val);
+            alert('見守りを開始しました。11pxの繊細な通知でお知らせします。');
         }
 
         // チャット投稿：Gemini API 経由で送信し、NGワードをフロントでも事前チェック
@@ -1141,30 +1843,57 @@
             el.parentElement.querySelectorAll('.category-item').forEach(p => p.classList.remove('selected'));
             el.classList.add('selected');
             updateAdVisibility();
+            updateNightModeStatus();
             if (document.getElementById('settings') && document.getElementById('settings').classList.contains('active')) renderSettingsTrendWatching();
             alert(`プランを ${plan} に同期しました。`);
         }
 
 
-        /* Amethyst Scrollbar: スクロール中のみ4pxに膨らむ・宝石カット光沢 */
-        let scrollTimeout;
-        let lastScrollingEl = null;
+        /* カスタムスクロールバー（常時表示・連動） */
+        const sbTrack = document.createElement('div');
+        sbTrack.className = 'custom-sb-track';
+        const sbThumb = document.createElement('div');
+        sbThumb.className = 'custom-sb-thumb';
+        sbTrack.appendChild(sbThumb);
+        document.body.appendChild(sbTrack);
+
+        function updateSb(screenEl) {
+            if (!screenEl) { sbTrack.style.display = 'none'; return; }
+            const sh = screenEl.scrollHeight, ch = screenEl.clientHeight;
+            if (sh <= ch) { sbTrack.style.display = 'none'; return; }
+            sbTrack.style.display = 'block';
+            const trackH = sbTrack.clientHeight;
+            const thumbH = Math.max(24, (ch / sh) * trackH);
+            const thumbTop = (screenEl.scrollTop / (sh - ch)) * (trackH - thumbH);
+            sbThumb.style.height = thumbH + 'px';
+            sbThumb.style.top = thumbTop + 'px';
+        }
+
+        function getActiveScreen() {
+            return document.querySelector('.screen.active');
+        }
+
         document.querySelectorAll('.screen').forEach(el => {
             el.addEventListener('scroll', () => {
-                if (lastScrollingEl && lastScrollingEl !== el) lastScrollingEl.classList.remove('scrolling');
-                lastScrollingEl = el;
-                el.classList.add('scrolling');
-                clearTimeout(scrollTimeout);
-                scrollTimeout = setTimeout(() => { el.classList.remove('scrolling'); lastScrollingEl = null; }, 200);
+                if (el.classList.contains('active')) updateSb(el);
             });
         });
 
         window.onload = () => {
             runStartupAd();
             updateAdVisibility();
+            updateNightModeStatus();
+            setInterval(updateNightModeStatus, 60 * 1000);
             updateBannerAdContent();
             startHistoryObserver();
+            // 初期画面のカスタムスクロールバー表示
+            requestAnimationFrame(() => updateSb(getActiveScreen()));
         };
+
+        // PWA Service Worker 登録（iOS/Android プッシュ通知・オフライン対応）
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
     </script>
 </body>
 </html>
