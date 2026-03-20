@@ -157,6 +157,18 @@
         .history-screen-content .disclaimer-11px {
             margin-top: 0;
         }
+        .section-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--gap-11); }
+        .section-header-row .gold-label, .section-header-row .gray-label { margin-bottom: 0; }
+        .section-manage-btn { background: none; border: 1px solid rgba(155,89,182,0.3); color: rgba(155,89,182,0.65); font-size: 11px; padding: 3px 8px; height: 22px; border-radius: 2px; cursor: pointer; transition: 0.3s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.5px; white-space: nowrap; }
+        .section-manage-btn:hover, .section-manage-btn.open { border-color: var(--amethyst); color: var(--amethyst); box-shadow: 0 0 8px rgba(155,89,182,0.4); }
+        .section-action-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .section-action-btn { flex: 1; font-size: 11px; letter-spacing: 1.5px; color: var(--amethyst); background: rgba(155,89,182,0.08); border: 1px solid rgba(155,89,182,0.35); border-radius: 2px; padding: 8px 4px; cursor: pointer; transition: 0.3s; }
+        .section-action-btn:hover { border-color: var(--amethyst); box-shadow: 0 0 10px rgba(155,89,182,0.4); }
+        .section-action-btn.danger { color: var(--champagne-gold); border-color: rgba(247,231,206,0.35); background: rgba(247,231,206,0.05); }
+        .section-action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .section-delete-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(155,89,182,0.15); }
+        .section-delete-bar .count-text { font-size: 11px; color: rgba(247,231,206,0.55); flex: 1; letter-spacing: 0.8px; }
+        .edit-checkbox { accent-color: var(--amethyst); width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
         .history-section-box {
             padding: var(--gap-11);
             background: var(--dark-glass);
@@ -379,10 +391,7 @@
         }
         #monitor-input[readonly] { opacity: 0.2; cursor: not-allowed; background: rgba(0,0,0,0.3); caret-color: transparent; }
         #monitor-access-warn { font-size: 11px; color: var(--amethyst); opacity: 1; margin-top: 4px; display: none; letter-spacing: 0.8px; }
-        @keyframes modeGuidePulse { 0%,100%{ opacity:0.8; } 50%{ opacity:0.25; } }
-        .mode-guide-hint { font-size: 11px; color: var(--amethyst); letter-spacing: 0.8px; transition: opacity 0.4s, color 0.4s; }
-        .mode-guide-hint.pulsing { animation: modeGuidePulse 1.8s ease-in-out infinite; }
-        .mode-guide-hint.done { opacity: 0.4; color: rgba(155,89,182,0.5); animation: none; }
+        .mode-guide-hint { font-size: 11px; color: var(--amethyst); letter-spacing: 0.8px; opacity: 0.72; }
         .monitor-mode-item label {
             font-size: 11px; color: var(--champagne-gold); letter-spacing: 0.8px; cursor: pointer;
             line-height: 1.5;
@@ -694,7 +703,7 @@
             <div class="transparent-box">
                 <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:var(--gap-11);">
                     <span class="gold-label" style="margin-bottom:0;display:inline;">見守り設定</span>
-                    <span id="mode-guide-hint" class="mode-guide-hint pulsing">（どちらか一方を選択）</span>
+                    <span id="mode-guide-hint" class="mode-guide-hint">（どちらかを選択）</span>
                 </div>
                 <div class="monitor-mode-row">
                     <div class="monitor-mode-item">
@@ -719,7 +728,7 @@
                 <i class="fas fa-video reward-icon"></i>
                 <div class="reward-text-block">
                   <span class="reward-main-text">広告動画を視聴して、見守り枠を +1 追加</span>
-                  <span class="reward-sub-text">FREE/STANDARD限定 / 1視聴につき、24h周期 予約・新作探索枠を1つ追加（月最大：FREE 3枠・STANDARD 5枠）</span>
+                  <span class="reward-sub-text">FREE/STANDARD限定 / 1視聴につき、トレンド探索枠を1つ追加（月最大：FREE 3枠・STANDARD 5枠）</span>
                 </div>
                 <span class="reward-badge">+1</span>
               </div>
@@ -758,8 +767,8 @@
     <div id="insight" class="screen">
         <div class="screen-content">
             <div class="transparent-box">
-                <span class="gold-label">24h周期 予約・新作探索</span>
-                <p class="trend-intro-11px">24時間に1回、広域キーワードで市場の「予感」を自動スキャンします。未発売・予約前の情報を捉え、発売日が確定した瞬間に通知します。</p>
+                <span class="gold-label">トレンド探索</span>
+                <p class="trend-intro-11px">24時間に1回、未発売・予約情報を捉え、発売日が確定した瞬間に通知します。</p>
                 <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
                     <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み">
                     <i class="fas fa-search" onclick="filterTrendItems()" style="position:absolute; right:20px; top:13px; color:var(--amethyst); font-size:20px; cursor:pointer;"></i>
@@ -767,7 +776,11 @@
                 <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで発売通知が届く。</p>
             </div>
             <div class="transparent-box">
-                <span class="gold-label">未発売・注目アイテム</span>
+                <div class="section-header-row">
+                    <span class="gold-label" style="margin-bottom:0;">未発売・注目アイテム</span>
+                    <button class="section-manage-btn" id="trend-manage-btn" onclick="toggleSectionMenu('TREND')">削除 [×]</button>
+                </div>
+                <div id="trend-section-action-row"></div>
                 <div class="trend-armory-list" id="trend-list-container"></div>
             </div>
             <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。発売日時の確約は各ショップに依存します。</p>
@@ -786,7 +799,7 @@
                     </div>
                 </div>
                 <div id="settings-trend-watching" style="display: none; margin-top: var(--gap-11);">
-                    <span class="gold-label" style="font-size:11px;margin-bottom:6px;">24h周期 予約・新作探索</span>
+                    <span class="gold-label" style="font-size:11px;margin-bottom:6px;">トレンド探索</span>
                     <div id="settings-trend-watching-list"></div>
                 </div>
             </div>
@@ -800,22 +813,22 @@
                 <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
                     <div class="category-item" onclick="selectPlan('FREE', this)">
                         <span>FREE / ¥0</span>
-                        <small>08:00–19:00 / 60分間隔 | 夜間 🌙 スリープ<br>24h周期 予約・新作探索 3枠</small>
+                        <small>08:00–19:00 / 60分間隔 | 夜間 🌙 スリープ<br>トレンド探索 3枠</small>
                         <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 6 アイテムを監視可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('STANDARD', this)">
                         <span>STANDARD / ¥500</span>
-                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (5件)<br>24h周期 予約・新作探索 5枠</small>
+                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (5件)<br>トレンド探索 5枠</small>
                         <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 10 アイテムを監視可能</span>
                     </div>
                     <div class="category-item selected" onclick="selectPlan('PRO', this)">
                         <span>PRO / ¥1,000</span>
-                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (10件)<br>24h周期 予約・新作探索 10枠</small>
+                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (10件)<br>トレンド探索 10枠</small>
                         <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 20 アイテムを監視可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('VIP', this)" style="border-color: var(--champagne-gold);">
                         <span style="color: var(--champagne-gold);">VIP / ¥1,500 <span style="font-size:10px;letter-spacing:1px;opacity:0.85;">● 100名限定</span></span>
-                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 / 10分間隔（変更なし）(15件)<br>24h周期 予約・新作探索 15枠</small>
+                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 / 10分間隔（変更なし）(15件)<br>トレンド探索 15枠</small>
                         <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 30 アイテムを監視可能</span>
                     </div>
                 </div>
@@ -849,7 +862,7 @@
     <!-- 削除確認モーダル -->
     <div id="delete-confirm-modal">
         <div class="delete-confirm-box">
-            <div class="delete-confirm-title">このアイテムを<br>監視対象から除外しますか？</div>
+            <div id="delete-confirm-title" class="delete-confirm-title">このアイテムを<br>監視対象から除外しますか？</div>
             <div class="delete-confirm-btns">
                 <button class="delete-confirm-btn delete-confirm-btn-no" onclick="cancelDelete()">いいえ</button>
                 <button class="delete-confirm-btn delete-confirm-btn-yes" onclick="confirmDelete()">はい</button>
@@ -1163,6 +1176,25 @@
             const watchingCount = trendWatching.size;
 
             container.innerHTML = '';
+            // TRENDセクションのサブメニュー・バーを更新
+            var trendActionRow = document.getElementById('trend-section-action-row');
+            var trendManageBtn = document.getElementById('trend-manage-btn');
+            if (trendActionRow) {
+                trendActionRow.innerHTML = '';
+                if (trendManageBtn) trendManageBtn.className = 'section-manage-btn' + (_openSectionMenu === 'TREND' ? ' open' : '');
+                if (_openSectionMenu === 'TREND' && _sectionEditMode !== 'TREND') {
+                    trendActionRow.className = 'section-action-row';
+                    var b1 = document.createElement('button'); b1.className = 'section-action-btn danger'; b1.textContent = '一括削除'; b1.onclick = () => startBulkDelete('TREND', '未発売・注目アイテム');
+                    var b2 = document.createElement('button'); b2.className = 'section-action-btn'; b2.textContent = '選択して削除'; b2.onclick = () => startSelectDelete('TREND');
+                    trendActionRow.appendChild(b1); trendActionRow.appendChild(b2);
+                } else if (_sectionEditMode === 'TREND') {
+                    trendActionRow.className = 'section-delete-bar';
+                    var ct = document.createElement('span'); ct.className = 'count-text'; ct.textContent = _editSelected.size + '件選択中';
+                    var exec = document.createElement('button'); exec.className = 'section-action-btn danger'; exec.textContent = '削除を実行'; exec.disabled = _editSelected.size === 0; exec.onclick = confirmSelectDelete;
+                    var cnc = document.createElement('button'); cnc.className = 'section-action-btn'; cnc.textContent = 'キャンセル'; cnc.onclick = cancelTrendEditMode;
+                    trendActionRow.appendChild(ct); trendActionRow.appendChild(exec); trendActionRow.appendChild(cnc);
+                } else { trendActionRow.className = ''; }
+            }
             list.forEach(item => {
                 const isWatching = trendWatching.has(item.id);
                 const card = document.createElement('div');
@@ -1189,15 +1221,20 @@
                 card.appendChild(metaEl);
 
                 if (isWatching) {
-                    const badge = document.createElement('div');
-                    badge.className = 'trend-watching-badge';
-                    badge.textContent = '● 見守り中 — 発売日確定で通知';
-                    card.appendChild(badge);
-                    const delBtn = document.createElement('button');
-                    delBtn.className = 'delete-btn-x';
-                    delBtn.textContent = '×';
-                    delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('trend', item.id, card); };
-                    card.appendChild(delBtn);
+                    if (_sectionEditMode === 'TREND') {
+                        const cb = document.createElement('input');
+                        cb.type = 'checkbox'; cb.className = 'edit-checkbox';
+                        cb.style.cssText = 'margin-top:6px;';
+                        cb.checked = _editSelected.has(item.id);
+                        cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(item.id); };
+                        card.appendChild(cb);
+                        card.onclick = () => toggleSelectItem(item.id);
+                    } else {
+                        const badge = document.createElement('div');
+                        badge.className = 'trend-watching-badge';
+                        badge.textContent = '● 見守り中 — 発売日確定で通知';
+                        card.appendChild(badge);
+                    }
                 } else {
                     const btn = document.createElement('button');
                     btn.className = 'btn-purple btn-watch-trend';
@@ -1364,7 +1401,7 @@
             var h = new Date().getHours();
             var isNight = h < 8 || h >= 19;
             var intervalLabel;
-            if (currentPlan === 'FREE') intervalLabel = isNight ? '🌙 スリープ中' : '24h周期スキャン';
+            if (currentPlan === 'FREE') intervalLabel = isNight ? '🌙 スリープ中' : 'トレンド探索中';
             else if (currentPlan === 'VIP') intervalLabel = '10分間隔（変更なし）';
             else intervalLabel = isNight ? '60分間隔（夜間）' : '15分間隔';
             listEl.innerHTML = watching.map(t => '<div class="watch-item-row"><span class="watch-item-name">' + t.title + '</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● ' + intervalLabel + '</span></div>').join('');
@@ -1448,116 +1485,160 @@
             const offItems = raw.filter(i => i.status === 'OFF').sort(sortByCaughtTimeDesc);
             const notifiedItems = raw.filter(i => i.status === 'NOTIFIED').sort(sortByCaughtTimeDesc);
 
-            // 上段：購入可能（ゴールドラベル）
-            const boxOn = document.createElement('div');
-            boxOn.className = 'history-section-box';
-            const labelOn = document.createElement('span');
-            labelOn.className = 'gold-label';
-            labelOn.textContent = '購入可能';
-            boxOn.appendChild(labelOn);
-            const listOn = document.createElement('div');
-            listOn.className = 'history-list-box';
+            // ── ヘルパー：セクションボックスを構築 ──
+            function buildSectionBox(status, labelClass, labelText, items, cardBuilder) {
+                const box = document.createElement('div');
+                box.className = 'history-section-box';
+                // ヘッダー行
+                const hdr = document.createElement('div');
+                hdr.className = 'section-header-row';
+                const lbl = document.createElement('span');
+                lbl.className = labelClass;
+                lbl.textContent = labelText;
+                const mBtn = document.createElement('button');
+                mBtn.className = 'section-manage-btn' + (_openSectionMenu === status ? ' open' : '');
+                mBtn.textContent = '削除 [×]';
+                mBtn.onclick = () => toggleSectionMenu(status);
+                hdr.appendChild(lbl);
+                hdr.appendChild(mBtn);
+                box.appendChild(hdr);
+                // サブメニュー（×タップ後）
+                if (_openSectionMenu === status && _sectionEditMode !== status) {
+                    const menuRow = document.createElement('div');
+                    menuRow.className = 'section-action-row';
+                    const bulkBtn = document.createElement('button');
+                    bulkBtn.className = 'section-action-btn danger';
+                    bulkBtn.textContent = '一括削除';
+                    bulkBtn.onclick = () => startBulkDelete(status, labelText);
+                    const selBtn = document.createElement('button');
+                    selBtn.className = 'section-action-btn';
+                    selBtn.textContent = '選択して削除';
+                    selBtn.onclick = () => startSelectDelete(status);
+                    menuRow.appendChild(bulkBtn);
+                    menuRow.appendChild(selBtn);
+                    box.appendChild(menuRow);
+                }
+                // リスト
+                const list = document.createElement('div');
+                list.className = 'history-list-box';
+                items.forEach(item => { list.appendChild(cardBuilder(item, status)); });
+                box.appendChild(list);
+                // 選択削除バー（選択モード時）
+                if (_sectionEditMode === status) {
+                    const bar = document.createElement('div');
+                    bar.className = 'section-delete-bar';
+                    const ct = document.createElement('span');
+                    ct.className = 'count-text';
+                    ct.textContent = _editSelected.size + '件選択中';
+                    const execBtn = document.createElement('button');
+                    execBtn.className = 'section-action-btn danger';
+                    execBtn.textContent = '削除を実行';
+                    execBtn.disabled = _editSelected.size === 0;
+                    execBtn.onclick = confirmSelectDelete;
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.className = 'section-action-btn';
+                    cancelBtn.textContent = 'キャンセル';
+                    cancelBtn.onclick = cancelEditMode;
+                    bar.appendChild(ct);
+                    bar.appendChild(execBtn);
+                    bar.appendChild(cancelBtn);
+                    box.appendChild(bar);
+                }
+                return box;
+            }
 
-            onItems.forEach(item => {
+            // 上段：購入可能
+            const boxOn = buildSectionBox('ON', 'gold-label', '購入可能', onItems, (item, status) => {
                 const card = document.createElement('div');
                 card.className = 'history-card history-card-on';
-                if (item.url) card.onclick = () => window.open(item.url, '_blank');
                 const header = document.createElement('div');
                 header.className = 'history-card-header';
+                if (_sectionEditMode === status) {
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox'; cb.className = 'edit-checkbox';
+                    cb.checked = _editSelected.has(String(item.id));
+                    cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(String(item.id)); };
+                    header.appendChild(cb);
+                    card.onclick = () => toggleSelectItem(String(item.id));
+                } else if (item.url) { card.onclick = () => window.open(item.url, '_blank'); }
                 const titleEl = document.createElement('span');
-                titleEl.className = 'item-title';
-                titleEl.textContent = item.title;
+                titleEl.className = 'item-title'; titleEl.textContent = item.title;
                 const statusEl = document.createElement('span');
-                statusEl.className = 'history-status-on';
-                statusEl.textContent = getSimulatedCheckLabel();
-                header.appendChild(titleEl);
-                header.appendChild(statusEl);
+                statusEl.className = 'history-status-on'; statusEl.textContent = getSimulatedCheckLabel();
+                header.appendChild(titleEl); header.appendChild(statusEl);
                 const meta = document.createElement('div');
                 meta.className = 'item-meta history-meta-row';
                 meta.textContent = `${item.time} / ${item.shop} ｜ 最終確認：${formatLastChecked(item.lastCheckedAt)}`;
-                const delBtn = document.createElement('button');
-                delBtn.className = 'delete-btn-x';
-                delBtn.textContent = '×';
-                delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('history', item.id, card); };
-                card.appendChild(header);
-                card.appendChild(meta);
-                card.appendChild(delBtn);
-                listOn.appendChild(card);
+                card.appendChild(header); card.appendChild(meta);
+                return card;
             });
-            boxOn.appendChild(listOn);
             container.appendChild(boxOn);
 
-            // 下段：売り切れ（控えめなグレーラベル）・枠間は親の gap で 11px
-            const boxOff = document.createElement('div');
-            boxOff.className = 'history-section-box';
-            const labelOff = document.createElement('span');
-            labelOff.className = 'gray-label';
-            labelOff.textContent = '売り切れ';
-            boxOff.appendChild(labelOff);
-            const listOff = document.createElement('div');
-            listOff.className = 'history-list-box';
-
-            offItems.forEach(item => {
+            // 下段：売り切れ
+            const boxOff = buildSectionBox('OFF', 'gray-label', '売り切れ', offItems, (item, status) => {
                 const card = document.createElement('div');
                 card.className = 'history-card history-card-off';
                 const header = document.createElement('div');
                 header.className = 'history-card-header';
+                if (_sectionEditMode === status) {
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox'; cb.className = 'edit-checkbox';
+                    cb.checked = _editSelected.has(String(item.id));
+                    cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(String(item.id)); };
+                    header.appendChild(cb);
+                    card.onclick = () => toggleSelectItem(String(item.id));
+                }
                 const titleEl = document.createElement('span');
-                titleEl.className = 'item-title';
-                titleEl.textContent = item.title;
+                titleEl.className = 'item-title'; titleEl.textContent = item.title;
                 const statusEl = document.createElement('span');
-                statusEl.className = 'history-status-off';
-                statusEl.textContent = '売り切れ';
-                header.appendChild(titleEl);
-                header.appendChild(statusEl);
+                statusEl.className = 'history-status-off'; statusEl.textContent = '売り切れ';
+                header.appendChild(titleEl); header.appendChild(statusEl);
                 const meta = document.createElement('div');
                 meta.className = 'item-meta history-meta-row';
                 meta.textContent = `${item.time} / ${item.shop}`;
-                const delBtn = document.createElement('button');
-                delBtn.className = 'delete-btn-x';
-                delBtn.textContent = '×';
-                delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('history', item.id, card); };
-                card.appendChild(header);
-                card.appendChild(meta);
-                card.appendChild(delBtn);
-                listOff.appendChild(card);
+                card.appendChild(header); card.appendChild(meta);
+                return card;
             });
-            boxOff.appendChild(listOff);
             container.appendChild(boxOff);
 
             // 通知済みセクション（トレンド卒業アイテム・カレンダー連携ボタン付き）
             if (notifiedItems.length > 0) {
-                const boxNotif = document.createElement('div');
-                boxNotif.className = 'history-section-box';
-                const labelNotif = document.createElement('span');
-                labelNotif.className = 'gold-label';
-                labelNotif.textContent = '通知済み';
-                boxNotif.appendChild(labelNotif);
-                const listNotif = document.createElement('div');
-                listNotif.className = 'history-list-box';
-
-                notifiedItems.forEach(item => {
+                const boxNotif = buildSectionBox('NOTIFIED', 'gold-label', '通知済み', notifiedItems, (item, status) => {
                     const card = document.createElement('div');
                     card.className = 'history-card history-card-notified';
                     const header = document.createElement('div');
                     header.className = 'history-card-header';
+                    if (_sectionEditMode === status) {
+                        const cb = document.createElement('input');
+                        cb.type = 'checkbox'; cb.className = 'edit-checkbox';
+                        cb.checked = _editSelected.has(String(item.id));
+                        cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(String(item.id)); };
+                        header.appendChild(cb);
+                        card.onclick = () => toggleSelectItem(String(item.id));
+                    }
                     const titleEl = document.createElement('span');
-                    titleEl.className = 'item-title';
-                    titleEl.textContent = item.title;
+                    titleEl.className = 'item-title'; titleEl.textContent = item.title;
                     const statusEl = document.createElement('span');
                     statusEl.className = 'history-status-notified';
                     statusEl.textContent = item.releaseLabel || '発売日確定';
-                    header.appendChild(titleEl);
-                    header.appendChild(statusEl);
-                    const delBtn = document.createElement('button');
-                    delBtn.className = 'delete-btn-x';
-                    delBtn.textContent = '×';
-                    delBtn.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('history', item.id, card); };
+                    header.appendChild(titleEl); header.appendChild(statusEl);
                     card.appendChild(header);
-                    card.appendChild(delBtn);
-                    listNotif.appendChild(card);
+                    if (item.releaseLabel && _sectionEditMode !== status) {
+                        const calRow = document.createElement('div');
+                        calRow.className = 'cal-btn-row';
+                        const gcalBtn = document.createElement('a');
+                        gcalBtn.className = 'cal-btn';
+                        gcalBtn.href = buildGoogleCalendarUrl(item.title, item.releaseLabel);
+                        gcalBtn.target = '_blank'; gcalBtn.rel = 'noopener';
+                        gcalBtn.textContent = 'Google Calendar';
+                        const icsBtn = document.createElement('button');
+                        icsBtn.className = 'cal-btn'; icsBtn.textContent = '.ics（iPhone等）';
+                        icsBtn.onclick = () => downloadIcs(item.title, item.releaseLabel);
+                        calRow.appendChild(gcalBtn); calRow.appendChild(icsBtn);
+                        card.appendChild(calRow);
+                    }
+                    return card;
                 });
-                boxNotif.appendChild(listNotif);
                 container.appendChild(boxNotif);
             }
 
@@ -1665,36 +1746,107 @@
                 return;
             }
             if (rewardSlots >= maxSlots) {
-                alert('今月の24h周期 予約・新作探索枠の上限（' + maxSlots + '枠）に達しています。翌月までお待ちください。');
+                alert('今月のトレンド探索枠の上限（' + maxSlots + '枠）に達しています。翌月までお待ちください。');
                 return;
             }
             rewardSlots = Math.min(maxSlots, rewardSlots + 1);
             rewardUsesThisMonth += 1;
             rewardExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
-            alert('広告動画を視聴しました。24h周期 予約・新作探索枠を +1 追加しました。');
+            alert('広告動画を視聴しました。トレンド探索枠を +1 追加しました。');
             updateAdVisibility();
         }
 
         var _deleteTarget = null;
+        var _openSectionMenu = null;
+        var _sectionEditMode = null;
+        var _editSelected = new Set();
+
+        function toggleSectionMenu(status) {
+            if (_openSectionMenu === status) {
+                _openSectionMenu = null;
+            } else {
+                _openSectionMenu = status;
+                if (_sectionEditMode === status) { _sectionEditMode = null; _editSelected.clear(); }
+            }
+            if (status === 'TREND') { renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
+            else { renderHistory(historyItems); }
+        }
+        function startBulkDelete(status, label) {
+            _openSectionMenu = null;
+            _deleteTarget = { type: 'section-bulk', status: status };
+            var title = document.getElementById('delete-confirm-title');
+            if (title) title.innerHTML = '「' + label + '」のすべてを削除します。<br>本当によろしいですか？';
+            document.getElementById('delete-confirm-modal').style.display = 'flex';
+        }
+        function startSelectDelete(status) {
+            _openSectionMenu = null;
+            _sectionEditMode = status;
+            _editSelected.clear();
+            if (status === 'TREND') { renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
+            else { renderHistory(historyItems); }
+        }
+        function toggleSelectItem(id) {
+            var sid = String(id);
+            if (_editSelected.has(sid)) _editSelected.delete(sid); else _editSelected.add(sid);
+            if (_sectionEditMode === 'TREND') { renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
+            else { renderHistory(historyItems); }
+        }
+        function confirmSelectDelete() {
+            if (_editSelected.size === 0) return;
+            _deleteTarget = { type: 'section-selected' };
+            var title = document.getElementById('delete-confirm-title');
+            if (title) title.innerHTML = '選択した ' + _editSelected.size + '件を削除します。<br>本当によろしいですか？';
+            document.getElementById('delete-confirm-modal').style.display = 'flex';
+        }
+        function cancelEditMode() {
+            _sectionEditMode = null; _editSelected.clear();
+            renderHistory(historyItems);
+        }
+        function cancelTrendEditMode() {
+            _sectionEditMode = null; _editSelected.clear();
+            renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : '');
+        }
+
         function showDeleteConfirm(type, id, cardEl) {
             _deleteTarget = { type: type, id: id, cardEl: cardEl };
+            var title = document.getElementById('delete-confirm-title');
+            if (title) title.innerHTML = 'このアイテムを<br>監視対象から除外しますか？';
+            document.getElementById('delete-confirm-modal').style.display = 'flex';
+        }
+        function showSectionDeleteConfirm(status, label) {
+            _deleteTarget = { type: 'section', status: status };
+            var title = document.getElementById('delete-confirm-title');
+            if (title) title.innerHTML = '「' + label + '」の全アイテムを<br>監視対象から除外しますか？';
             document.getElementById('delete-confirm-modal').style.display = 'flex';
         }
         function confirmDelete() {
             if (!_deleteTarget) return;
             var t = _deleteTarget;
             document.getElementById('delete-confirm-modal').style.display = 'none';
-            t.cardEl.classList.add('fading-out');
-            setTimeout(function() {
-                if (t.type === 'history') {
-                    historyItems = historyItems.filter(function(i) { return String(i.id) !== String(t.id); });
-                    renderHistory(historyItems);
-                } else if (t.type === 'trend') {
-                    trendWatching.delete(t.id);
-                    renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : '');
-                    renderSettingsTrendWatching();
-                }
-            }, 300);
+            if (t.type === 'section') {
+                historyItems = historyItems.filter(function(i) { return i.status !== t.status; });
+                renderHistory(historyItems);
+            } else if (t.type === 'section-bulk') {
+                if (t.status === 'TREND') { trendWatching.clear(); renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
+                else { historyItems = historyItems.filter(function(i) { return i.status !== t.status; }); renderHistory(historyItems); }
+                _sectionEditMode = null; _editSelected.clear();
+            } else if (t.type === 'section-selected') {
+                if (_sectionEditMode === 'TREND') { _editSelected.forEach(id => trendWatching.delete(id)); renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); renderSettingsTrendWatching(); }
+                else { historyItems = historyItems.filter(function(i) { return !_editSelected.has(String(i.id)); }); renderHistory(historyItems); }
+                _sectionEditMode = null; _editSelected.clear();
+            } else {
+                t.cardEl.classList.add('fading-out');
+                setTimeout(function() {
+                    if (t.type === 'history') {
+                        historyItems = historyItems.filter(function(i) { return String(i.id) !== String(t.id); });
+                        renderHistory(historyItems);
+                    } else if (t.type === 'trend') {
+                        trendWatching.delete(t.id);
+                        renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : '');
+                        renderSettingsTrendWatching();
+                    }
+                }, 300);
+            }
             _deleteTarget = null;
         }
         function cancelDelete() {
@@ -1734,10 +1886,6 @@
             var anyOn = trendCb.checked || stockCb.checked;
             input.readOnly = !anyOn;
             warn.style.display = 'none';
-            var guideHint = document.getElementById('mode-guide-hint');
-            if (guideHint) {
-                guideHint.className = 'mode-guide-hint ' + (anyOn ? 'done' : 'pulsing');
-            }
             if (!anyOn) {
                 hint.style.display = 'none';
                 input.placeholder = 'モードを選択してください';
