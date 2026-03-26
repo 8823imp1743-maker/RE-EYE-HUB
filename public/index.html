@@ -715,13 +715,13 @@
             box-shadow: 0 0 10px rgba(155,89,182,0.4);
             font-weight: bold;
         }
-        /* SYNC TO HUB ボタン（枠線＋発光のみ） */
+        /* ハブと同期するボタン（枠線＋発光のみ） */
         .sync-hub-btn {
             width: 100%; background: none;
             border: 1px solid var(--amethyst);
             color: var(--amethyst);
             padding: 14px; font-size: 11px; font-weight: bold;
-            letter-spacing: 4px; text-transform: uppercase;
+            letter-spacing: 2px;
             border-radius: 2px; cursor: pointer; margin-top: var(--gap-11);
             transition: 0.3s;
             box-shadow: 0 0 14px rgba(155,89,182,0.2);
@@ -895,11 +895,10 @@
                 <div class="chip-row" id="dial-gender">
                     <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
                     <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
-                    <div class="setting-chip" data-val="unknown" onclick="selectChip('gender',this)">未設定</div>
                 </div>
 
-                <!-- 興味カテゴリ（複数選択） -->
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（複数可）</span>
+                <!-- 興味カテゴリ（複数選択・最大5件） -->
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（最大5件）</span>
                 <div class="chip-row" id="dial-interests">
                     <div class="setting-chip" data-val="fashion" onclick="toggleInterest(this)">ファッション</div>
                     <div class="setting-chip" data-val="shoes" onclick="toggleInterest(this)">シューズ</div>
@@ -923,7 +922,8 @@
                     <div class="setting-chip" data-val="M" onclick="selectChip('cloth',this)">M</div>
                     <div class="setting-chip" data-val="L" onclick="selectChip('cloth',this)">L</div>
                     <div class="setting-chip" data-val="XL" onclick="selectChip('cloth',this)">XL</div>
-                    <div class="setting-chip" data-val="3L" onclick="selectChip('cloth',this)">3L</div>
+                    <div class="setting-chip" data-val="2XL" onclick="selectChip('cloth',this)">2XL</div>
+                    <div class="setting-chip" data-val="3XL" onclick="selectChip('cloth',this)">3XL</div>
                 </div>
 
                 <!-- 靴のサイズ -->
@@ -978,7 +978,7 @@
                     <div class="setting-chip" data-val="22" onclick="selectChip('childShoe',this)">22</div>
                 </div>
 
-                <button class="sync-hub-btn" onclick="saveUserSettings(true)">SYNC TO HUB</button>
+                <button class="sync-hub-btn" onclick="saveUserSettings(true)">ハブと同期する</button>
             </div>
 
             <div class="transparent-box">
@@ -1324,14 +1324,8 @@
             return url;
         }
 
-        // トレンド探索：曖昧な発売時期で「焦らし」フック
-        let trendItems = [
-            { id: 't1', title: '限定トリプルジップバッグ', releaseLabel: '3月中旬 発売予定', sourceUrl: 'https://www.rakuten.co.jp', shop: '楽天', category: '新商品', releaseAt: null },
-            { id: 't2', title: '新作スモールウォレット', releaseLabel: '3月下旬 発売予定', sourceUrl: 'https://www.amazon.co.jp', shop: 'Amazon', category: '新商品', releaseAt: null },
-            { id: 't3', title: '春限定ミニトート', releaseLabel: '3月末〜4月上旬 発売予定', sourceUrl: 'https://www.rakuten.co.jp', shop: '楽天', category: '新商品', releaseAt: null },
-            { id: 't4', title: 'プレミアムレザー財布', releaseLabel: '4月上旬 発売予定', sourceUrl: 'https://shopping.yahoo.co.jp', shop: 'Yahoo', category: '再入荷', releaseAt: null },
-            { id: 't5', title: 'コラボドロップキャップ', releaseLabel: '4月上旬〜中旬 発売予定', sourceUrl: 'https://www.rakuten.co.jp', shop: '楽天', category: 'セール', releaseAt: null }
-        ];
+        // トレンド探索：ユーザーが見守り追加したアイテムのみ表示
+        let trendItems = [];
         let trendWatching = new Set();
         let trendTimers = {};
 
@@ -1365,6 +1359,15 @@
             const watchingCount = trendWatching.size;
 
             container.innerHTML = '';
+
+            if (list.length === 0) {
+                var empty = document.createElement('p');
+                empty.className = 'trend-intro-11px';
+                empty.style.cssText = 'text-align:center; color:rgba(247,231,206,0.35); margin:24px 0;';
+                empty.textContent = '気になるアイテムを検索して、見守りリストを作成しましょう';
+                container.appendChild(empty);
+            }
+
             // TRENDセクションのサブメニュー・バーを更新
             var trendActionRow = document.getElementById('trend-section-action-row');
             var trendManageBtn = document.getElementById('trend-manage-btn');
@@ -1514,46 +1517,8 @@
             if (word) updateBannerAdContent(word);
         }
 
-        // デモ用：同一商品のマルチサイト状況を含む履歴データ
-        let historyItems = [
-            {
-                id: 1,
-                title: '限定トリプルジップバッグ',
-                status: 'ON',
-                shop: '楽天',
-                time: '2026/03/15 10:45',
-                url: 'https://www.rakuten.co.jp',
-                lastCheckedAt: Date.now()
-            },
-            {
-                id: 2,
-                title: '限定トリプルジップバッグ',
-                status: 'OFF',
-                shop: 'Yahoo',
-                time: '2026/03/15 11:02',
-                url: 'https://shopping.yahoo.co.jp',
-                lastCheckedAt: Date.now()
-            },
-            {
-                id: 3,
-                title: '新作スモールウォレット',
-                status: 'ON',
-                shop: 'Amazon',
-                time: '2026/03/14 22:30',
-                url: 'https://www.amazon.co.jp',
-                lastCheckedAt: Date.now()
-            },
-            {
-                id: 'notif-demo-1',
-                title: 'ヴィトン 春コレクション財布',
-                status: 'NOTIFIED',
-                shop: '楽天',
-                time: '2026/03/18',
-                releaseLabel: '3/28 に発売決定',
-                url: 'https://www.rakuten.co.jp',
-                lastCheckedAt: Date.now()
-            }
-        ];
+        // 履歴アイテム（APIから動的に追加される）
+        let historyItems = [];
 
         // 履歴監視用のタイマーID
         let historyObserverTimer = null;
@@ -1685,28 +1650,12 @@
                 lbl.className = labelClass;
                 lbl.textContent = labelText;
                 const mBtn = document.createElement('button');
-                mBtn.className = 'section-manage-btn' + (_openSectionMenu === status ? ' open' : '');
-                mBtn.textContent = '削除 [×]';
+                mBtn.className = 'section-manage-btn' + (_sectionEditMode === status ? ' open' : '');
+                mBtn.textContent = _sectionEditMode === status ? '× 戻る' : '削除';
                 mBtn.onclick = () => toggleSectionMenu(status);
                 hdr.appendChild(lbl);
                 hdr.appendChild(mBtn);
                 box.appendChild(hdr);
-                // サブメニュー（×タップ後）
-                if (_openSectionMenu === status && _sectionEditMode !== status) {
-                    const menuRow = document.createElement('div');
-                    menuRow.className = 'section-action-row';
-                    const bulkBtn = document.createElement('button');
-                    bulkBtn.className = 'section-action-btn danger';
-                    bulkBtn.textContent = '一括削除';
-                    bulkBtn.onclick = () => startBulkDelete(status, labelText);
-                    const selBtn = document.createElement('button');
-                    selBtn.className = 'section-action-btn';
-                    selBtn.textContent = '選択して削除';
-                    selBtn.onclick = () => startSelectDelete(status);
-                    menuRow.appendChild(bulkBtn);
-                    menuRow.appendChild(selBtn);
-                    box.appendChild(menuRow);
-                }
                 // リスト
                 const list = document.createElement('div');
                 list.className = 'history-list-box';
@@ -1831,6 +1780,15 @@
                 container.appendChild(boxNotif);
             }
 
+            // 全セクション空の場合
+            if (onItems.length === 0 && offItems.length === 0 && notifiedItems.length === 0) {
+                const emptyMsg = document.createElement('p');
+                emptyMsg.className = 'trend-intro-11px';
+                emptyMsg.style.cssText = 'text-align:center; color:rgba(247,231,206,0.35); margin:40px 0 20px; padding:0 20px;';
+                emptyMsg.textContent = '気になるアイテムを検索して、見守りリストを作成しましょう';
+                container.appendChild(emptyMsg);
+            }
+
             // 免責：各枠のさらに下・スクロール最後に配置（gap で 11px）
             const disclaimer = document.createElement('p');
             disclaimer.className = 'disclaimer-11px';
@@ -1951,11 +1909,15 @@
         var _editSelected = new Set();
 
         function toggleSectionMenu(status) {
-            if (_openSectionMenu === status) {
-                _openSectionMenu = null;
+            if (_sectionEditMode === status) {
+                // 既に編集モード → 解除
+                _sectionEditMode = null;
+                _editSelected.clear();
             } else {
-                _openSectionMenu = status;
-                if (_sectionEditMode === status) { _sectionEditMode = null; _editSelected.clear(); }
+                // 編集モードへ直接切替
+                _openSectionMenu = null;
+                _sectionEditMode = status;
+                _editSelected.clear();
             }
             if (status === 'TREND') { renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
             else { renderHistory(historyItems); }
@@ -2093,8 +2055,13 @@
             if (typeof saveUserSettings === 'function') saveUserSettings();
         }
 
-        // 興味カテゴリ：複数選択トグル
+        // 興味カテゴリ：複数選択トグル（最大5件）
         function toggleInterest(el) {
+            var MAX_INTERESTS = 5;
+            if (!el.classList.contains('active')) {
+                var current = document.querySelectorAll('#dial-interests .setting-chip.active').length;
+                if (current >= MAX_INTERESTS) return; // 上限に達している場合は何もしない
+            }
             el.classList.toggle('active');
             if (typeof saveUserSettings === 'function') saveUserSettings();
         }
