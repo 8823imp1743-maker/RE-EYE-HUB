@@ -411,6 +411,7 @@
         #purpose-modal.open { display: flex; }
         .purpose-box {
             width: 100%; max-width: 400px;
+            max-height: 88vh; overflow-y: auto;
             background: rgba(14,4,22,0.97); border: 1px solid rgba(155,89,182,0.5);
             box-shadow: 0 0 28px rgba(155,89,182,0.35); border-radius: 2px;
             padding: 22px 18px; box-sizing: border-box;
@@ -897,23 +898,6 @@
                     <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
                 </div>
 
-                <!-- 興味カテゴリ（複数選択・最大5件） -->
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（最大5件）</span>
-                <div class="chip-row" id="dial-interests">
-                    <div class="setting-chip" data-val="fashion" onclick="toggleInterest(this)">ファッション</div>
-                    <div class="setting-chip" data-val="shoes" onclick="toggleInterest(this)">シューズ</div>
-                    <div class="setting-chip" data-val="bag" onclick="toggleInterest(this)">バッグ・財布</div>
-                    <div class="setting-chip" data-val="kids" onclick="toggleInterest(this)">キッズ</div>
-                    <div class="setting-chip" data-val="beauty" onclick="toggleInterest(this)">コスメ・美容</div>
-                    <div class="setting-chip" data-val="gadget" onclick="toggleInterest(this)">ガジェット・家電</div>
-                    <div class="setting-chip" data-val="sneaker" onclick="toggleInterest(this)">スニーカー</div>
-                    <div class="setting-chip" data-val="sports" onclick="toggleInterest(this)">スポーツ</div>
-                    <div class="setting-chip" data-val="outdoor" onclick="toggleInterest(this)">アウトドア</div>
-                    <div class="setting-chip" data-val="interior" onclick="toggleInterest(this)">インテリア</div>
-                    <div class="setting-chip" data-val="food" onclick="toggleInterest(this)">食品・グルメ</div>
-                    <div class="setting-chip" data-val="hobby" onclick="toggleInterest(this)">ホビー・趣味</div>
-                </div>
-
                 <!-- 服のサイズ -->
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
                 <div class="chip-row" id="dial-cloth-size">
@@ -978,7 +962,24 @@
                     <div class="setting-chip" data-val="22" onclick="selectChip('childShoe',this)">22</div>
                 </div>
 
-                <button class="sync-hub-btn" onclick="saveUserSettings(true)">ハブと同期する</button>
+                <!-- 興味カテゴリ（複数選択・最大5件） -->
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（最大5件）</span>
+                <div class="chip-row" id="dial-interests">
+                    <div class="setting-chip" data-val="fashion" onclick="toggleInterest(this)">ファッション</div>
+                    <div class="setting-chip" data-val="shoes" onclick="toggleInterest(this)">シューズ</div>
+                    <div class="setting-chip" data-val="bag" onclick="toggleInterest(this)">バッグ・財布</div>
+                    <div class="setting-chip" data-val="kids" onclick="toggleInterest(this)">キッズ</div>
+                    <div class="setting-chip" data-val="beauty" onclick="toggleInterest(this)">コスメ・美容</div>
+                    <div class="setting-chip" data-val="gadget" onclick="toggleInterest(this)">ガジェット・家電</div>
+                    <div class="setting-chip" data-val="sneaker" onclick="toggleInterest(this)">スニーカー</div>
+                    <div class="setting-chip" data-val="sports" onclick="toggleInterest(this)">スポーツ</div>
+                    <div class="setting-chip" data-val="outdoor" onclick="toggleInterest(this)">アウトドア</div>
+                    <div class="setting-chip" data-val="interior" onclick="toggleInterest(this)">インテリア</div>
+                    <div class="setting-chip" data-val="food" onclick="toggleInterest(this)">食品・グルメ</div>
+                    <div class="setting-chip" data-val="hobby" onclick="toggleInterest(this)">ホビー・趣味</div>
+                </div>
+
+                <button class="sync-hub-btn" onclick="saveUserSettings(true)">設定を保存する</button>
             </div>
 
             <div class="transparent-box">
@@ -1052,30 +1053,39 @@
     <!-- 目的選択モーダル -->
     <div id="purpose-modal">
         <div class="purpose-box">
-            <span class="gold-label">誰のための見守りですか？</span>
-            <div class="purpose-btn-row">
-                <button class="purpose-btn" id="pbtn-self" onclick="selectPurpose('self')">自分用</button>
-                <button class="purpose-btn" id="pbtn-gift" onclick="selectPurpose('gift')">ギフト用</button>
-                <button class="purpose-btn" id="pbtn-child" onclick="selectPurpose('child')">子供用</button>
-            </div>
-            <div id="purpose-profile-form" style="display:none; margin-top:var(--gap-11);">
-                <span class="gold-label" style="font-size:11px; margin-bottom:8px;">対象者プロフィール（任意）</span>
-                <div class="profile-form-grid">
-                    <select id="p-gender" class="profile-select">
-                        <option value="">性別</option>
-                        <option value="female">女性</option>
-                        <option value="male">男性</option>
-                        <option value="unknown">不明</option>
-                    </select>
-                    <input type="text" id="p-height" class="profile-input" placeholder="身長 (cm)">
-                    <input type="text" id="p-cloth-size" class="profile-input" placeholder="服サイズ (S/M/L...)">
-                    <input type="text" id="p-shoe-size" class="profile-input" placeholder="靴サイズ (cm)">
+            <!-- STEP 1: 誰のため -->
+            <div id="purpose-step1">
+                <span class="gold-label">誰のための見守りですか？</span>
+                <div class="purpose-btn-row">
+                    <button class="purpose-btn" id="pbtn-self" onclick="selectPurpose('self')">自分用</button>
+                    <button class="purpose-btn" id="pbtn-gift" onclick="selectPurpose('gift')">ギフト用</button>
+                    <button class="purpose-btn" id="pbtn-child" onclick="selectPurpose('child')">子供用</button>
                 </div>
             </div>
-            <div id="purpose-confirm-box" class="confirm-glow-box" style="display:none;">
+
+            <!-- STEP 2: カテゴリ選択 -->
+            <div id="purpose-step2" style="display:none; margin-top:var(--gap-11);">
+                <span class="gold-label" style="font-size:11px; margin-bottom:8px;">具体的なアイテムは？（複数可）</span>
+                <div class="chip-row" id="modal-cat-chips" style="margin-top:8px;">
+                    <div class="setting-chip" data-val="ファッション" onclick="toggleModalCat(this)">ファッション</div>
+                    <div class="setting-chip" data-val="シューズ" onclick="toggleModalCat(this)">シューズ</div>
+                    <div class="setting-chip" data-val="バッグ・財布" onclick="toggleModalCat(this)">バッグ・財布</div>
+                    <div class="setting-chip" data-val="コスメ・美容" onclick="toggleModalCat(this)">コスメ・美容</div>
+                    <div class="setting-chip" data-val="ガジェット・家電" onclick="toggleModalCat(this)">ガジェット・家電</div>
+                    <div class="setting-chip" data-val="スニーカー" onclick="toggleModalCat(this)">スニーカー</div>
+                    <div class="setting-chip" data-val="スポーツ" onclick="toggleModalCat(this)">スポーツ</div>
+                    <div class="setting-chip" data-val="インテリア" onclick="toggleModalCat(this)">インテリア</div>
+                    <div class="setting-chip" data-val="キッズ" onclick="toggleModalCat(this)">キッズ</div>
+                    <div class="setting-chip" data-val="食品・グルメ" onclick="toggleModalCat(this)">食品・グルメ</div>
+                    <div class="setting-chip" data-val="ホビー・趣味" onclick="toggleModalCat(this)">ホビー・趣味</div>
+                </div>
+            </div>
+
+            <!-- 確認サマリー -->
+            <div id="purpose-confirm-box" class="confirm-glow-box" style="display:none; margin-top:var(--gap-11);">
                 <div class="confirm-row">対象： <span id="conf-purpose">—</span></div>
-                <div class="confirm-row">性別： <span id="conf-gender">—</span></div>
-                <div class="confirm-row">サイズ： <span id="conf-size">—</span></div>
+                <div class="confirm-row">カテゴリ： <span id="conf-category">—</span></div>
+                <div class="confirm-row">補完キーワード： <span id="conf-keyword">—</span></div>
                 <div class="confirm-row">監視モード： <span id="conf-mode">—</span></div>
             </div>
             <button class="btn-purple" id="purpose-confirm-btn" onclick="confirmMonitor()" style="display:none;">この内容で見守りを開始</button>
@@ -1261,7 +1271,8 @@
             _pendingMode = modes;
             _pendingPurpose = '';
             document.querySelectorAll('.purpose-btn').forEach(b => b.classList.remove('selected'));
-            document.getElementById('purpose-profile-form').style.display = 'none';
+            document.querySelectorAll('#modal-cat-chips .setting-chip').forEach(c => c.classList.remove('active'));
+            document.getElementById('purpose-step2').style.display = 'none';
             document.getElementById('purpose-confirm-box').style.display = 'none';
             document.getElementById('purpose-confirm-btn').style.display = 'none';
             document.getElementById('purpose-modal').classList.add('open');
@@ -1269,43 +1280,49 @@
         function closePurposeModal() {
             document.getElementById('purpose-modal').classList.remove('open');
         }
+        function toggleModalCat(el) {
+            el.classList.toggle('active');
+            _refreshModalConfirm();
+        }
         function selectPurpose(type) {
             _pendingPurpose = type;
             document.querySelectorAll('.purpose-btn').forEach(b => b.classList.remove('selected'));
             document.getElementById('pbtn-' + type).classList.add('selected');
-
-            const showProfile = (type === 'gift' || type === 'child');
-            document.getElementById('purpose-profile-form').style.display = showProfile ? 'block' : 'none';
-
-            // 確認ボックス生成
-            const genderVal = showProfile ? (document.getElementById('p-gender').value || '未入力') : userProfile.gender || '未設定';
-            const clothVal = showProfile ? (document.getElementById('p-cloth-size').value || '—') : userProfile.clothSize || '—';
-            const shoeVal = showProfile ? (document.getElementById('p-shoe-size').value || '—') : userProfile.shoeSize || '—';
-            const purposeLabel = { self: '自分用', gift: 'ギフト用', child: '子供用' }[type];
+            // ステップ2（カテゴリ選択）を表示
+            document.getElementById('purpose-step2').style.display = 'block';
+            _refreshModalConfirm();
+        }
+        function _getModalCategories() {
+            return Array.from(document.querySelectorAll('#modal-cat-chips .setting-chip.active'))
+                .map(c => c.dataset.val);
+        }
+        function _buildEnrichedKeyword(base, purpose, cats) {
+            // カテゴリが選ばれていれば先頭2件をキーワードに付加してノイズを絞り込む
+            if (cats.length === 0) return base;
+            return base + ' ' + cats.slice(0, 2).join(' ');
+        }
+        function _refreshModalConfirm() {
+            if (!_pendingPurpose) return;
+            const cats = _getModalCategories();
+            const purposeLabel = { self: '自分用', gift: 'ギフト用', child: '子供用' }[_pendingPurpose];
+            const catLabel = cats.length > 0 ? cats.join('・') : '（未選択）';
+            const enriched = _buildEnrichedKeyword(_pendingKeyword, _pendingPurpose, cats);
             const modeLabel = _pendingMode.join(' + ') || '—';
-
             document.getElementById('conf-purpose').textContent = purposeLabel;
-            document.getElementById('conf-gender').textContent = genderVal;
-            document.getElementById('conf-size').textContent = '服：' + clothVal + ' / 靴：' + shoeVal;
+            document.getElementById('conf-category').textContent = catLabel;
+            document.getElementById('conf-keyword').textContent = enriched;
             document.getElementById('conf-mode').textContent = modeLabel;
             document.getElementById('purpose-confirm-box').style.display = 'block';
             document.getElementById('purpose-confirm-btn').style.display = 'block';
         }
         function confirmMonitor() {
-            // プロフィール保存
-            if (_pendingPurpose === 'gift' || _pendingPurpose === 'child') {
-                userProfile.gender = document.getElementById('p-gender').value || userProfile.gender;
-                userProfile.height = document.getElementById('p-height').value || userProfile.height;
-                userProfile.clothSize = document.getElementById('p-cloth-size').value || userProfile.clothSize;
-                userProfile.shoeSize = document.getElementById('p-shoe-size').value || userProfile.shoeSize;
-                if (_pendingPurpose === 'child') userProfile.hasChildren = true;
-            }
+            const cats = _getModalCategories();
+            const enrichedKeyword = _buildEnrichedKeyword(_pendingKeyword, _pendingPurpose, cats);
+            if (_pendingPurpose === 'child') userProfile.hasChildren = true;
             closePurposeModal();
-            // 性別連動広告を更新
-            updateBannerAdContent(_pendingKeyword);
-            // キューに追加して監視開始
-            _pendingMode.forEach(mode => enqueueWatch(_pendingKeyword, mode));
-            _startMonitorCore(_pendingKeyword);
+            updateBannerAdContent(enrichedKeyword);
+            _pendingMode.forEach(mode => enqueueWatch(enrichedKeyword, mode));
+            _startMonitorCore(enrichedKeyword);
         }
 
         // プラン別・見守り枠上限
