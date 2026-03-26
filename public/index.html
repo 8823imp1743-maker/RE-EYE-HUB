@@ -705,12 +705,17 @@
             padding: 10px 50%;
             scrollbar-width: none;
             -webkit-overflow-scrolling: touch;
+            /* 両端を消して中央を強調する */
+            mask-image: linear-gradient(to right, transparent, black 40%, black 60%, transparent);
+            -webkit-mask-image: linear-gradient(to right, transparent, black 40%, black 60%, transparent);
         }
         .dial-container::-webkit-scrollbar { display: none; }
         .dial-item {
             scroll-snap-align: center;
             flex-shrink: 0;
+            min-width: 60px; /* 数値の間隔を一定にする */
             font-size: 11px;
+            font-family: 'Tenor Sans', sans-serif; /* 計器っぽいフォント */
             color: rgba(255,255,255,0.3);
             cursor: pointer;
             transition: 0.3s;
@@ -718,6 +723,7 @@
             letter-spacing: 1px;
             padding: 4px 2px;
             user-select: none;
+            text-align: center;
         }
         /* 中央に来た目盛りだけが発光 */
         .dial-item.selected {
