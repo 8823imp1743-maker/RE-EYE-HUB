@@ -696,68 +696,39 @@
             background: rgba(155,89,182,0.06); border: 1px solid rgba(155,89,182,0.4);
             border-radius: 2px;
         }
-        /* 垂直固定・ハントピッカー */
-        .vertical-dial-box {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-            padding: 10px 0;
-            background: rgba(10, 0, 18, 0.4);
-            border-radius: 2px;
-            border: 1px solid rgba(155, 89, 182, 0.15);
-            position: relative;
-            overflow: hidden;
-        }
-        /* 中央の固定レンズ（通電枠） */
-        .dial-lens {
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 28px;
-            transform: translateY(-50%);
-            background: rgba(155, 89, 182, 0.08);
-            border-top: 1px solid rgba(155, 89, 182, 0.4);
-            border-bottom: 1px solid rgba(155, 89, 182, 0.4);
-            pointer-events: none;
-            z-index: 0;
-        }
-        .dial-item {
-            font-size: 11px;
-            height: 28px;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: rgba(255, 255, 255, 0.25);
-            cursor: pointer;
-            transition: 0.25s ease;
-            z-index: 1;
-            letter-spacing: 1px;
-            font-family: 'Tenor Sans', sans-serif;
-            user-select: none;
-        }
-        /* タップした瞬間、アメジストに発光 */
-        .dial-item.active {
-            color: var(--amethyst);
-            text-shadow: 0 0 10px var(--amethyst);
-            font-weight: bold;
-            transform: scale(1.1);
-        }
-        /* 興味カテゴリ（複数選択・横並びチップ） */
-        .interest-row {
+        /* 設定チップ（タップ即選択 / 水平折り返し） */
+        .chip-row {
             display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;
         }
-        .interest-chip {
-            padding: 6px 11px; font-size: 11px; letter-spacing: 0.5px;
-            color: var(--champagne-gold); background: rgba(155,89,182,0.05);
-            border: 1px solid rgba(155,89,182,0.3); border-radius: 2px;
-            cursor: pointer; transition: 0.2s; user-select: none;
+        .setting-chip {
+            padding: 7px 12px; font-size: 11px; letter-spacing: 0.8px;
+            color: rgba(247,231,206,0.6);
+            background: rgba(155,89,182,0.04);
+            border: 1px solid rgba(155,89,182,0.25); border-radius: 2px;
+            cursor: pointer; transition: 0.2s ease; user-select: none;
+            white-space: nowrap;
         }
-        .interest-chip.active {
-            background: rgba(155,89,182,0.25); border-color: var(--amethyst);
-            color: #fff; box-shadow: 0 0 10px rgba(155,89,182,0.4);
+        .setting-chip.active {
+            color: var(--amethyst);
+            background: rgba(155,89,182,0.15);
+            border-color: var(--amethyst);
+            box-shadow: 0 0 10px rgba(155,89,182,0.4);
+            font-weight: bold;
+        }
+        /* SYNC TO HUB ボタン（枠線＋発光のみ） */
+        .sync-hub-btn {
+            width: 100%; background: none;
+            border: 1px solid var(--amethyst);
+            color: var(--amethyst);
+            padding: 14px; font-size: 11px; font-weight: bold;
+            letter-spacing: 4px; text-transform: uppercase;
+            border-radius: 2px; cursor: pointer; margin-top: var(--gap-11);
+            transition: 0.3s;
+            box-shadow: 0 0 14px rgba(155,89,182,0.2);
+        }
+        .sync-hub-btn:active {
+            box-shadow: 0 0 28px rgba(155,89,182,0.65);
+            background: rgba(155,89,182,0.08);
         }
         /* ショップロゴリンクボタン */
         .shop-logo-btn {
@@ -919,99 +890,95 @@
             <div class="transparent-box" id="user-settings-box">
                 <span class="gold-label">ユーザー設定</span>
 
-                <!-- 性別・服・靴・子供：垂直ピッカー（4列グリッド） -->
-                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:var(--gap-11); margin-top:6px;">
-
-                    <!-- 性別 -->
-                    <div>
-                        <span class="meta-11px" style="display:block;margin-bottom:4px;text-align:center;">性別</span>
-                        <div class="vertical-dial-box" id="dial-gender">
-                            <div class="dial-lens"></div>
-                            <div class="dial-item" data-val="female" onclick="selectDial('gender',this)">女性</div>
-                            <div class="dial-item" data-val="male" onclick="selectDial('gender',this)">男性</div>
-                            <div class="dial-item" data-val="unknown" onclick="selectDial('gender',this)">未設定</div>
-                        </div>
-                    </div>
-
-                    <!-- 服のサイズ -->
-                    <div>
-                        <span class="meta-11px" style="display:block;margin-bottom:4px;text-align:center;">服</span>
-                        <div class="vertical-dial-box" id="dial-cloth-size">
-                            <div class="dial-lens"></div>
-                            <div class="dial-item" data-val="SS" onclick="selectDial('cloth',this)">SS</div>
-                            <div class="dial-item" data-val="S" onclick="selectDial('cloth',this)">S</div>
-                            <div class="dial-item" data-val="M" onclick="selectDial('cloth',this)">M</div>
-                            <div class="dial-item" data-val="L" onclick="selectDial('cloth',this)">L</div>
-                            <div class="dial-item" data-val="XL" onclick="selectDial('cloth',this)">XL</div>
-                            <div class="dial-item" data-val="2L" onclick="selectDial('cloth',this)">2L</div>
-                            <div class="dial-item" data-val="3L" onclick="selectDial('cloth',this)">3L</div>
-                            <div class="dial-item" data-val="4L" onclick="selectDial('cloth',this)">4L</div>
-                            <div class="dial-item" data-val="5L" onclick="selectDial('cloth',this)">5L</div>
-                        </div>
-                    </div>
-
-                    <!-- 靴のサイズ -->
-                    <div>
-                        <span class="meta-11px" style="display:block;margin-bottom:4px;text-align:center;">靴 (cm)</span>
-                        <div class="vertical-dial-box" id="dial-shoe-size">
-                            <div class="dial-lens"></div>
-                            <div class="dial-item" data-val="22.0" onclick="selectDial('shoe',this)">22.0</div>
-                            <div class="dial-item" data-val="22.5" onclick="selectDial('shoe',this)">22.5</div>
-                            <div class="dial-item" data-val="23.0" onclick="selectDial('shoe',this)">23.0</div>
-                            <div class="dial-item" data-val="23.5" onclick="selectDial('shoe',this)">23.5</div>
-                            <div class="dial-item" data-val="24.0" onclick="selectDial('shoe',this)">24.0</div>
-                            <div class="dial-item" data-val="24.5" onclick="selectDial('shoe',this)">24.5</div>
-                            <div class="dial-item" data-val="25.0" onclick="selectDial('shoe',this)">25.0</div>
-                            <div class="dial-item" data-val="25.5" onclick="selectDial('shoe',this)">25.5</div>
-                            <div class="dial-item" data-val="26.0" onclick="selectDial('shoe',this)">26.0</div>
-                            <div class="dial-item" data-val="26.5" onclick="selectDial('shoe',this)">26.5</div>
-                            <div class="dial-item" data-val="27.0" onclick="selectDial('shoe',this)">27.0</div>
-                            <div class="dial-item" data-val="27.5" onclick="selectDial('shoe',this)">27.5</div>
-                            <div class="dial-item" data-val="28.0" onclick="selectDial('shoe',this)">28.0</div>
-                            <div class="dial-item" data-val="29.0" onclick="selectDial('shoe',this)">29.0</div>
-                            <div class="dial-item" data-val="30.0" onclick="selectDial('shoe',this)">30.0</div>
-                        </div>
-                    </div>
-
-                    <!-- お子様 -->
-                    <div>
-                        <span class="meta-11px" style="display:block;margin-bottom:4px;text-align:center;">子供</span>
-                        <div class="vertical-dial-box" id="dial-child-gender">
-                            <div class="dial-lens"></div>
-                            <div class="dial-item" data-val="none" onclick="selectDial('childGender',this)">なし</div>
-                            <div class="dial-item" data-val="girl" onclick="selectDial('childGender',this)">女の子</div>
-                            <div class="dial-item" data-val="boy" onclick="selectDial('childGender',this)">男の子</div>
-                        </div>
-                        <div class="vertical-dial-box" id="dial-child-size" style="margin-top:6px;">
-                            <div class="dial-lens"></div>
-                            <div class="dial-item" data-val="80" onclick="selectDial('childClothSize',this)">80</div>
-                            <div class="dial-item" data-val="90" onclick="selectDial('childClothSize',this)">90</div>
-                            <div class="dial-item" data-val="100" onclick="selectDial('childClothSize',this)">100</div>
-                            <div class="dial-item" data-val="110" onclick="selectDial('childClothSize',this)">110</div>
-                            <div class="dial-item" data-val="120" onclick="selectDial('childClothSize',this)">120</div>
-                            <div class="dial-item" data-val="130" onclick="selectDial('childClothSize',this)">130</div>
-                            <div class="dial-item" data-val="140" onclick="selectDial('childClothSize',this)">140</div>
-                            <div class="dial-item" data-val="150" onclick="selectDial('childClothSize',this)">150</div>
-                            <div class="dial-item" data-val="160" onclick="selectDial('childClothSize',this)">160</div>
-                        </div>
-                    </div>
-
-                </div><!-- /4列グリッド -->
-
-                <!-- 興味カテゴリ（複数選択・横並びチップ） -->
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（複数可）</span>
-                <div class="interest-row" id="dial-interests">
-                    <div class="interest-chip" data-val="fashion" onclick="toggleInterest(this)">ファッション</div>
-                    <div class="interest-chip" data-val="shoes" onclick="toggleInterest(this)">シューズ</div>
-                    <div class="interest-chip" data-val="bag" onclick="toggleInterest(this)">バッグ</div>
-                    <div class="interest-chip" data-val="kids" onclick="toggleInterest(this)">キッズ</div>
-                    <div class="interest-chip" data-val="hobby" onclick="toggleInterest(this)">ホビー</div>
-                    <div class="interest-chip" data-val="beauty" onclick="toggleInterest(this)">コスメ</div>
-                    <div class="interest-chip" data-val="gadget" onclick="toggleInterest(this)">ガジェット</div>
-                    <div class="interest-chip" data-val="sneaker" onclick="toggleInterest(this)">スニーカー</div>
+                <!-- 性別 -->
+                <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別</span>
+                <div class="chip-row" id="dial-gender">
+                    <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
+                    <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
+                    <div class="setting-chip" data-val="unknown" onclick="selectChip('gender',this)">未設定</div>
                 </div>
 
-                <button class="btn-purple" onclick="saveUserSettings(true)">設定を保存</button>
+                <!-- 興味カテゴリ（複数選択） -->
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（複数可）</span>
+                <div class="chip-row" id="dial-interests">
+                    <div class="setting-chip" data-val="fashion" onclick="toggleInterest(this)">ファッション</div>
+                    <div class="setting-chip" data-val="shoes" onclick="toggleInterest(this)">シューズ</div>
+                    <div class="setting-chip" data-val="bag" onclick="toggleInterest(this)">バッグ・財布</div>
+                    <div class="setting-chip" data-val="kids" onclick="toggleInterest(this)">キッズ</div>
+                    <div class="setting-chip" data-val="beauty" onclick="toggleInterest(this)">コスメ・美容</div>
+                    <div class="setting-chip" data-val="gadget" onclick="toggleInterest(this)">ガジェット・家電</div>
+                    <div class="setting-chip" data-val="sneaker" onclick="toggleInterest(this)">スニーカー</div>
+                    <div class="setting-chip" data-val="sports" onclick="toggleInterest(this)">スポーツ</div>
+                    <div class="setting-chip" data-val="outdoor" onclick="toggleInterest(this)">アウトドア</div>
+                    <div class="setting-chip" data-val="interior" onclick="toggleInterest(this)">インテリア</div>
+                    <div class="setting-chip" data-val="food" onclick="toggleInterest(this)">食品・グルメ</div>
+                    <div class="setting-chip" data-val="hobby" onclick="toggleInterest(this)">ホビー・趣味</div>
+                </div>
+
+                <!-- 服のサイズ -->
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
+                <div class="chip-row" id="dial-cloth-size">
+                    <div class="setting-chip" data-val="XS" onclick="selectChip('cloth',this)">XS</div>
+                    <div class="setting-chip" data-val="S" onclick="selectChip('cloth',this)">S</div>
+                    <div class="setting-chip" data-val="M" onclick="selectChip('cloth',this)">M</div>
+                    <div class="setting-chip" data-val="L" onclick="selectChip('cloth',this)">L</div>
+                    <div class="setting-chip" data-val="XL" onclick="selectChip('cloth',this)">XL</div>
+                    <div class="setting-chip" data-val="3L" onclick="selectChip('cloth',this)">3L</div>
+                </div>
+
+                <!-- 靴のサイズ -->
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
+                <div class="chip-row" id="dial-shoe-size">
+                    <div class="setting-chip" data-val="22.5" onclick="selectChip('shoe',this)">22.5</div>
+                    <div class="setting-chip" data-val="23.0" onclick="selectChip('shoe',this)">23.0</div>
+                    <div class="setting-chip" data-val="23.5" onclick="selectChip('shoe',this)">23.5</div>
+                    <div class="setting-chip" data-val="24.0" onclick="selectChip('shoe',this)">24.0</div>
+                    <div class="setting-chip" data-val="24.5" onclick="selectChip('shoe',this)">24.5</div>
+                    <div class="setting-chip" data-val="25.0" onclick="selectChip('shoe',this)">25.0</div>
+                    <div class="setting-chip" data-val="25.5" onclick="selectChip('shoe',this)">25.5</div>
+                    <div class="setting-chip" data-val="26.0" onclick="selectChip('shoe',this)">26.0</div>
+                    <div class="setting-chip" data-val="26.5" onclick="selectChip('shoe',this)">26.5</div>
+                    <div class="setting-chip" data-val="27.0" onclick="selectChip('shoe',this)">27.0</div>
+                    <div class="setting-chip" data-val="27.5" onclick="selectChip('shoe',this)">27.5</div>
+                    <div class="setting-chip" data-val="28.0" onclick="selectChip('shoe',this)">28.0</div>
+                </div>
+
+                <!-- お子様設定 -->
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お子様の性別</span>
+                <div class="chip-row" id="dial-child-gender">
+                    <div class="setting-chip" data-val="none" onclick="selectChip('childGender',this)">なし</div>
+                    <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
+                    <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
+                </div>
+
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お子様の服サイズ</span>
+                <div class="chip-row" id="dial-child-size">
+                    <div class="setting-chip" data-val="80" onclick="selectChip('childCloth',this)">80</div>
+                    <div class="setting-chip" data-val="90" onclick="selectChip('childCloth',this)">90</div>
+                    <div class="setting-chip" data-val="100" onclick="selectChip('childCloth',this)">100</div>
+                    <div class="setting-chip" data-val="110" onclick="selectChip('childCloth',this)">110</div>
+                    <div class="setting-chip" data-val="120" onclick="selectChip('childCloth',this)">120</div>
+                    <div class="setting-chip" data-val="130" onclick="selectChip('childCloth',this)">130</div>
+                    <div class="setting-chip" data-val="140" onclick="selectChip('childCloth',this)">140</div>
+                    <div class="setting-chip" data-val="150" onclick="selectChip('childCloth',this)">150</div>
+                    <div class="setting-chip" data-val="160" onclick="selectChip('childCloth',this)">160</div>
+                </div>
+
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お子様の靴サイズ (cm)</span>
+                <div class="chip-row" id="dial-child-shoe">
+                    <div class="setting-chip" data-val="13" onclick="selectChip('childShoe',this)">13</div>
+                    <div class="setting-chip" data-val="14" onclick="selectChip('childShoe',this)">14</div>
+                    <div class="setting-chip" data-val="15" onclick="selectChip('childShoe',this)">15</div>
+                    <div class="setting-chip" data-val="16" onclick="selectChip('childShoe',this)">16</div>
+                    <div class="setting-chip" data-val="17" onclick="selectChip('childShoe',this)">17</div>
+                    <div class="setting-chip" data-val="18" onclick="selectChip('childShoe',this)">18</div>
+                    <div class="setting-chip" data-val="19" onclick="selectChip('childShoe',this)">19</div>
+                    <div class="setting-chip" data-val="20" onclick="selectChip('childShoe',this)">20</div>
+                    <div class="setting-chip" data-val="21" onclick="selectChip('childShoe',this)">21</div>
+                    <div class="setting-chip" data-val="22" onclick="selectChip('childShoe',this)">22</div>
+                </div>
+
+                <button class="sync-hub-btn" onclick="saveUserSettings(true)">SYNC TO HUB</button>
             </div>
 
             <div class="transparent-box">
@@ -1221,7 +1188,7 @@
         const restrictedKeywords = ['アダルト', '18禁', '成人', 'ポルノ', 'デリヘル', 'ソープ']; 
 
         // ユーザー属性プロフィール（localStorage永続化）
-        let userProfile = { gender: '', height: '', clothSize: '', shoeSize: '', hasChildren: false, childGender: '', childClothSize: '', interests: [], timezone: 'JP' };
+        let userProfile = { gender: '', height: '', clothSize: '', shoeSize: '', hasChildren: false, childGender: '', childClothSize: '', childShoeSize: '', interests: [], timezone: 'JP' };
         // 起動時にlocalStorageから復元
         (function loadSavedProfile() {
             try {
@@ -2116,29 +2083,22 @@
             }, 120);
         }
 
-        // 垂直ピッカー選択：コンテナ内の全灯を消し、タップ値のみ通電
-        function selectVerticalItem(type, el) {
+        // 水平チップ単一選択：同グループ内を全消灯し、タップ値のみ通電
+        function selectChip(type, el) {
             var container = el.parentElement;
-            container.querySelectorAll('.dial-item').forEach(function(item) {
+            container.querySelectorAll('.setting-chip').forEach(function(item) {
                 item.classList.remove('active');
             });
             el.classList.add('active');
-            console.log('[HUB] ' + type + ' sync: ' + el.getAttribute('data-val'));
             if (typeof saveUserSettings === 'function') saveUserSettings();
         }
 
-        // selectDial は selectVerticalItem へ委譲
-        function selectDial(type, el) {
-            selectVerticalItem(type, el);
-        }
-
-        // 興味カテゴリ：複数選択トグル（interest-chip）
+        // 興味カテゴリ：複数選択トグル
         function toggleInterest(el) {
             el.classList.toggle('active');
             if (typeof saveUserSettings === 'function') saveUserSettings();
         }
 
-        // initDials: 垂直固定ピッカーはスクロール検知不要
         function initDials() {}
 
         // ユーザー設定をlocalStorageに保存（即時反映 / 明示保存どちらでも呼ばれる）
@@ -2146,7 +2106,7 @@
         function saveUserSettings(explicit) {
             clearTimeout(_saveSettingsTimer);
             _saveSettingsTimer = setTimeout(function() {
-                var sel = function(id) { var el = document.querySelector('#' + id + ' .dial-item.active'); return el ? el.dataset.val : ''; };
+                var sel = function(id) { var el = document.querySelector('#' + id + ' .setting-chip.active'); return el ? el.dataset.val : ''; };
                 userProfile.gender         = sel('dial-gender');
                 userProfile.clothSize      = sel('dial-cloth-size');
                 userProfile.shoeSize       = sel('dial-shoe-size');
@@ -2154,7 +2114,8 @@
                 userProfile.hasChildren    = cgv !== 'none';
                 userProfile.childGender    = cgv;
                 userProfile.childClothSize = sel('dial-child-size');
-                userProfile.interests      = Array.from(document.querySelectorAll('#dial-interests .interest-chip.active')).map(function(c) { return c.dataset.val; });
+                userProfile.childShoeSize  = sel('dial-child-shoe');
+                userProfile.interests      = Array.from(document.querySelectorAll('#dial-interests .setting-chip.active')).map(function(c) { return c.dataset.val; });
                 try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch(e) {}
                 updateBannerAdContent(lastMonitorKeyword);
                 if (explicit) alert('設定を保存しました。');
@@ -2342,20 +2303,21 @@
             requestAnimationFrame(() => updateSb(getActiveScreen()));
         };
 
-        // 保存済みプロフィールをダイヤルUIに反映
+        // 保存済みプロフィールをチップUIに反映
         function restoreDialUI() {
-            function activateItem(rowId, val) {
+            function activateChip(rowId, val) {
                 if (!val) return;
-                var item = document.querySelector('#' + rowId + ' .dial-item[data-val="' + val + '"]');
-                if (item) item.classList.add('active');
+                var chip = document.querySelector('#' + rowId + ' .setting-chip[data-val="' + val + '"]');
+                if (chip) chip.classList.add('active');
             }
-            activateItem('dial-gender',       userProfile.gender);
-            activateItem('dial-cloth-size',   userProfile.clothSize);
-            activateItem('dial-shoe-size',    userProfile.shoeSize);
-            activateItem('dial-child-gender', userProfile.childGender || 'none');
-            activateItem('dial-child-size',   userProfile.childClothSize);
+            activateChip('dial-gender',       userProfile.gender);
+            activateChip('dial-cloth-size',   userProfile.clothSize);
+            activateChip('dial-shoe-size',    userProfile.shoeSize);
+            activateChip('dial-child-gender', userProfile.childGender || 'none');
+            activateChip('dial-child-size',   userProfile.childClothSize);
+            activateChip('dial-child-shoe',   userProfile.childShoeSize);
             (userProfile.interests || []).forEach(function(val) {
-                var chip = document.querySelector('#dial-interests .interest-chip[data-val="' + val + '"]');
+                var chip = document.querySelector('#dial-interests .setting-chip[data-val="' + val + '"]');
                 if (chip) chip.classList.add('active');
             });
         }
