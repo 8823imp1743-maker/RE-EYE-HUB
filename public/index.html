@@ -228,7 +228,7 @@
         .reward-inner { display: flex; align-items: center; gap: 13px; }
         .reward-icon { font-size: 20px; color: var(--amethyst); flex-shrink: 0; filter: drop-shadow(0 0 6px rgba(155,89,182,0.7)); }
         .reward-text-block { display: flex; flex-direction: column; gap: 3px; }
-        .reward-main-text { font-size: 13px; font-weight: bold; letter-spacing: 1.2px; color: var(--champagne-gold); line-height: 1.4; }
+        .reward-main-text { font-size: 11px; font-weight: bold; letter-spacing: 1.2px; color: var(--champagne-gold); line-height: 1.4; }
         .reward-sub-text { font-size: 11px; color: var(--amethyst); opacity: 0.85; letter-spacing: 0.5px; }
         .reward-badge { margin-left: auto; background: var(--amethyst); color: #fff; font-size: 10px; font-weight: bold; letter-spacing: 1px; padding: 4px 8px; border-radius: 2px; flex-shrink: 0; }
         
@@ -257,7 +257,7 @@
             filter: drop-shadow(0 0 6px rgba(247,231,206,0.9));
         }
         .home-banner-text-main {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: bold;
             letter-spacing: 1px;
             color: #fff;
@@ -288,7 +288,7 @@
         .insight-number { font-size: 54px; font-weight: bold; color: var(--amethyst); text-shadow: 0 0 25px rgba(155, 89, 182, 0.6); }
         .watch-item-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(155,89,182,0.12); }
         .watch-item-row:last-child { border-bottom: none; }
-        .watch-item-name { font-size: 13px; font-weight: 600; color: var(--champagne-gold); letter-spacing: 0.5px; }
+        .watch-item-name { font-size: 11px; font-weight: 600; color: var(--champagne-gold); letter-spacing: 0.5px; }
         .watch-plan-status { font-size: 11px; color: var(--amethyst); opacity: 1; letter-spacing: 0.8px; padding: 7px 0 9px; border-bottom: 1px solid rgba(155,89,182,0.2); margin-bottom: 4px; }
 
         /* 11pxの美学：免責・補足テキスト */
@@ -674,6 +674,54 @@
             background:var(--amethyst); margin-right:4px;
             animation:tbxPulse 1.6s ease-in-out infinite;
         }
+
+        /* 検索入力ラッパー：モード選択後にスッと出現 */
+        @keyframes revealInput {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        #monitor-search-wrap { display: none; margin-top: var(--gap-11); }
+        #monitor-search-wrap.revealed {
+            display: block;
+            animation: revealInput 0.3s ease;
+        }
+        #monitor-search-wrap input { padding-right: 44px; }
+        .monitor-search-icon {
+            position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+            color: var(--amethyst); font-size: 18px; cursor: pointer;
+        }
+        /* 未設定ユーザー警告ブロック */
+        #user-setup-warning {
+            display: none; margin-top: var(--gap-11); padding: 12px 14px;
+            background: rgba(155,89,182,0.06); border: 1px solid rgba(155,89,182,0.4);
+            border-radius: 2px;
+        }
+        /* ダイヤル式サイズ選択 */
+        .dial-row {
+            display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;
+            scrollbar-width: none;
+        }
+        .dial-row::-webkit-scrollbar { display: none; }
+        .dial-chip {
+            flex-shrink: 0; padding: 7px 11px; font-size: 11px;
+            color: var(--champagne-gold); background: rgba(155,89,182,0.05);
+            border: 1px solid rgba(155,89,182,0.3); border-radius: 2px;
+            cursor: pointer; transition: 0.2s; white-space: nowrap; letter-spacing: 0.5px;
+        }
+        .dial-chip.selected {
+            background: rgba(155,89,182,0.25); border-color: var(--amethyst);
+            color: #fff; box-shadow: 0 0 10px rgba(155,89,182,0.4);
+        }
+        /* ショップロゴリンクボタン */
+        .shop-logo-btn {
+            flex: 1; text-align: center; padding: 14px 8px;
+            background: rgba(155,89,182,0.05); border: 1px solid rgba(155,89,182,0.3);
+            border-radius: 2px; color: var(--champagne-gold); letter-spacing: 1px;
+            text-decoration: none; cursor: pointer; transition: 0.3s; display: block;
+            box-sizing: border-box;
+        }
+        .shop-logo-btn.connected { border-color: rgba(155,89,182,0.6); box-shadow: 0 0 10px rgba(155,89,182,0.25); }
+        .shop-logo-name { font-size: 11px; font-weight: bold; margin-bottom: 4px; letter-spacing: 1.5px; }
     </style>
 </head>
 <body>
@@ -716,10 +764,21 @@
                     </div>
                 </div>
                 <div id="monitor-mode-hint" class="meta-11px" style="color:var(--amethyst);opacity:1;margin:8px 0 4px;display:none;"></div>
-                <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
-                <input type="text" id="monitor-input" placeholder="モードを選択してください" readonly onfocus="onMonitorInputFocus()">
-                <div id="monitor-access-warn">どちらかの見守りモードを選択してください</div>
-                <button class="btn-purple" onclick="executeMonitor()">見守りを開始</button>
+                <div id="monitor-access-warn" class="meta-11px" style="color:var(--amethyst);opacity:1;margin-top:4px;display:none;letter-spacing:0.8px;">どちらかの見守りモードを選択してください</div>
+                <!-- 未設定ユーザー警告 -->
+                <div id="user-setup-warning">
+                    <span class="meta-11px" style="display:block;margin:0;color:var(--champagne-gold);">⚠️ システム未校正：ユーザー設定を完了させてください</span>
+                    <button class="btn-purple" style="margin-top:8px;" onclick="goToUserSettings()">設定画面へ</button>
+                </div>
+                <!-- 検索入力ラッパー（モード選択後・設定済みユーザーのみ表示） -->
+                <div id="monitor-search-wrap">
+                    <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
+                    <div style="position:relative;">
+                        <input type="text" id="monitor-input" placeholder="入力してください">
+                        <i class="fas fa-search monitor-search-icon" onclick="executeMonitor()"></i>
+                    </div>
+                    <button class="btn-purple" onclick="executeMonitor()">見守りを開始</button>
+                </div>
             </div>
 
             <!-- ── AD BANNERS (FREE plan only, existing logic) ── -->
@@ -808,6 +867,83 @@
 
     <div id="link" class="screen">
         <div class="screen-content">
+
+            <!-- ユーザー設定セクション -->
+            <div class="transparent-box" id="user-settings-box">
+                <span class="gold-label">ユーザー設定</span>
+
+                <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
+                <div class="dial-row" id="dial-gender">
+                    <div class="dial-chip" data-val="female" onclick="selectDial('gender',this)">女性</div>
+                    <div class="dial-chip" data-val="male" onclick="selectDial('gender',this)">男性</div>
+                    <div class="dial-chip" data-val="unknown" onclick="selectDial('gender',this)">未設定</div>
+                </div>
+
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（複数可）</span>
+                <div class="dial-row" id="dial-interests">
+                    <div class="dial-chip" data-val="fashion" onclick="toggleInterest(this)">ファッション</div>
+                    <div class="dial-chip" data-val="shoes" onclick="toggleInterest(this)">シューズ</div>
+                    <div class="dial-chip" data-val="bag" onclick="toggleInterest(this)">バッグ</div>
+                    <div class="dial-chip" data-val="kids" onclick="toggleInterest(this)">キッズ</div>
+                    <div class="dial-chip" data-val="hobby" onclick="toggleInterest(this)">ホビー</div>
+                    <div class="dial-chip" data-val="beauty" onclick="toggleInterest(this)">コスメ</div>
+                    <div class="dial-chip" data-val="gadget" onclick="toggleInterest(this)">ガジェット</div>
+                    <div class="dial-chip" data-val="sneaker" onclick="toggleInterest(this)">スニーカー</div>
+                </div>
+
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ（SS〜5L）</span>
+                <div class="dial-row" id="dial-cloth-size">
+                    <div class="dial-chip" data-val="SS" onclick="selectDial('cloth',this)">SS</div>
+                    <div class="dial-chip" data-val="S" onclick="selectDial('cloth',this)">S</div>
+                    <div class="dial-chip" data-val="M" onclick="selectDial('cloth',this)">M</div>
+                    <div class="dial-chip" data-val="L" onclick="selectDial('cloth',this)">L</div>
+                    <div class="dial-chip" data-val="XL" onclick="selectDial('cloth',this)">XL</div>
+                    <div class="dial-chip" data-val="2L" onclick="selectDial('cloth',this)">2L</div>
+                    <div class="dial-chip" data-val="3L" onclick="selectDial('cloth',this)">3L</div>
+                    <div class="dial-chip" data-val="4L" onclick="selectDial('cloth',this)">4L</div>
+                    <div class="dial-chip" data-val="5L" onclick="selectDial('cloth',this)">5L</div>
+                </div>
+
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ（〜30cm）</span>
+                <div class="dial-row" id="dial-shoe-size">
+                    <div class="dial-chip" data-val="22.0" onclick="selectDial('shoe',this)">22.0</div>
+                    <div class="dial-chip" data-val="22.5" onclick="selectDial('shoe',this)">22.5</div>
+                    <div class="dial-chip" data-val="23.0" onclick="selectDial('shoe',this)">23.0</div>
+                    <div class="dial-chip" data-val="23.5" onclick="selectDial('shoe',this)">23.5</div>
+                    <div class="dial-chip" data-val="24.0" onclick="selectDial('shoe',this)">24.0</div>
+                    <div class="dial-chip" data-val="24.5" onclick="selectDial('shoe',this)">24.5</div>
+                    <div class="dial-chip" data-val="25.0" onclick="selectDial('shoe',this)">25.0</div>
+                    <div class="dial-chip" data-val="25.5" onclick="selectDial('shoe',this)">25.5</div>
+                    <div class="dial-chip" data-val="26.0" onclick="selectDial('shoe',this)">26.0</div>
+                    <div class="dial-chip" data-val="26.5" onclick="selectDial('shoe',this)">26.5</div>
+                    <div class="dial-chip" data-val="27.0" onclick="selectDial('shoe',this)">27.0</div>
+                    <div class="dial-chip" data-val="27.5" onclick="selectDial('shoe',this)">27.5</div>
+                    <div class="dial-chip" data-val="28.0" onclick="selectDial('shoe',this)">28.0</div>
+                    <div class="dial-chip" data-val="29.0" onclick="selectDial('shoe',this)">29.0</div>
+                    <div class="dial-chip" data-val="30.0" onclick="selectDial('shoe',this)">30.0</div>
+                </div>
+
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お子様（任意）</span>
+                <div class="dial-row" id="dial-child-gender">
+                    <div class="dial-chip" data-val="none" onclick="selectDial('childGender',this)">なし</div>
+                    <div class="dial-chip" data-val="girl" onclick="selectDial('childGender',this)">女の子</div>
+                    <div class="dial-chip" data-val="boy" onclick="selectDial('childGender',this)">男の子</div>
+                </div>
+                <div class="dial-row" id="dial-child-size" style="margin-top:6px;">
+                    <div class="dial-chip" data-val="80" onclick="selectDial('childClothSize',this)">80</div>
+                    <div class="dial-chip" data-val="90" onclick="selectDial('childClothSize',this)">90</div>
+                    <div class="dial-chip" data-val="100" onclick="selectDial('childClothSize',this)">100</div>
+                    <div class="dial-chip" data-val="110" onclick="selectDial('childClothSize',this)">110</div>
+                    <div class="dial-chip" data-val="120" onclick="selectDial('childClothSize',this)">120</div>
+                    <div class="dial-chip" data-val="130" onclick="selectDial('childClothSize',this)">130</div>
+                    <div class="dial-chip" data-val="140" onclick="selectDial('childClothSize',this)">140</div>
+                    <div class="dial-chip" data-val="150" onclick="selectDial('childClothSize',this)">150</div>
+                    <div class="dial-chip" data-val="160" onclick="selectDial('childClothSize',this)">160</div>
+                </div>
+
+                <button class="btn-purple" onclick="saveUserSettings()">設定を保存</button>
+            </div>
+
             <div class="transparent-box">
                 <span class="gold-label">見守りプラン選択</span>
                 <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
@@ -823,24 +959,30 @@
                     </div>
                     <div class="category-item selected" onclick="selectPlan('PRO', this)">
                         <span>PRO / ¥1,000</span>
-                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (10件)<br>トレンド探索 10枠</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 20 アイテムを監視可能</span>
+                        <small>08:00–19:00 / 5分間隔（Jitter）| 夜間：60分間隔<br>トレンド探索 5枠</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 15 アイテムを監視可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('VIP', this)" style="border-color: var(--champagne-gold);">
                         <span style="color: var(--champagne-gold);">VIP / ¥1,500 <span style="font-size:10px;letter-spacing:1px;opacity:0.85;">● 100名限定</span></span>
-                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 / 10分間隔（変更なし）(15件)<br>トレンド探索 15枠</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 30 アイテムを監視可能</span>
+                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 / 5分間隔（Jitter付き）<br>トレンド探索 10枠</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 20 アイテムを監視可能</span>
                     </div>
                 </div>
 
-                <span class="gold-label">ショップ連携状況</span>
-                <div class="category-grid">
-                    <div class="category-item selected"><span class="shop-status-text">楽天: OK</span></div>
-                    <div class="category-item selected"><span class="shop-status-text">Amazon: OK</span></div>
-                    <div class="category-item"><span class="shop-status-text">Yahoo: OFF</span></div>
-                    <div class="category-item" style="border-style: dashed; border-color: rgba(255,255,255,0.2); background: none; justify-content: center;">
-                        <i class="fas fa-plus" style="font-size: 16px; color: var(--amethyst);"></i>
-                    </div>
+                <span class="gold-label">ショップ連携</span>
+                <div style="display:flex; gap:var(--gap-11); margin-top:var(--gap-11);">
+                    <a href="https://www.rakuten.co.jp" target="_blank" rel="noopener" class="shop-logo-btn connected">
+                        <div class="shop-logo-name">楽天市場</div>
+                        <div class="meta-11px" style="margin:0;color:var(--amethyst);">連携済み · ログイン</div>
+                    </a>
+                    <a href="https://www.amazon.co.jp" target="_blank" rel="noopener" class="shop-logo-btn connected">
+                        <div class="shop-logo-name">Amazon</div>
+                        <div class="meta-11px" style="margin:0;color:var(--amethyst);">連携済み · ログイン</div>
+                    </a>
+                    <a href="https://shopping.yahoo.co.jp" target="_blank" rel="noopener" class="shop-logo-btn">
+                        <div class="shop-logo-name" style="color:rgba(247,231,206,0.45);">Yahoo!</div>
+                        <div class="meta-11px" style="margin:0;opacity:0.5;">未連携</div>
+                    </a>
                 </div>
             </div>
 
@@ -1008,8 +1150,15 @@
         const RESUME_AD_THRESHOLD = 30 * 60 * 1000; 
         const restrictedKeywords = ['アダルト', '18禁', '成人', 'ポルノ', 'デリヘル', 'ソープ']; 
 
-        // ユーザー属性プロフィール
-        let userProfile = { gender: '', height: '', clothSize: '', shoeSize: '', hasChildren: false, timezone: 'JP' };
+        // ユーザー属性プロフィール（localStorage永続化）
+        let userProfile = { gender: '', height: '', clothSize: '', shoeSize: '', hasChildren: false, childGender: '', childClothSize: '', interests: [], timezone: 'JP' };
+        // 起動時にlocalStorageから復元
+        (function loadSavedProfile() {
+            try {
+                const saved = localStorage.getItem('re_eye_profile');
+                if (saved) userProfile = Object.assign(userProfile, JSON.parse(saved));
+            } catch(e) {}
+        })();
 
         // 性別連動広告コンテンツプール（アダルト厳禁）
         const AD_CONTENT = {
@@ -1124,10 +1273,10 @@
 
         // プラン別・見守り枠上限
         const PLAN_LIMITS = {
-            FREE:     { stock: 3,  trend: 3  },
-            STANDARD: { stock: 5,  trend: 5  },
-            PRO:      { stock: 10, trend: 10 },
-            VIP:      { stock: 15, trend: 15 }
+            FREE:     { stock: 3,  trend: 3  },  // 合計6
+            STANDARD: { stock: 5,  trend: 5  },  // 合計10
+            PRO:      { stock: 10, trend: 5  },  // 合計15
+            VIP:      { stock: 10, trend: 10 }   // 合計20
         };
         function getTrendLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).trend; }
         function getStockLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).stock; }
@@ -1152,9 +1301,12 @@
         function getMonitoringIntervalMs() {
             const h = new Date().getHours();
             const isNight = h < 8 || h >= 19;
+            // ステルス・エンジン：4〜7分のゆらぎ（Jitter）でボット検知を回避
+            const jitter = () => Math.floor((4 + Math.random() * 3) * 60 * 1000);
             if (currentPlan === 'FREE') return isNight ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
-            if (currentPlan === 'STANDARD' || currentPlan === 'PRO') return isNight ? 60 * 60 * 1000 : 15 * 60 * 1000;
-            if (currentPlan === 'VIP') return 10 * 60 * 1000;
+            if (currentPlan === 'STANDARD') return isNight ? 60 * 60 * 1000 : 15 * 60 * 1000;
+            if (currentPlan === 'PRO') return isNight ? 60 * 60 * 1000 : jitter(); // 夜間60分 / 昼4〜7分
+            if (currentPlan === 'VIP') return jitter(); // 24時間・Jitter付き
             return 15 * 60 * 1000;
         }
 
@@ -1863,53 +2015,119 @@
             if (currentPlan === 'FREE') {
                 itemText   = isNight ? '🌙 スリープ中' : '● 60分間隔で見守り中';
                 bannerText = isNight ? '🌙 スリープモード：08:00に再開します' : '● 08:00–19:00 稼働中 / 60分間隔でスキャン';
-            } else if (currentPlan === 'STANDARD' || currentPlan === 'PRO') {
+            } else if (currentPlan === 'STANDARD') {
                 itemText   = isNight ? '夜間：60分間隔に変更済み' : '● 15分間隔で見守り中';
                 bannerText = isNight ? '夜間モード：60分間隔に変更済み' : '● 08:00–19:00 稼働中 / 15分間隔でスキャン';
+            } else if (currentPlan === 'PRO') {
+                itemText   = isNight ? '夜間：60分間隔に変更済み' : '● 5分間隔（Jitter）で見守り中';
+                bannerText = isNight ? '夜間モード：60分間隔に変更済み' : '● 08:00–19:00 稼働中 / 5分間隔（ゆらぎ）';
             } else if (currentPlan === 'VIP') {
-                itemText   = '● 10分間隔で巡回中（変更なし）';
-                bannerText = '24時間：10分間隔で巡回中（変更なし）';
+                itemText   = '● 5分間隔（Jitter）で24時間巡回中';
+                bannerText = '24時間ステルス巡回中 / 5分間隔（ゆらぎ付き）';
             }
             if (el) el.textContent = itemText;
             if (banner) banner.textContent = bannerText;
         }
 
+        // ユーザー設定が完了しているか判定
+        function isUserConfigured() {
+            return userProfile.gender !== ''
+                || userProfile.clothSize !== ''
+                || (userProfile.interests && userProfile.interests.length > 0);
+        }
+
+        // ホームから連携画面のユーザー設定セクションへスムーズ遷移
+        function goToUserSettings() {
+            var linkBtn = document.querySelector('.nav-item:nth-child(5)');
+            if (linkBtn) show('link', linkBtn);
+            setTimeout(function() {
+                var box = document.getElementById('user-settings-box');
+                if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 120);
+        }
+
+        // ダイヤルチップ選択（単一選択グループ）
+        function selectDial(type, el) {
+            var rowId = { gender: 'dial-gender', cloth: 'dial-cloth-size', shoe: 'dial-shoe-size', childGender: 'dial-child-gender', childClothSize: 'dial-child-size' }[type];
+            var row = document.getElementById(rowId);
+            if (row) row.querySelectorAll('.dial-chip').forEach(function(c) { c.classList.remove('selected'); });
+            el.classList.add('selected');
+        }
+
+        // 興味カテゴリ：複数選択トグル
+        function toggleInterest(el) {
+            el.classList.toggle('selected');
+        }
+
+        // ユーザー設定をlocalStorageに保存
+        function saveUserSettings() {
+            var genderEl = document.querySelector('#dial-gender .dial-chip.selected');
+            userProfile.gender = genderEl ? genderEl.dataset.val : '';
+            var clothEl = document.querySelector('#dial-cloth-size .dial-chip.selected');
+            userProfile.clothSize = clothEl ? clothEl.dataset.val : '';
+            var shoeEl = document.querySelector('#dial-shoe-size .dial-chip.selected');
+            userProfile.shoeSize = shoeEl ? shoeEl.dataset.val : '';
+            var childGenderEl = document.querySelector('#dial-child-gender .dial-chip.selected');
+            var cgv = childGenderEl ? childGenderEl.dataset.val : 'none';
+            userProfile.hasChildren = cgv !== 'none';
+            userProfile.childGender = cgv;
+            var childSizeEl = document.querySelector('#dial-child-size .dial-chip.selected');
+            userProfile.childClothSize = childSizeEl ? childSizeEl.dataset.val : '';
+            userProfile.interests = Array.from(document.querySelectorAll('#dial-interests .dial-chip.selected')).map(function(c) { return c.dataset.val; });
+            try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch(e) {}
+            updateBannerAdContent(lastMonitorKeyword);
+            alert('設定を保存しました。');
+        }
+
+        // ページ起動時 / モード選択時：設定状態を確認して表示を分岐
+        function checkUserSetup() {
+            var setupWarn = document.getElementById('user-setup-warning');
+            var searchWrap = document.getElementById('monitor-search-wrap');
+            var trendCb = document.getElementById('mode-trend');
+            var stockCb = document.getElementById('mode-stock');
+            var anyOn = (trendCb && trendCb.checked) || (stockCb && stockCb.checked);
+            if (!anyOn) {
+                if (setupWarn) setupWarn.style.display = 'none';
+                if (searchWrap) { searchWrap.style.display = 'none'; searchWrap.classList.remove('revealed'); }
+                return;
+            }
+            if (!isUserConfigured()) {
+                if (setupWarn) setupWarn.style.display = 'block';
+                if (searchWrap) { searchWrap.style.display = 'none'; searchWrap.classList.remove('revealed'); }
+            } else {
+                if (setupWarn) setupWarn.style.display = 'none';
+                if (searchWrap && !searchWrap.classList.contains('revealed')) {
+                    searchWrap.classList.add('revealed');
+                    var input = document.getElementById('monitor-input');
+                    if (input) input.focus();
+                }
+            }
+        }
+
         function onModeChange() {
             var trendCb = document.getElementById('mode-trend');
             var stockCb = document.getElementById('mode-stock');
-            var input = document.getElementById('monitor-input');
             var hint = document.getElementById('monitor-mode-hint');
-            var warn = document.getElementById('monitor-access-warn');
-            // 排他制御：片方がONなら他方を自動でOFF（.checked直接代入はonchangeを発火しない）
+            // 排他制御：片方がONなら他方を自動でOFF
             if (trendCb.checked) stockCb.checked = false;
             else if (stockCb.checked) trendCb.checked = false;
             var anyOn = trendCb.checked || stockCb.checked;
-            input.readOnly = !anyOn;
-            warn.style.display = 'none';
             if (!anyOn) {
                 hint.style.display = 'none';
-                input.placeholder = 'モードを選択してください';
+                checkUserSetup();
                 return;
             }
             hint.style.display = 'block';
             if (stockCb.checked) {
                 hint.textContent = 'プランの間隔で精密スキャン。情報の「事実」を捉えます。';
-                input.placeholder = '再入荷アイテム、販売中チケット、推しグッズ...';
+                var input = document.getElementById('monitor-input');
+                if (input) input.placeholder = '再入荷アイテム、販売中チケット、推しグッズ...';
             } else {
                 hint.textContent = '24時間周期で広域スキャン。情報の「予感」を捉えます。';
-                input.placeholder = '新作バッグ、コンサート予約、限定キャンペーン...';
+                var input = document.getElementById('monitor-input');
+                if (input) input.placeholder = '新作バッグ、コンサート予約、限定キャンペーン...';
             }
-            input.focus();
-        }
-
-        function onMonitorInputFocus() {
-            var trendCb = document.getElementById('mode-trend');
-            var stockCb = document.getElementById('mode-stock');
-            var warn = document.getElementById('monitor-access-warn');
-            if (!trendCb.checked && !stockCb.checked) {
-                warn.style.display = 'block';
-                document.getElementById('monitor-input').blur();
-            }
+            checkUserSetup();
         }
 
         function executeMonitor() {
@@ -2034,9 +2252,29 @@
             setInterval(updateNightModeStatus, 60 * 1000);
             updateBannerAdContent();
             startHistoryObserver();
+            // 保存済みプロフィールを連携画面のダイヤルUIに反映
+            restoreDialUI();
             // 初期画面のカスタムスクロールバー表示
             requestAnimationFrame(() => updateSb(getActiveScreen()));
         };
+
+        // 保存済みプロフィールをダイヤルUIに反映
+        function restoreDialUI() {
+            function activateChip(rowId, val) {
+                if (!val) return;
+                var chip = document.querySelector('#' + rowId + ' .dial-chip[data-val="' + val + '"]');
+                if (chip) chip.classList.add('selected');
+            }
+            activateChip('dial-gender', userProfile.gender);
+            activateChip('dial-cloth-size', userProfile.clothSize);
+            activateChip('dial-shoe-size', userProfile.shoeSize);
+            activateChip('dial-child-gender', userProfile.childGender || 'none');
+            activateChip('dial-child-size', userProfile.childClothSize);
+            (userProfile.interests || []).forEach(function(val) {
+                var chip = document.querySelector('#dial-interests .dial-chip[data-val="' + val + '"]');
+                if (chip) chip.classList.add('selected');
+            });
+        }
 
         // PWA Service Worker 登録（iOS/Android プッシュ通知・オフライン対応）
         if ('serviceWorker' in navigator) {
