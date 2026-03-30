@@ -8,11 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # 依存インストール
 npm install
 
-# ローカル開発（Vercel Functions + 環境変数 .env を読む）
-vercel dev
+# ローカル開発（Firebase エミュレータ起動）
+firebase serve
+# または（Hosting + Functions を同時に立ち上げる場合）
+firebase emulators:start
 
-# Vercel へデプロイ
-vercel
+# Firebase へデプロイ
+firebase deploy
+
+# Hosting のみデプロイ（フロントのみ変更時）
+firebase deploy --only hosting
+
+# Functions のみデプロイ（API 変更時）
+firebase deploy --only functions
 ```
 
 テストフレームワークは未導入。動作確認は README.md の curl 例で行う。
@@ -23,7 +31,7 @@ vercel
 
 ### 層1：バックエンド通知エンジン（`api/` + `lib/`）
 
-Vercel Serverless Functions で動作する Node.js (ESM) の API 群。
+Firebase Cloud Functions v2（Node.js 20、ESM）で動作する API 群。Express で単一の `onRequest` にまとめ、`index.js` がエントリーポイント。
 外部 Webhook から新着アイテムを受け取り、重複排除・フィルタリング・OneSignal プッシュ通知を行う。
 
 **データフロー:**
@@ -49,9 +57,124 @@ Vercel Serverless Functions で動作する Node.js (ESM) の API 群。
 - `seen:userId:sourceId:sha256hash` — 既読フラグ（TTL 1年）
 - `categories:tree` — カテゴリツリー全体（TTL 1年）
 - `sub:userId:categoryId` — ユーザー購読メタデータ（TTL 1年）
+- `intel:seen:<sha256>` — スカウター重複排除フラグ（TTL **60日**）
 
-**Vercel rewrite（`vercel.json`）:**
-`/api/sources/:sourceId/baseline` → `api/sources-baseline.js` にルーティングされる。Vercel の動的パスはファイルベースで制御できないため rewrite を使っている。
+**Firebase Hosting rewrite:**
+`/api/**` → Cloud Function `api`（`asia-northeast1`）にルーティング。`firebase.json` で設定済み。
+
+---
+
+## インテル・スカウター仕様（`api/scout.js` + `lib/rss-scanner.js`）
+
+> **「24時間」という言葉はこのシステムに存在しない。索敵深度は常に60日。**
+
+### Deep Recon: 60 Days（索敵深度の公式スペック）
+
+- Google News RSS に `&when=2m` パラメータを付与し、**過去60日間（2ヶ月）**の記事を対象に巡回する
+- Redis 重複排除 TTL も 60日（`DEDUP_TTL_SEC = 60 * 24 * 60 * 60`）に合わせて延長
+- UI 上は探索画面に `◈ Deep Recon: 60 Days` ラベルを常設してスペックを明示する
+- 「24時間制限」「24時間以内」という表現は使用禁止。常に「過去60日間」で統一する
+
+### 多弾頭スキャン（キーワード自動展開）
+
+`api/scout.js` の `expandKeywords(seeds)` が、**スペースなしの単体ブランド名**に対して以下を自動付加：
+
+```
+"ヴィトン" → ["ヴィトン", "ヴィトン 新作 限定", "ヴィトン 予約 発表"]
+```
+
+- 複合キーワード（スペースあり）は展開しない
+- 展開後の上限は `MAX_EXPANDED = 8` クエリ
+- スケジューラーとオンデマンド両方で同じ展開ロジックを使用する
+
+### 足跡（Footprint）と予兆（Intel）の分離
+
+`scanKeyword()` は Redis 重複排除**前**の総ヒット数 `totalFromFeed` を返す。`scanAll()` がこれを集計して `totalFoundInFeed` としてレスポンスに含める。
+
+フロントの `runIntelScout` はこれを使って**誠実な報告**を行う：
+
+| 状態 | ユーザーへの表示 |
+|------|----------------|
+| `items.length > 0` | 記事カードをインライン表示 + 履歴タブへ自動遷移 |
+| `items.length === 0` かつ `totalFoundInFeed > 0` | 「過去60日間の足跡を検知。ハントの参考にしてください」 |
+| `items.length === 0` かつ `totalFoundInFeed === 0` | 「過去60日間の深層スキャンを完了。予約・新作の有力な予兆は検知されませんでした。24H哨戒を継続します」 |
+
+### 未来日付解析エンジン（`parseFutureDate`）
+
+`public/index.html` 内の `parseFutureDate(text)` がタイトル・本文テキストから発売予定日を抽出する。
+
+| 入力パターン | 変換例（現在日 2026-03-31 基準） |
+|-------------|-------------------------------|
+| `4月15日` | `4/15 発売予定` |
+| `4月` | `4/1 発売予定` |
+| `来週` | `4/7 発売予定` |
+| `来月` | `4/1 発売予定` |
+| `春` | `4/1 発売予定` |
+| `夏` | `7/1 発売予定` |
+
+- 優先順位: 本文日付解析 → `pubDate`「情報更新」フォールバック
+- 過去日付はスキップし、翌年に繰り越す
+
+### 公式直結弾頭（Official Site Queries）
+
+> **禁止事項：`site:amazon.co.jp` 等の `site:` 演算子は Google News RSS で動作しない（空結果を返す）。絶対に使うな。**
+> 代替：「店名・ブランド名」を複合クエリとして付加する。Google News で確実に動く唯一の方法。
+
+`expandKeywords()` は単体キーワードに対して最大 `MAX_EXPANDED = 10` クエリを生成：
+
+```
+"ポケモン" → [
+  "ポケモン",
+  "ポケモン 新作 限定",
+  "ポケモン 予約 発表",
+  "ポケモン 在庫 再販",
+  "ポケモン 入荷 最新情報",
+  "ポケモン ポケモンセンター",   ← CATEGORY_DOMAINS テーブルから
+  "ポケモン バンダイ",
+]
+
+"おもちゃ" → [
+  "おもちゃ", "おもちゃ 新作 限定", "おもちゃ 予約 発表",
+  "おもちゃ 在庫 再販", "おもちゃ 入荷 最新情報",
+  "おもちゃ バンダイ", "おもちゃ タカラトミー", "おもちゃ アミアミ",
+]
+```
+
+`api/scout.js` の `CATEGORY_DOMAINS` テーブルにキーを追加して「聖地」を拡張できる。
+
+### 超速報ロジック（Newest-First Sort）
+
+`scanKeyword()` は newItems を `pubDate` 降順でソートして返す。最新記事が常にリスト先頭に来る。
+
+### 在庫復活・品切れ監視（`lib/stock-checker.js` + `POST /api/stock`）
+
+**エンドポイント:** `POST /api/stock`
+**リクエスト:** `{ targets: [{ url: "https://...", keyword?: "..." }] }`（最大5件）
+**レスポンス:** `{ results: [{ status, url }], errors, checkedAt }`
+
+`status` の値：
+
+| 値 | 意味 |
+|----|------|
+| `in_stock` | 在庫あり（「カートに入れる」等のパターン検知） |
+| `out_of_stock` | 品切れ（「品切れ」「sold out」等のパターン検知） |
+| `unknown` | パターン不一致（ページ構造が非対応） |
+| `error` | フェッチ失敗 |
+
+- `https://` から始まる URL のみ受け付ける（バリデーション済み）
+- ステルスヘッダー（`lib/stealth.js`）を使用してボット検知を回避
+- `lib/stock-checker.js` の `IN_STOCK_PATTERNS` / `OUT_OF_STOCK_PATTERNS` に新しいショップのパターンを追加して拡張する
+
+### 定価超過バッジ（OVER LIST PRICE）
+
+`trendItem.overListPrice === true` の場合、カードにシャンパンゴールドの `.over-list-badge` を表示：
+
+```
+OVER LIST PRICE（定価超過）
+```
+
+- 市場価格 $P_{market} > P_{list}$（定価）の判定フラグ
+- バッジ表示時はユーザーに無駄な張り込みをやめさせる「慈悲の通知」として機能する
 
 ### 層2：フロントエンド PWA（`public/index.html`）
 
@@ -248,7 +371,6 @@ HTML の `onclick` 属性と JS の関数定義が別々に追加され、対応
 
 ### 1. ランタイム監視（監視塔）
 
-- 開発セッション開始時に `vercel logs --follow` をバックグラウンドで起動する。
 - ログ出力に以下のパターンを検知したら即座に原因を特定・報告すること：
   - `Error:` / `TypeError:` / `ReferenceError:` / `500` ステータス
   - `FUNCTION_INVOCATION_FAILED` / `MODULE_NOT_FOUND`
@@ -256,7 +378,7 @@ HTML の `onclick` 属性と JS の関数定義が別々に追加され、対応
 - エラー検知時のアクション順序：
   1. エラーメッセージとスタックトレースを貼り付けて原因を日本語で説明
   2. 修正コードを提示（修正前に「何を変えるか」を説明）
-  3. ユーザー承認後に `vercel --prod` でデプロイ
+  3. ユーザー承認後に `firebase deploy` でデプロイ
 
 ### 2. 開発フロー（デフォルトルーチン）
 
@@ -265,31 +387,25 @@ HTML の `onclick` 属性と JS の関数定義が別々に追加され、対応
 ```
 1. 修正内容を日本語で説明（何を・なぜ変えるか）
 2. ファイル編集（Edit ツール）
-3. ローカル確認（vercel dev が起動中であれば curl / ブラウザで動作確認を促す）
-4. エラーなし確認後 → vercel --prod でプロダクションデプロイ
-5. デプロイ完了 URL を報告
+3. ローカル確認（firebase emulators:start が起動中であれば curl / ブラウザで動作確認を促す）
+4. エラーなし確認後 → firebase deploy でプロダクションデプロイ
+5. デプロイ完了 URL（https://re-eye-hub.web.app）を報告
 ```
 
-- `vercel dev` が未起動の場合は、修正前にバックグラウンドで起動する。
-- ローカルテストは `curl -s http://localhost:3000/api/<endpoint>` で API を叩いて確認する。
+- ローカルテストは `curl -s http://localhost:5001/re-eye-hub/asia-northeast1/api/<endpoint>` で API を叩いて確認する。
 
-### 3. Vercel Toolbar フィードバック対応
-
-- ユーザーから「フィードバックを確認して」と言われたら `vercel inspect <url> --logs` で直近のデプロイ状態を確認する。
-- 未対応フィードバックが存在する場合は、優先度（Critical / Minor）を付けて修正案を提示する。
-- フィードバック対応後も必ずデプロイまで完結させる。
-
-### 4. デプロイ判断基準
+### 3. デプロイ判断基準
 
 | 状態 | アクション |
 |------|-----------|
-| CSS / HTML の見た目のみの変更 | ローカル目視確認後、即デプロイ可 |
-| JS ロジック変更 | `vercel dev` でブラウザ動作確認必須 |
-| API (`api/*.js`) 変更 | curl でエンドポイント疎通確認必須 |
-| 環境変数の追加・変更 | `vercel env add` で設定後にデプロイ |
+| CSS / HTML の見た目のみの変更 | `firebase deploy --only hosting` |
+| JS フロントのロジック変更 | `firebase deploy --only hosting` |
+| `api/*.js` / `lib/*.js` 変更 | `firebase deploy --only functions` |
+| 両方変更 | `firebase deploy`（フル） |
+| 環境変数の追加・変更 | `.env` を更新後に `firebase deploy --only functions` |
 
-### 5. 禁止事項
+### 4. 禁止事項
 
-- ローカル未確認のまま `vercel --prod` を実行しない。
 - エラーが出たままデプロイしない。
-- `--no-verify` フラグは使用しない。
+- `--force` フラグは使用しない。
+- `index.html` を `Write` ツールで全体上書きしない（KBL-001 参照）。

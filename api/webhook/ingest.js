@@ -6,6 +6,8 @@ import { sendOneSignalNotification } from '../../lib/notification.js';
 import { sendJson } from '../../lib/response.js';
 
 function parseBody(req) {
+  // Firebase/Express では express.json() が req.body を展開済み
+  if (req.body && typeof req.body === 'object') return Promise.resolve(req.body);
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });

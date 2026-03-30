@@ -382,13 +382,20 @@
             display: flex; flex-direction: column; gap: 8px; margin-top: var(--gap-11);
         }
         .monitor-mode-item {
-            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+            display: flex; align-items: center; gap: 10px; padding: 14px 12px;
             background: rgba(155,89,182,0.05); border: 1px solid rgba(155,89,182,0.35);
-            border-radius: 2px; cursor: pointer;
+            border-radius: 2px; cursor: pointer; transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+            -webkit-tap-highlight-color: transparent; user-select: none;
         }
-        .monitor-mode-item input[type="checkbox"] {
-            width: 14px; height: 14px; accent-color: var(--amethyst); flex-shrink: 0; cursor: pointer;
+        .monitor-mode-item.selected {
+            border-color: var(--amethyst);
+            background: rgba(155,89,182,0.18);
+            box-shadow: 0 0 18px rgba(155,89,182,0.45), inset 0 0 8px rgba(155,89,182,0.06);
         }
+        .monitor-mode-item.selected label { color: #fff; font-weight: bold; }
+        .monitor-mode-item.selected label span { color: rgba(247,231,206,0.75) !important; opacity: 1; }
+        /* 非選択状態：消失演出（opacity 0.18 で「消える」を表現、タップ切り替えは維持） */
+        .monitor-mode-item.mode-faded { opacity: 0.18; }
         #monitor-input[readonly] { opacity: 0.2; cursor: not-allowed; background: rgba(0,0,0,0.3); caret-color: transparent; }
         #monitor-access-warn { font-size: 11px; color: var(--amethyst); opacity: 1; margin-top: 4px; display: none; letter-spacing: 0.8px; }
         .mode-guide-hint { font-size: 11px; color: var(--amethyst); letter-spacing: 0.8px; opacity: 0.72; }
@@ -400,31 +407,6 @@
         .ad-note-11px {
             font-size: 11px; color: rgba(247,231,206,0.45); letter-spacing: 0.5px;
             text-align: center; margin-top: 6px; line-height: 1.5;
-        }
-        /* 目的選択モーダル */
-        #purpose-modal {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.88); z-index: 8000;
-            flex-direction: column; align-items: center; justify-content: center;
-            padding: 20px; box-sizing: border-box;
-        }
-        #purpose-modal.open { display: flex; }
-        .purpose-box {
-            width: 100%; max-width: 400px;
-            max-height: 88vh; overflow-y: auto;
-            background: rgba(14,4,22,0.97); border: 1px solid rgba(155,89,182,0.5);
-            box-shadow: 0 0 28px rgba(155,89,182,0.35); border-radius: 2px;
-            padding: 22px 18px; box-sizing: border-box;
-        }
-        .purpose-btn-row { display: flex; gap: var(--gap-11); margin-top: 8px; }
-        .purpose-btn {
-            flex: 1; background: rgba(155,89,182,0.08); border: 1px solid rgba(155,89,182,0.5);
-            border-radius: 2px; color: #fff; font-size: 12px; letter-spacing: 2px;
-            padding: 12px 4px; cursor: pointer; transition: 0.3s;
-        }
-        .purpose-btn.selected {
-            background: rgba(155,89,182,0.25); border-color: var(--amethyst);
-            box-shadow: 0 0 12px rgba(155,89,182,0.4);
         }
         .profile-form-grid {
             display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-11); margin-top: var(--gap-11);
@@ -684,13 +666,69 @@
         #monitor-search-wrap { display: none; margin-top: var(--gap-11); }
         #monitor-search-wrap.revealed {
             display: block;
-            animation: revealInput 0.3s ease;
+            animation: revealInput 0.2s ease;
         }
         #monitor-search-wrap input { padding-right: 44px; }
-        .monitor-search-icon {
-            position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
-            color: var(--amethyst); font-size: 18px; cursor: pointer;
+        /* 虫眼鏡ラッパー：アイコン ⇔ スピナーをその場で差し替える */
+        .monitor-search-icon-wrap {
+            position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+            width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
         }
+        .monitor-search-icon {
+            color: var(--amethyst); font-size: 18px; transition: opacity 0.2s;
+        }
+        /* アメジスト色ローディング円（11px精度） */
+        @keyframes spinRing { to { transform: rotate(360deg); } }
+        #monitor-spinner {
+            display: none; width: 14px; height: 14px;
+            border: 1.5px solid rgba(155,89,182,0.2);
+            border-top-color: var(--amethyst);
+            border-radius: 50%;
+            animation: spinRing 0.75s linear infinite;
+            flex-shrink: 0;
+        }
+        /* 偵察ステータステキスト */
+        #scout-status-text {
+            font-size: 11px; color: var(--amethyst); letter-spacing: 1px;
+            text-align: center; margin-top: 7px;
+            opacity: 0; transition: opacity 0.25s ease; pointer-events: none;
+            height: 0; overflow: hidden;
+        }
+        #scout-status-text.visible {
+            opacity: 1; height: auto;
+        }
+        /* 気配を検知バッジ */
+        @keyframes badgePop {
+            from { opacity: 0; transform: translateY(-5px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        #intel-badge {
+            display: none; font-size: 11px; font-weight: bold; letter-spacing: 1.2px;
+            color: var(--amethyst); background: rgba(155,89,182,0.1);
+            border: 1px solid rgba(155,89,182,0.5); border-radius: 2px;
+            padding: 8px 14px; text-align: center; margin-top: var(--gap-11);
+            box-shadow: 0 0 16px rgba(155,89,182,0.3);
+            cursor: pointer; animation: badgePop 0.35s ease;
+            transition: box-shadow 0.2s;
+        }
+        #intel-badge:active { box-shadow: 0 0 28px rgba(155,89,182,0.6); }
+        /* 探索画面スピナー（#monitor-spinner と同仕様） */
+        #insight-spinner {
+            display: none; width: 14px; height: 14px;
+            border: 1.5px solid rgba(155,89,182,0.2);
+            border-top-color: var(--amethyst);
+            border-radius: 50%; animation: spinRing 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+        /* 探索画面スカウトステータス */
+        #insight-scout-status {
+            font-size: 11px; color: var(--amethyst); letter-spacing: 1px;
+            text-align: center; margin-top: 7px;
+            opacity: 0; transition: opacity 0.25s ease; pointer-events: none;
+            height: 0; overflow: hidden;
+        }
+        #insight-scout-status.visible { opacity: 1; height: auto; }
         /* 未設定ユーザー警告ブロック */
         #user-setup-warning {
             display: none; margin-top: var(--gap-11); padding: 12px 14px;
@@ -741,6 +779,90 @@
         }
         .shop-logo-btn.connected { border-color: rgba(155,89,182,0.6); box-shadow: 0 0 10px rgba(155,89,182,0.25); }
         .shop-logo-name { font-size: 11px; font-weight: bold; margin-bottom: 4px; letter-spacing: 1.5px; }
+        /* ホーム設定サマリー表示 */
+        .home-setting-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .home-setting-summary-text { font-size: 11px; color: var(--champagne-gold); letter-spacing: 0.8px; line-height: 1.8; flex: 1; }
+        .home-setting-change-btn { background: none; border: 1px solid rgba(155,89,182,0.4); color: var(--amethyst); font-size: 11px; letter-spacing: 0.5px; padding: 5px 10px; border-radius: 2px; cursor: pointer; transition: 0.2s; white-space: nowrap; flex-shrink: 0; }
+        .home-setting-change-btn:hover { border-color: var(--amethyst); box-shadow: 0 0 8px rgba(155,89,182,0.4); }
+        /* 設定未完了時：見守りセクションをロック */
+        .monitor-locked { opacity: 0.3; pointer-events: none; user-select: none; }
+
+        /* ── カレンダー登録ポップアップモーダル ── */
+        #cal-popup-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9200;
+            background: rgba(0,0,0,0.72); display: none; align-items: center; justify-content: center;
+        }
+        .cal-popup-box {
+            background: #050008; border: 1px solid var(--amethyst);
+            box-shadow: 0 0 28px rgba(155,89,182,0.5); border-radius: 2px;
+            padding: 22px 20px; width: 290px; box-sizing: border-box;
+        }
+        .cal-popup-item-title {
+            font-size: 11px; color: #fff; font-weight: bold;
+            letter-spacing: 0.5px; line-height: 1.5;
+            margin-bottom: 4px;
+        }
+        .cal-popup-date {
+            font-size: 11px; color: var(--amethyst);
+            letter-spacing: 0.8px; margin-bottom: 14px;
+        }
+        .cal-popup-label {
+            font-size: 11px; color: var(--champagne-gold);
+            letter-spacing: 0.8px; opacity: 0.7; margin-bottom: 6px;
+            display: block;
+        }
+        .cal-action-row {
+            display: flex; gap: 8px; margin-top: 14px;
+        }
+        .cal-action-btn {
+            flex: 1; font-size: 11px; letter-spacing: 1px;
+            color: var(--champagne-gold);
+            background: rgba(247,231,206,0.05);
+            border: 1px solid rgba(247,231,206,0.25); border-radius: 2px;
+            padding: 10px 4px; text-align: center; cursor: pointer;
+            transition: 0.2s;
+        }
+        .cal-action-btn:hover { border-color: var(--champagne-gold); box-shadow: 0 0 8px rgba(247,231,206,0.2); }
+        .cal-close-btn {
+            width: 100%; background: none; border: none;
+            font-size: 11px; color: rgba(255,255,255,0.25);
+            cursor: pointer; margin-top: 12px; letter-spacing: 0.5px;
+        }
+
+        /* 通知 (NOTIFICATION) セクションラベル */
+        .notification-label {
+            font-size: 11px; color: var(--amethyst);
+            letter-spacing: 1.5px; margin-bottom: var(--gap-11);
+            font-weight: bold; display: block; opacity: 1;
+            text-shadow: 0 0 14px rgba(155,89,182,0.85), 0 0 4px rgba(155,89,182,0.5);
+        }
+        /* インテル記事カード */
+        .intel-source-tag {
+            font-size: 11px; color: rgba(155,89,182,0.7);
+            letter-spacing: 0.5px; margin-top: 2px;
+        }
+        .intel-cal-btn {
+            font-size: 11px; color: var(--amethyst);
+            background: none; border: 1px solid rgba(155,89,182,0.35);
+            border-radius: 2px; padding: 5px 10px; cursor: pointer;
+            transition: 0.2s; margin-top: 6px; letter-spacing: 0.5px;
+        }
+        .intel-cal-btn:hover { border-color: var(--amethyst); box-shadow: 0 0 8px rgba(155,89,182,0.3); }
+        /* 定価超過バッジ */
+        .over-list-badge {
+            font-size: 11px; color: var(--champagne-gold);
+            letter-spacing: 1.2px; font-weight: bold;
+            background: rgba(247,231,206,0.07);
+            border: 1px solid rgba(247,231,206,0.35);
+            border-radius: 2px; padding: 3px 8px;
+            display: inline-block; margin-top: 6px;
+        }
+        /* Deep Recon ラベル */
+        .deep-recon-label {
+            font-size: 11px; color: var(--amethyst);
+            letter-spacing: 2px; opacity: 0.75;
+            display: block; margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -764,7 +886,89 @@
         <div class="screen-content">
           <div class="tbx-wrap">
 
-
+            <!-- ── HOME USER SETTINGS ── -->
+            <div class="transparent-box" id="home-user-settings-box">
+                <div id="home-setting-summary-wrap" style="display:none;">
+                    <div class="home-setting-summary">
+                        <span id="home-setting-summary-text" class="home-setting-summary-text"></span>
+                        <button class="home-setting-change-btn" onclick="toggleHomeSettings()">変更する</button>
+                    </div>
+                </div>
+                <div id="home-setting-form">
+                    <span class="gold-label">サイズ設定</span>
+                    <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別</span>
+                    <div class="chip-row" id="dial-gender">
+                        <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
+                        <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
+                    </div>
+                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
+                    <div class="chip-row" id="dial-cloth-size">
+                        <div class="setting-chip" data-val="S" onclick="selectChip('cloth',this)">S</div>
+                        <div class="setting-chip" data-val="M" onclick="selectChip('cloth',this)">M</div>
+                        <div class="setting-chip" data-val="L" onclick="selectChip('cloth',this)">L</div>
+                    </div>
+                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
+                    <div class="chip-row" id="dial-shoe-size">
+                        <div class="setting-chip" data-val="22.5" onclick="selectChip('shoe',this)">22.5</div>
+                        <div class="setting-chip" data-val="23.0" onclick="selectChip('shoe',this)">23.0</div>
+                        <div class="setting-chip" data-val="23.5" onclick="selectChip('shoe',this)">23.5</div>
+                        <div class="setting-chip" data-val="24.0" onclick="selectChip('shoe',this)">24.0</div>
+                        <div class="setting-chip" data-val="24.5" onclick="selectChip('shoe',this)">24.5</div>
+                        <div class="setting-chip" data-val="25.0" onclick="selectChip('shoe',this)">25.0</div>
+                        <div class="setting-chip" data-val="25.5" onclick="selectChip('shoe',this)">25.5</div>
+                        <div class="setting-chip" data-val="26.0" onclick="selectChip('shoe',this)">26.0</div>
+                        <div class="setting-chip" data-val="26.5" onclick="selectChip('shoe',this)">26.5</div>
+                        <div class="setting-chip" data-val="27.0" onclick="selectChip('shoe',this)">27.0</div>
+                        <div class="setting-chip" data-val="27.5" onclick="selectChip('shoe',this)">27.5</div>
+                        <div class="setting-chip" data-val="28.0" onclick="selectChip('shoe',this)">28.0</div>
+                    </div>
+                    <div style="margin-top:18px;margin-bottom:8px;padding-top:12px;border-top:1px solid rgba(155,89,182,0.2);">
+                        <span style="font-size:11px;color:rgba(255,255,255,1);display:block;margin-bottom:4px;letter-spacing:0.5px;">（任意）</span>
+                        <span class="gold-label" style="font-size:11px;letter-spacing:2px;">お子様（ジュニア）サイズ</span>
+                    </div>
+                    <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
+                    <div class="chip-row" id="dial-child-gender">
+                        <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
+                        <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
+                    </div>
+                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
+                    <div class="chip-row" id="dial-child-size">
+                        <div class="setting-chip" data-val="80" onclick="selectChip('childCloth',this)">80</div>
+                        <div class="setting-chip" data-val="90" onclick="selectChip('childCloth',this)">90</div>
+                        <div class="setting-chip" data-val="100" onclick="selectChip('childCloth',this)">100</div>
+                        <div class="setting-chip" data-val="110" onclick="selectChip('childCloth',this)">110</div>
+                        <div class="setting-chip" data-val="120" onclick="selectChip('childCloth',this)">120</div>
+                        <div class="setting-chip" data-val="130" onclick="selectChip('childCloth',this)">130</div>
+                        <div class="setting-chip" data-val="140" onclick="selectChip('childCloth',this)">140</div>
+                        <div class="setting-chip" data-val="150" onclick="selectChip('childCloth',this)">150</div>
+                        <div class="setting-chip" data-val="160" onclick="selectChip('childCloth',this)">160</div>
+                    </div>
+                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
+                    <div class="chip-row" id="dial-child-shoe">
+                        <div class="setting-chip" data-val="12.0" onclick="selectChip('childShoe',this)">12.0</div>
+                        <div class="setting-chip" data-val="12.5" onclick="selectChip('childShoe',this)">12.5</div>
+                        <div class="setting-chip" data-val="13.0" onclick="selectChip('childShoe',this)">13.0</div>
+                        <div class="setting-chip" data-val="13.5" onclick="selectChip('childShoe',this)">13.5</div>
+                        <div class="setting-chip" data-val="14.0" onclick="selectChip('childShoe',this)">14.0</div>
+                        <div class="setting-chip" data-val="14.5" onclick="selectChip('childShoe',this)">14.5</div>
+                        <div class="setting-chip" data-val="15.0" onclick="selectChip('childShoe',this)">15.0</div>
+                        <div class="setting-chip" data-val="15.5" onclick="selectChip('childShoe',this)">15.5</div>
+                        <div class="setting-chip" data-val="16.0" onclick="selectChip('childShoe',this)">16.0</div>
+                        <div class="setting-chip" data-val="16.5" onclick="selectChip('childShoe',this)">16.5</div>
+                        <div class="setting-chip" data-val="17.0" onclick="selectChip('childShoe',this)">17.0</div>
+                        <div class="setting-chip" data-val="17.5" onclick="selectChip('childShoe',this)">17.5</div>
+                        <div class="setting-chip" data-val="18.0" onclick="selectChip('childShoe',this)">18.0</div>
+                        <div class="setting-chip" data-val="18.5" onclick="selectChip('childShoe',this)">18.5</div>
+                        <div class="setting-chip" data-val="19.0" onclick="selectChip('childShoe',this)">19.0</div>
+                        <div class="setting-chip" data-val="19.5" onclick="selectChip('childShoe',this)">19.5</div>
+                        <div class="setting-chip" data-val="20.0" onclick="selectChip('childShoe',this)">20.0</div>
+                        <div class="setting-chip" data-val="20.5" onclick="selectChip('childShoe',this)">20.5</div>
+                        <div class="setting-chip" data-val="21.0" onclick="selectChip('childShoe',this)">21.0</div>
+                        <div class="setting-chip" data-val="21.5" onclick="selectChip('childShoe',this)">21.5</div>
+                    </div>
+                    <button class="sync-hub-btn" onclick="saveUserSettings(true)">設定を保存する</button>
+                </div>
+            </div>
 
             <!-- ── MONITOR INPUT ── -->
             <div class="transparent-box">
@@ -772,14 +976,13 @@
                     <span class="gold-label" style="margin-bottom:0;display:inline;">見守り設定</span>
                     <span id="mode-guide-hint" class="mode-guide-hint">（どちらかを選択）</span>
                 </div>
+                <div id="monitor-section-body">
                 <div class="monitor-mode-row">
-                    <div class="monitor-mode-item">
-                        <input type="checkbox" id="mode-trend" onchange="onModeChange()">
-                        <label for="mode-trend">新作・予約・キャンペーンを追う</label>
+                    <div class="monitor-mode-item" data-mode="trend" onclick="onModeChange('trend')">
+                        <label style="pointer-events:none;">【新作・予約・キャンペーンを追う】<br><span style="font-size:11px;color:rgba(247,231,206,0.45);font-weight:normal;letter-spacing:0.5px;">ターゲット：発売日前・予約開始前の商品、懸賞（キャンペーン）など</span></label>
                     </div>
-                    <div class="monitor-mode-item">
-                        <input type="checkbox" id="mode-stock" onchange="onModeChange()">
-                        <label for="mode-stock">入荷・再販・推し活を追う</label>
+                    <div class="monitor-mode-item" data-mode="stock" onclick="onModeChange('stock')">
+                        <label style="pointer-events:none;">【入荷・再販・推し活を追う】<br><span style="font-size:11px;color:rgba(247,231,206,0.45);font-weight:normal;letter-spacing:0.5px;">ターゲット：完売中の商品、再販待ちのグッズ、推し活など</span></label>
                     </div>
                 </div>
                 <div id="monitor-mode-hint" class="meta-11px" style="color:var(--amethyst);opacity:1;margin:8px 0 4px;display:none;"></div>
@@ -793,10 +996,16 @@
                 <div id="monitor-search-wrap">
                     <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
                     <div style="position:relative;">
-                        <input type="text" id="monitor-input" placeholder="入力してください">
-                        <i class="fas fa-search monitor-search-icon" onclick="executeMonitor()"></i>
+                        <input type="text" id="monitor-input" placeholder="例：商品名・品番を入力" onkeydown="if(event.key==='Enter')executeMonitor()">
+                        <span class="monitor-search-icon-wrap" onclick="executeMonitor()">
+                            <i id="monitor-search-fa" class="fas fa-search monitor-search-icon"></i>
+                            <span id="monitor-spinner"></span>
+                        </span>
                     </div>
-                    <button class="btn-purple" onclick="executeMonitor()">見守りを開始</button>
+                    <div id="scout-status-text"></div>
+                    <div id="intel-badge" onclick="goToIntelResult()"></div>
+                    <button class="btn-purple" onclick="executeMonitor()">見守り開始</button>
+                </div>
                 </div>
             </div>
 
@@ -820,7 +1029,7 @@
                   <div id="home-banner-sub" class="home-banner-text-sub">ウォッチしているブランドやカテゴリに合わせて最適化（ダミー挙動）</div>
                 </div>
               </div>
-              <div class="home-banner-meta">AD · 楽天連動 / BRAND SAFE</div>
+              <div class="home-banner-meta">広告 · 楽天連動 / 安全配信</div>
             </div>
             <div id="home-banner-ad-2">
               <div class="home-banner-inner">
@@ -830,7 +1039,7 @@
                   <div class="home-banner-text-sub">複数ショップの再入荷・値下げ情報をシミュレーション表示（ダミー）</div>
                 </div>
               </div>
-              <div class="home-banner-meta">AD · Amazon・Yahoo連動 / BRAND SAFE</div>
+              <div class="home-banner-meta">広告 · Amazon・Yahoo連動 / 安全配信</div>
             </div>
             <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。</p>
 
@@ -848,9 +1057,14 @@
                 <span class="gold-label">トレンド探索</span>
                 <p class="trend-intro-11px">24時間に1回、未発売・予約情報を捉え、発売日が確定した瞬間に通知します。</p>
                 <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
-                    <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み">
-                    <i class="fas fa-search" onclick="filterTrendItems()" style="position:absolute; right:20px; top:13px; color:var(--amethyst); font-size:20px; cursor:pointer;"></i>
+                    <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み" onkeydown="if(event.key==='Enter')triggerInsightScout()">
+                    <span class="monitor-search-icon-wrap" onclick="triggerInsightScout()">
+                        <i id="insight-search-fa" class="fas fa-search monitor-search-icon"></i>
+                        <span id="insight-spinner"></span>
+                    </span>
                 </div>
+                <div id="insight-scout-status"></div>
+                <span class="deep-recon-label">◈ Deep Recon: 60 Days</span>
                 <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで発売通知が届く。</p>
             </div>
             <div class="transparent-box">
@@ -886,101 +1100,6 @@
 
     <div id="link" class="screen">
         <div class="screen-content">
-
-            <!-- ユーザー設定セクション -->
-            <div class="transparent-box" id="user-settings-box">
-                <span class="gold-label">ユーザー設定</span>
-
-                <!-- 性別 -->
-                <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別</span>
-                <div class="chip-row" id="dial-gender">
-                    <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
-                    <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
-                </div>
-
-                <!-- 服のサイズ -->
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
-                <div class="chip-row" id="dial-cloth-size">
-                    <div class="setting-chip" data-val="XS" onclick="selectChip('cloth',this)">XS</div>
-                    <div class="setting-chip" data-val="S" onclick="selectChip('cloth',this)">S</div>
-                    <div class="setting-chip" data-val="M" onclick="selectChip('cloth',this)">M</div>
-                    <div class="setting-chip" data-val="L" onclick="selectChip('cloth',this)">L</div>
-                    <div class="setting-chip" data-val="XL" onclick="selectChip('cloth',this)">XL</div>
-                    <div class="setting-chip" data-val="2XL" onclick="selectChip('cloth',this)">2XL</div>
-                    <div class="setting-chip" data-val="3XL" onclick="selectChip('cloth',this)">3XL</div>
-                </div>
-
-                <!-- 靴のサイズ -->
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
-                <div class="chip-row" id="dial-shoe-size">
-                    <div class="setting-chip" data-val="22.5" onclick="selectChip('shoe',this)">22.5</div>
-                    <div class="setting-chip" data-val="23.0" onclick="selectChip('shoe',this)">23.0</div>
-                    <div class="setting-chip" data-val="23.5" onclick="selectChip('shoe',this)">23.5</div>
-                    <div class="setting-chip" data-val="24.0" onclick="selectChip('shoe',this)">24.0</div>
-                    <div class="setting-chip" data-val="24.5" onclick="selectChip('shoe',this)">24.5</div>
-                    <div class="setting-chip" data-val="25.0" onclick="selectChip('shoe',this)">25.0</div>
-                    <div class="setting-chip" data-val="25.5" onclick="selectChip('shoe',this)">25.5</div>
-                    <div class="setting-chip" data-val="26.0" onclick="selectChip('shoe',this)">26.0</div>
-                    <div class="setting-chip" data-val="26.5" onclick="selectChip('shoe',this)">26.5</div>
-                    <div class="setting-chip" data-val="27.0" onclick="selectChip('shoe',this)">27.0</div>
-                    <div class="setting-chip" data-val="27.5" onclick="selectChip('shoe',this)">27.5</div>
-                    <div class="setting-chip" data-val="28.0" onclick="selectChip('shoe',this)">28.0</div>
-                </div>
-
-                <!-- お子様設定 -->
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お子様の性別</span>
-                <div class="chip-row" id="dial-child-gender">
-                    <div class="setting-chip" data-val="none" onclick="selectChip('childGender',this)">なし</div>
-                    <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
-                    <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
-                </div>
-
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お子様の服サイズ</span>
-                <div class="chip-row" id="dial-child-size">
-                    <div class="setting-chip" data-val="80" onclick="selectChip('childCloth',this)">80</div>
-                    <div class="setting-chip" data-val="90" onclick="selectChip('childCloth',this)">90</div>
-                    <div class="setting-chip" data-val="100" onclick="selectChip('childCloth',this)">100</div>
-                    <div class="setting-chip" data-val="110" onclick="selectChip('childCloth',this)">110</div>
-                    <div class="setting-chip" data-val="120" onclick="selectChip('childCloth',this)">120</div>
-                    <div class="setting-chip" data-val="130" onclick="selectChip('childCloth',this)">130</div>
-                    <div class="setting-chip" data-val="140" onclick="selectChip('childCloth',this)">140</div>
-                    <div class="setting-chip" data-val="150" onclick="selectChip('childCloth',this)">150</div>
-                    <div class="setting-chip" data-val="160" onclick="selectChip('childCloth',this)">160</div>
-                </div>
-
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お子様の靴サイズ (cm)</span>
-                <div class="chip-row" id="dial-child-shoe">
-                    <div class="setting-chip" data-val="13" onclick="selectChip('childShoe',this)">13</div>
-                    <div class="setting-chip" data-val="14" onclick="selectChip('childShoe',this)">14</div>
-                    <div class="setting-chip" data-val="15" onclick="selectChip('childShoe',this)">15</div>
-                    <div class="setting-chip" data-val="16" onclick="selectChip('childShoe',this)">16</div>
-                    <div class="setting-chip" data-val="17" onclick="selectChip('childShoe',this)">17</div>
-                    <div class="setting-chip" data-val="18" onclick="selectChip('childShoe',this)">18</div>
-                    <div class="setting-chip" data-val="19" onclick="selectChip('childShoe',this)">19</div>
-                    <div class="setting-chip" data-val="20" onclick="selectChip('childShoe',this)">20</div>
-                    <div class="setting-chip" data-val="21" onclick="selectChip('childShoe',this)">21</div>
-                    <div class="setting-chip" data-val="22" onclick="selectChip('childShoe',this)">22</div>
-                </div>
-
-                <!-- 興味カテゴリ（複数選択・最大5件） -->
-                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">興味カテゴリ（最大5件）</span>
-                <div class="chip-row" id="dial-interests">
-                    <div class="setting-chip" data-val="fashion" onclick="toggleInterest(this)">ファッション</div>
-                    <div class="setting-chip" data-val="shoes" onclick="toggleInterest(this)">シューズ</div>
-                    <div class="setting-chip" data-val="bag" onclick="toggleInterest(this)">バッグ・財布</div>
-                    <div class="setting-chip" data-val="kids" onclick="toggleInterest(this)">キッズ</div>
-                    <div class="setting-chip" data-val="beauty" onclick="toggleInterest(this)">コスメ・美容</div>
-                    <div class="setting-chip" data-val="gadget" onclick="toggleInterest(this)">ガジェット・家電</div>
-                    <div class="setting-chip" data-val="sneaker" onclick="toggleInterest(this)">スニーカー</div>
-                    <div class="setting-chip" data-val="sports" onclick="toggleInterest(this)">スポーツ</div>
-                    <div class="setting-chip" data-val="outdoor" onclick="toggleInterest(this)">アウトドア</div>
-                    <div class="setting-chip" data-val="interior" onclick="toggleInterest(this)">インテリア</div>
-                    <div class="setting-chip" data-val="food" onclick="toggleInterest(this)">食品・グルメ</div>
-                    <div class="setting-chip" data-val="hobby" onclick="toggleInterest(this)">ホビー・趣味</div>
-                </div>
-
-                <button class="sync-hub-btn" onclick="saveUserSettings(true)">設定を保存する</button>
-            </div>
 
             <div class="transparent-box">
                 <span class="gold-label">見守りプラン選択</span>
@@ -1039,6 +1158,27 @@
         </div>
     </div>
 
+    <!-- カレンダー登録ポップアップモーダル（任意登録・自動登録厳禁） -->
+    <div id="cal-popup-modal">
+        <div class="cal-popup-box">
+            <span class="gold-label" style="margin-bottom:11px;">カレンダーに登録</span>
+            <div id="cal-popup-item-title" class="cal-popup-item-title"></div>
+            <div id="cal-popup-date" class="cal-popup-date"></div>
+            <span class="cal-popup-label">リマインダー（.ics のみ有効）</span>
+            <div class="chip-row" id="cal-reminder-chips">
+                <div class="setting-chip" data-val="0" onclick="selectCalChip(this)">なし</div>
+                <div class="setting-chip active" data-val="15" onclick="selectCalChip(this)">15分前</div>
+                <div class="setting-chip" data-val="30" onclick="selectCalChip(this)">30分前</div>
+                <div class="setting-chip" data-val="60" onclick="selectCalChip(this)">1時間前</div>
+            </div>
+            <div class="cal-action-row">
+                <button class="cal-action-btn" onclick="submitCalAction('gcal')">Googleカレンダー</button>
+                <button class="cal-action-btn" onclick="submitCalAction('ics')">.ics ダウンロード</button>
+            </div>
+            <button class="cal-close-btn" onclick="closeCalModal()">閉じる</button>
+        </div>
+    </div>
+
     <!-- 削除確認モーダル -->
     <div id="delete-confirm-modal">
         <div class="delete-confirm-box">
@@ -1050,48 +1190,6 @@
         </div>
     </div>
 
-    <!-- 目的選択モーダル -->
-    <div id="purpose-modal">
-        <div class="purpose-box">
-            <!-- STEP 1: 誰のため -->
-            <div id="purpose-step1">
-                <span class="gold-label">誰のための見守りですか？</span>
-                <div class="purpose-btn-row">
-                    <button class="purpose-btn" id="pbtn-self" onclick="selectPurpose('self')">自分用</button>
-                    <button class="purpose-btn" id="pbtn-gift" onclick="selectPurpose('gift')">ギフト用</button>
-                    <button class="purpose-btn" id="pbtn-child" onclick="selectPurpose('child')">子供用</button>
-                </div>
-            </div>
-
-            <!-- STEP 2: カテゴリ選択 -->
-            <div id="purpose-step2" style="display:none; margin-top:var(--gap-11);">
-                <span class="gold-label" style="font-size:11px; margin-bottom:8px;">具体的なアイテムは？（複数可）</span>
-                <div class="chip-row" id="modal-cat-chips" style="margin-top:8px;">
-                    <div class="setting-chip" data-val="ファッション" onclick="toggleModalCat(this)">ファッション</div>
-                    <div class="setting-chip" data-val="シューズ" onclick="toggleModalCat(this)">シューズ</div>
-                    <div class="setting-chip" data-val="バッグ・財布" onclick="toggleModalCat(this)">バッグ・財布</div>
-                    <div class="setting-chip" data-val="コスメ・美容" onclick="toggleModalCat(this)">コスメ・美容</div>
-                    <div class="setting-chip" data-val="ガジェット・家電" onclick="toggleModalCat(this)">ガジェット・家電</div>
-                    <div class="setting-chip" data-val="スニーカー" onclick="toggleModalCat(this)">スニーカー</div>
-                    <div class="setting-chip" data-val="スポーツ" onclick="toggleModalCat(this)">スポーツ</div>
-                    <div class="setting-chip" data-val="インテリア" onclick="toggleModalCat(this)">インテリア</div>
-                    <div class="setting-chip" data-val="キッズ" onclick="toggleModalCat(this)">キッズ</div>
-                    <div class="setting-chip" data-val="食品・グルメ" onclick="toggleModalCat(this)">食品・グルメ</div>
-                    <div class="setting-chip" data-val="ホビー・趣味" onclick="toggleModalCat(this)">ホビー・趣味</div>
-                </div>
-            </div>
-
-            <!-- 確認サマリー -->
-            <div id="purpose-confirm-box" class="confirm-glow-box" style="display:none; margin-top:var(--gap-11);">
-                <div class="confirm-row">対象： <span id="conf-purpose">—</span></div>
-                <div class="confirm-row">カテゴリ： <span id="conf-category">—</span></div>
-                <div class="confirm-row">補完キーワード： <span id="conf-keyword">—</span></div>
-                <div class="confirm-row">監視モード： <span id="conf-mode">—</span></div>
-            </div>
-            <button class="btn-purple" id="purpose-confirm-btn" onclick="confirmMonitor()" style="display:none;">この内容で見守りを開始</button>
-            <button onclick="closePurposeModal()" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:11px;margin-top:var(--gap-11);cursor:pointer;width:100%;text-align:center;letter-spacing:1px;">キャンセル</button>
-        </div>
-    </div>
 
     <div class="screen-fade-overlay" aria-hidden="true"></div>
     <div class="nav-bar">
@@ -1099,7 +1197,7 @@
         <button class="nav-item" onclick="show('history', this)"><i class="fas fa-bell"></i><span>履歴</span></button>
         <button class="nav-item" onclick="show('insight', this)"><i class="fas fa-search"></i><span>探索</span></button>
         <button class="nav-item" onclick="show('settings', this)"><i class="fas fa-crosshairs"></i><span>見守り</span></button>
-        <button class="nav-item" onclick="show('link', this)"><i class="fas fa-link"></i><span>連携</span></button>
+        <button class="nav-item" onclick="show('link', this)"><i class="fas fa-gem"></i><span>プラン</span></button>
         <button class="nav-item" onclick="show('chat', this)"><i class="fas fa-comments"></i><span>交流</span></button>
     </div>
 
@@ -1261,69 +1359,6 @@
         // リワード枠：24時間有効タイムスタンプ管理（全プラン共通）
         let rewardExpiresAt = 0;
 
-        // モーダル制御
-        let _pendingKeyword = '';
-        let _pendingPurpose = '';
-        let _pendingMode = [];
-
-        function openPurposeModal(keyword, modes) {
-            _pendingKeyword = keyword;
-            _pendingMode = modes;
-            _pendingPurpose = '';
-            document.querySelectorAll('.purpose-btn').forEach(b => b.classList.remove('selected'));
-            document.querySelectorAll('#modal-cat-chips .setting-chip').forEach(c => c.classList.remove('active'));
-            document.getElementById('purpose-step2').style.display = 'none';
-            document.getElementById('purpose-confirm-box').style.display = 'none';
-            document.getElementById('purpose-confirm-btn').style.display = 'none';
-            document.getElementById('purpose-modal').classList.add('open');
-        }
-        function closePurposeModal() {
-            document.getElementById('purpose-modal').classList.remove('open');
-        }
-        function toggleModalCat(el) {
-            el.classList.toggle('active');
-            _refreshModalConfirm();
-        }
-        function selectPurpose(type) {
-            _pendingPurpose = type;
-            document.querySelectorAll('.purpose-btn').forEach(b => b.classList.remove('selected'));
-            document.getElementById('pbtn-' + type).classList.add('selected');
-            // ステップ2（カテゴリ選択）を表示
-            document.getElementById('purpose-step2').style.display = 'block';
-            _refreshModalConfirm();
-        }
-        function _getModalCategories() {
-            return Array.from(document.querySelectorAll('#modal-cat-chips .setting-chip.active'))
-                .map(c => c.dataset.val);
-        }
-        function _buildEnrichedKeyword(base, purpose, cats) {
-            // カテゴリが選ばれていれば先頭2件をキーワードに付加してノイズを絞り込む
-            if (cats.length === 0) return base;
-            return base + ' ' + cats.slice(0, 2).join(' ');
-        }
-        function _refreshModalConfirm() {
-            if (!_pendingPurpose) return;
-            const cats = _getModalCategories();
-            const purposeLabel = { self: '自分用', gift: 'ギフト用', child: '子供用' }[_pendingPurpose];
-            const catLabel = cats.length > 0 ? cats.join('・') : '（未選択）';
-            const enriched = _buildEnrichedKeyword(_pendingKeyword, _pendingPurpose, cats);
-            const modeLabel = _pendingMode.join(' + ') || '—';
-            document.getElementById('conf-purpose').textContent = purposeLabel;
-            document.getElementById('conf-category').textContent = catLabel;
-            document.getElementById('conf-keyword').textContent = enriched;
-            document.getElementById('conf-mode').textContent = modeLabel;
-            document.getElementById('purpose-confirm-box').style.display = 'block';
-            document.getElementById('purpose-confirm-btn').style.display = 'block';
-        }
-        function confirmMonitor() {
-            const cats = _getModalCategories();
-            const enrichedKeyword = _buildEnrichedKeyword(_pendingKeyword, _pendingPurpose, cats);
-            if (_pendingPurpose === 'child') userProfile.hasChildren = true;
-            closePurposeModal();
-            updateBannerAdContent(enrichedKeyword);
-            _pendingMode.forEach(mode => enqueueWatch(enrichedKeyword, mode));
-            _startMonitorCore(enrichedKeyword);
-        }
 
         // プラン別・見守り枠上限
         const PLAN_LIMITS = {
@@ -1343,6 +1378,8 @@
 
         // トレンド探索：ユーザーが見守り追加したアイテムのみ表示
         let trendItems = [];
+        // インテル・スカウター直近取得結果（探索画面インライン表示用）
+        let intelScoutResults = [];
         let trendWatching = new Set();
         let trendTimers = {};
 
@@ -1429,6 +1466,14 @@
                 card.appendChild(titleEl);
                 card.appendChild(metaEl);
 
+                // 定価超過バッジ（P_market > P_list の場合）
+                if (item.overListPrice) {
+                    const overBadge = document.createElement('span');
+                    overBadge.className = 'over-list-badge';
+                    overBadge.textContent = 'OVER LIST PRICE（定価超過）';
+                    card.appendChild(overBadge);
+                }
+
                 if (isWatching) {
                     if (_sectionEditMode === 'TREND') {
                         const cb = document.createElement('input');
@@ -1459,6 +1504,44 @@
                 }
                 container.appendChild(card);
             });
+
+            // ── インテル・スカウター即時結果（探索画面インライン） ──
+            if (intelScoutResults.length > 0) {
+                var intelFiltered = intelScoutResults.filter(function(item) {
+                    return !kw || item.title.toLowerCase().includes(kw) || (item.keyword || '').toLowerCase().includes(kw);
+                });
+                if (intelFiltered.length > 0) {
+                    var intelSect = document.createElement('div');
+                    intelSect.style.cssText = 'margin-top:14px; border-top:1px solid rgba(155,89,182,0.2); padding-top:11px;';
+                    var intelHdr = document.createElement('span');
+                    intelHdr.className = 'notification-label';
+                    intelHdr.style.cssText = 'margin-bottom:8px;';
+                    intelHdr.textContent = '通知 / NOTIFICATION — スカウター検知';
+                    intelSect.appendChild(intelHdr);
+                    intelFiltered.forEach(function(item) {
+                        var card = document.createElement('div');
+                        card.className = 'history-card history-card-notified';
+                        card.style.cssText = 'cursor:pointer; margin-bottom:8px;';
+                        if (item.url) card.onclick = function() { window.open(item.url, '_blank'); };
+                        var hdr = document.createElement('div');
+                        hdr.className = 'history-card-header';
+                        var tEl = document.createElement('span');
+                        tEl.className = 'item-title'; tEl.textContent = item.title;
+                        var tg = document.createElement('span');
+                        tg.className = 'notification-label';
+                        tg.style.cssText = 'margin-bottom:0; font-size:11px;';
+                        tg.textContent = 'INTEL';
+                        hdr.appendChild(tEl); hdr.appendChild(tg);
+                        card.appendChild(hdr);
+                        var meta = document.createElement('div');
+                        meta.className = 'intel-source-tag';
+                        meta.textContent = (item.keyword || '') + (item.time ? '  ｜  ' + item.time : '');
+                        card.appendChild(meta);
+                        intelSect.appendChild(card);
+                    });
+                    container.appendChild(intelSect);
+                }
+            }
         }
 
         function addToWatchFromTrend(item) {
@@ -1626,24 +1709,83 @@
             return 'https://calendar.google.com/calendar/render?action=TEMPLATE&' + params.toString();
         }
 
-        function buildIcsContent(title, dateLabel) {
+        function buildIcsContent(title, dateLabel, reminderMins) {
             var now = new Date();
-            var match = dateLabel.match(/(\d+)\/(\d+)/);
+            var match = dateLabel ? dateLabel.match(/(\d+)\/(\d+)/) : null;
             var m = match ? String(parseInt(match[1])).padStart(2,'0') : String(now.getMonth()+1).padStart(2,'0');
             var d = match ? String(parseInt(match[2])).padStart(2,'0') : String(now.getDate()).padStart(2,'0');
             var dateStr = now.getFullYear() + m + d;
-            return ['BEGIN:VCALENDAR','VERSION:2.0','BEGIN:VEVENT',
+            var lines = ['BEGIN:VCALENDAR','VERSION:2.0','BEGIN:VEVENT',
                 'DTSTART;VALUE=DATE:' + dateStr,'DTEND;VALUE=DATE:' + dateStr,
-                'SUMMARY:' + title + ' 発売日','DESCRIPTION:RE-EYE-HUB より通知','END:VEVENT','END:VCALENDAR'].join('\r\n');
+                'SUMMARY:' + title + ' 発売日','DESCRIPTION:RE-EYE-HUB より通知'];
+            var mins = Number(reminderMins);
+            if (mins > 0) {
+                lines.push('BEGIN:VALARM',
+                    'TRIGGER:-PT' + mins + 'M',
+                    'ACTION:DISPLAY',
+                    'DESCRIPTION:発売日リマインダー',
+                    'END:VALARM');
+            }
+            lines.push('END:VEVENT','END:VCALENDAR');
+            return lines.join('\r\n');
         }
 
         function downloadIcs(title, dateLabel) {
-            var content = buildIcsContent(title, dateLabel);
+            var content = buildIcsContent(title, dateLabel, 15);
             var blob = new Blob([content], { type: 'text/calendar' });
             var a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = title + '.ics';
             a.click();
+        }
+
+        // ── カレンダーポップアップ ──────────────────────────────────
+        var _calTitle = '';
+        var _calReleaseLabel = '';
+
+        function openCalModal(title, releaseLabel) {
+            _calTitle = title;
+            _calReleaseLabel = releaseLabel || '';
+            var titleEl = document.getElementById('cal-popup-item-title');
+            var dateEl  = document.getElementById('cal-popup-date');
+            if (titleEl) titleEl.textContent = title;
+            if (dateEl)  dateEl.textContent  = releaseLabel || '';
+            // リマインダーを 15分前 にリセット
+            document.querySelectorAll('#cal-reminder-chips .setting-chip').forEach(function(c) {
+                c.classList.toggle('active', c.dataset.val === '15');
+            });
+            document.getElementById('cal-popup-modal').style.display = 'flex';
+        }
+
+        function closeCalModal() {
+            document.getElementById('cal-popup-modal').style.display = 'none';
+        }
+
+        function selectCalChip(el) {
+            el.parentElement.querySelectorAll('.setting-chip').forEach(function(c) {
+                c.classList.remove('active');
+            });
+            el.classList.add('active');
+        }
+
+        function getCalReminderMins() {
+            var chip = document.querySelector('#cal-reminder-chips .setting-chip.active');
+            return chip ? parseInt(chip.dataset.val, 10) : 15;
+        }
+
+        function submitCalAction(action) {
+            var mins = getCalReminderMins();
+            closeCalModal();
+            if (action === 'gcal') {
+                window.open(buildGoogleCalendarUrl(_calTitle, _calReleaseLabel), '_blank');
+            } else {
+                var content = buildIcsContent(_calTitle, _calReleaseLabel, mins);
+                var blob = new Blob([content], { type: 'text/calendar' });
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = _calTitle + '.ics';
+                a.click();
+            }
         }
 
         function renderHistory(items) {
@@ -1652,9 +1794,10 @@
             container.innerHTML = '';
 
             const raw = items || [];
-            const onItems = raw.filter(i => i.status === 'ON').sort(sortByCaughtTimeDesc);
-            const offItems = raw.filter(i => i.status === 'OFF').sort(sortByCaughtTimeDesc);
+            const onItems       = raw.filter(i => i.status === 'ON').sort(sortByCaughtTimeDesc);
+            const offItems      = raw.filter(i => i.status === 'OFF').sort(sortByCaughtTimeDesc);
             const notifiedItems = raw.filter(i => i.status === 'NOTIFIED').sort(sortByCaughtTimeDesc);
+            const intelItems    = raw.filter(i => i.status === 'INTEL').sort(sortByCaughtTimeDesc);
 
             // ── ヘルパー：セクションボックスを構築 ──
             function buildSectionBox(status, labelClass, labelText, items, cardBuilder) {
@@ -1779,22 +1922,72 @@
                     header.appendChild(titleEl); header.appendChild(statusEl);
                     card.appendChild(header);
                     if (item.releaseLabel && _sectionEditMode !== status) {
-                        const calRow = document.createElement('div');
-                        calRow.className = 'cal-btn-row';
-                        const gcalBtn = document.createElement('a');
-                        gcalBtn.className = 'cal-btn';
-                        gcalBtn.href = buildGoogleCalendarUrl(item.title, item.releaseLabel);
-                        gcalBtn.target = '_blank'; gcalBtn.rel = 'noopener';
-                        gcalBtn.textContent = 'Google Calendar';
-                        const icsBtn = document.createElement('button');
-                        icsBtn.className = 'cal-btn'; icsBtn.textContent = '.ics（iPhone等）';
-                        icsBtn.onclick = () => downloadIcs(item.title, item.releaseLabel);
-                        calRow.appendChild(gcalBtn); calRow.appendChild(icsBtn);
-                        card.appendChild(calRow);
+                        const calBtn = document.createElement('button');
+                        calBtn.className = 'intel-cal-btn';
+                        calBtn.textContent = '＋ カレンダーに登録';
+                        calBtn.onclick = (e) => { e.stopPropagation(); openCalModal(item.title, item.releaseLabel); };
+                        card.appendChild(calBtn);
                     }
                     return card;
                 });
                 container.appendChild(boxNotif);
+            }
+
+            // 通知 / NOTIFICATION セクション — インテル・スカウター拾得記事（常設）
+            {
+                const boxIntel = document.createElement('div');
+                boxIntel.className = 'history-section-box';
+                const hdrIntel = document.createElement('div');
+                hdrIntel.className = 'section-header-row';
+                const lblIntel = document.createElement('span');
+                lblIntel.className = 'notification-label';
+                lblIntel.textContent = '通知 / NOTIFICATION';
+                hdrIntel.appendChild(lblIntel);
+                boxIntel.appendChild(hdrIntel);
+                const listIntel = document.createElement('div');
+                listIntel.className = 'history-list-box';
+                if (intelItems.length === 0) {
+                    const emptyIntel = document.createElement('p');
+                    emptyIntel.className = 'trend-intro-11px';
+                    emptyIntel.style.cssText = 'text-align:center; color:rgba(247,231,206,0.35); margin:16px 0; padding:0 20px;';
+                    emptyIntel.textContent = 'スカウター待機中：新着を検知次第ここに表示します';
+                    listIntel.appendChild(emptyIntel);
+                } else {
+                    intelItems.forEach(function(item) {
+                        const card = document.createElement('div');
+                        card.className = 'history-card history-card-notified';
+                        if (item.url) {
+                            card.style.cursor = 'pointer';
+                            card.onclick = function() { window.open(item.url, '_blank'); };
+                        }
+                        const header = document.createElement('div');
+                        header.className = 'history-card-header';
+                        const titleEl = document.createElement('span');
+                        titleEl.className = 'item-title';
+                        titleEl.textContent = item.title;
+                        const tagEl = document.createElement('span');
+                        tagEl.className = 'notification-label';
+                        tagEl.style.cssText = 'margin-bottom:0;font-size:11px;';
+                        tagEl.textContent = 'INTEL';
+                        header.appendChild(titleEl);
+                        header.appendChild(tagEl);
+                        card.appendChild(header);
+                        const meta = document.createElement('div');
+                        meta.className = 'intel-source-tag';
+                        meta.textContent = (item.keyword || '') + (item.time ? '  ｜  ' + item.time : '');
+                        card.appendChild(meta);
+                        if (item.releaseLabel) {
+                            const calBtn = document.createElement('button');
+                            calBtn.className = 'intel-cal-btn';
+                            calBtn.textContent = '＋ カレンダーに登録';
+                            calBtn.onclick = function(e) { e.stopPropagation(); openCalModal(item.title, item.releaseLabel); };
+                            card.appendChild(calBtn);
+                        }
+                        listIntel.appendChild(card);
+                    });
+                }
+                boxIntel.appendChild(listIntel);
+                container.appendChild(boxIntel);
             }
 
             // 全セクション空の場合
@@ -1981,12 +2174,6 @@
             if (title) title.innerHTML = 'このアイテムを<br>監視対象から除外しますか？';
             document.getElementById('delete-confirm-modal').style.display = 'flex';
         }
-        function showSectionDeleteConfirm(status, label) {
-            _deleteTarget = { type: 'section', status: status };
-            var title = document.getElementById('delete-confirm-title');
-            if (title) title.innerHTML = '「' + label + '」の全アイテムを<br>監視対象から除外しますか？';
-            document.getElementById('delete-confirm-modal').style.display = 'flex';
-        }
         function confirmDelete() {
             if (!_deleteTarget) return;
             var t = _deleteTarget;
@@ -2047,19 +2234,40 @@
 
         // ユーザー設定が完了しているか判定
         function isUserConfigured() {
-            return userProfile.gender !== ''
-                || userProfile.clothSize !== ''
-                || (userProfile.interests && userProfile.interests.length > 0);
+            return userProfile.gender !== '' || userProfile.clothSize !== '';
         }
 
-        // ホームから連携画面のユーザー設定セクションへスムーズ遷移
+        // ホーム画面のユーザー設定フォームを開いてスクロール
         function goToUserSettings() {
-            var linkBtn = document.querySelector('.nav-item:nth-child(5)');
-            if (linkBtn) show('link', linkBtn);
-            setTimeout(function() {
-                var box = document.getElementById('user-settings-box');
-                if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 120);
+            var form = document.getElementById('home-setting-form');
+            var summary = document.getElementById('home-setting-summary-wrap');
+            if (form) form.style.display = 'block';
+            if (summary) summary.style.display = 'none';
+            var box = document.getElementById('home-user-settings-box');
+            if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // 設定サマリーテキストを生成
+        function buildHomeSettingSummary() {
+            var parts = [];
+            if (userProfile.gender === 'male') parts.push('男性');
+            else if (userProfile.gender === 'female') parts.push('女性');
+            if (userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
+            if (userProfile.shoeSize) parts.push('靴：' + userProfile.shoeSize + 'cm');
+            if (userProfile.hasChildren && userProfile.childGender && userProfile.childGender !== 'none') {
+                var cgLabel = userProfile.childGender === 'boy' ? '男の子' : '女の子';
+                var childShoe = userProfile.childShoeSize ? '・' + userProfile.childShoeSize + 'cm' : '';
+                parts.push('子供：' + cgLabel + childShoe);
+            }
+            return parts.join(' / ');
+        }
+
+        // 設定変更ボタン：フォームを再表示
+        function toggleHomeSettings() {
+            var form = document.getElementById('home-setting-form');
+            var summary = document.getElementById('home-setting-summary-wrap');
+            if (form) form.style.display = 'block';
+            if (summary) summary.style.display = 'none';
         }
 
         // 水平チップ単一選択：同グループ内を全消灯し、タップ値のみ通電
@@ -2069,17 +2277,6 @@
                 item.classList.remove('active');
             });
             el.classList.add('active');
-            if (typeof saveUserSettings === 'function') saveUserSettings();
-        }
-
-        // 興味カテゴリ：複数選択トグル（最大5件）
-        function toggleInterest(el) {
-            var MAX_INTERESTS = 5;
-            if (!el.classList.contains('active')) {
-                var current = document.querySelectorAll('#dial-interests .setting-chip.active').length;
-                if (current >= MAX_INTERESTS) return; // 上限に達している場合は何もしない
-            }
-            el.classList.toggle('active');
             if (typeof saveUserSettings === 'function') saveUserSettings();
         }
 
@@ -2094,67 +2291,210 @@
                 userProfile.gender         = sel('dial-gender');
                 userProfile.clothSize      = sel('dial-cloth-size');
                 userProfile.shoeSize       = sel('dial-shoe-size');
-                var cgv                    = sel('dial-child-gender') || 'none';
-                userProfile.hasChildren    = cgv !== 'none';
+                var cgv                    = sel('dial-child-gender') || '';
+                userProfile.hasChildren    = cgv !== '' && cgv !== 'none';
                 userProfile.childGender    = cgv;
                 userProfile.childClothSize = sel('dial-child-size');
                 userProfile.childShoeSize  = sel('dial-child-shoe');
-                userProfile.interests      = Array.from(document.querySelectorAll('#dial-interests .setting-chip.active')).map(function(c) { return c.dataset.val; });
+                userProfile.interests      = [];
                 try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch(e) {}
                 updateBannerAdContent(lastMonitorKeyword);
-                if (explicit) alert('設定を保存しました。');
+                if (explicit) {
+                    // 設定を保存したらサマリー表示へ切り替え
+                    var summaryText = buildHomeSettingSummary();
+                    var summaryEl = document.getElementById('home-setting-summary-text');
+                    var summaryWrap = document.getElementById('home-setting-summary-wrap');
+                    var form = document.getElementById('home-setting-form');
+                    if (summaryEl) summaryEl.textContent = summaryText;
+                    if (summaryWrap) summaryWrap.style.display = 'block';
+                    if (form) form.style.display = 'none';
+                    // 見守りセクションのロックを解除
+                    var monitorBody = document.getElementById('monitor-section-body');
+                    if (monitorBody) monitorBody.classList.remove('monitor-locked');
+                    var setupWarn = document.getElementById('user-setup-warning');
+                    if (setupWarn) setupWarn.style.display = 'none';
+                    alert('設定を保存しました。');
+                }
             }, 80);
         }
 
         // ページ起動時 / モード選択時：設定状態を確認して表示を分岐
         function checkUserSetup() {
+            var monitorBody = document.getElementById('monitor-section-body');
             var setupWarn = document.getElementById('user-setup-warning');
             var searchWrap = document.getElementById('monitor-search-wrap');
-            var trendCb = document.getElementById('mode-trend');
-            var stockCb = document.getElementById('mode-stock');
-            var anyOn = (trendCb && trendCb.checked) || (stockCb && stockCb.checked);
-            if (!anyOn) {
-                if (setupWarn) setupWarn.style.display = 'none';
+            // 設定未完了 → 見守りセクション全体をロック
+            if (!isUserConfigured()) {
+                if (monitorBody) monitorBody.classList.add('monitor-locked');
+                if (setupWarn) setupWarn.style.display = 'block';
                 if (searchWrap) { searchWrap.style.display = 'none'; searchWrap.classList.remove('revealed'); }
                 return;
             }
-            if (!isUserConfigured()) {
-                if (setupWarn) setupWarn.style.display = 'block';
+            // 設定済み → ロック解除
+            if (monitorBody) monitorBody.classList.remove('monitor-locked');
+            if (setupWarn) setupWarn.style.display = 'none';
+            var anyOn = document.querySelector('.monitor-mode-item.selected') !== null;
+            if (!anyOn) {
                 if (searchWrap) { searchWrap.style.display = 'none'; searchWrap.classList.remove('revealed'); }
-            } else {
-                if (setupWarn) setupWarn.style.display = 'none';
-                if (searchWrap && !searchWrap.classList.contains('revealed')) {
-                    searchWrap.classList.add('revealed');
-                    var input = document.getElementById('monitor-input');
-                    if (input) input.focus();
-                }
+                return;
+            }
+            if (searchWrap && !searchWrap.classList.contains('revealed')) {
+                searchWrap.style.display = '';
+                searchWrap.classList.add('revealed');
+                var input = document.getElementById('monitor-input');
+                if (input) input.focus();
             }
         }
 
-        function onModeChange() {
-            var trendCb = document.getElementById('mode-trend');
-            var stockCb = document.getElementById('mode-stock');
+        function onModeChange(changed) {
+            // シーソー：data-mode 属性でカード状態を管理（チェックボックス廃止）
+            document.querySelectorAll('.monitor-mode-item').forEach(function(item) {
+                var isSel = item.dataset.mode === changed;
+                item.classList.toggle('selected', isSel);
+                item.classList.toggle('mode-faded', !isSel);
+            });
             var hint = document.getElementById('monitor-mode-hint');
-            // 排他制御：片方がONなら他方を自動でOFF
-            if (trendCb.checked) stockCb.checked = false;
-            else if (stockCb.checked) trendCb.checked = false;
-            var anyOn = trendCb.checked || stockCb.checked;
-            if (!anyOn) {
-                hint.style.display = 'none';
-                checkUserSetup();
-                return;
-            }
-            hint.style.display = 'block';
-            if (stockCb.checked) {
-                hint.textContent = 'プランの間隔で精密スキャン。情報の「事実」を捉えます。';
-                var input = document.getElementById('monitor-input');
-                if (input) input.placeholder = '再入荷アイテム、販売中チケット、推しグッズ...';
-            } else {
-                hint.textContent = '24時間周期で広域スキャン。情報の「予感」を捉えます。';
-                var input = document.getElementById('monitor-input');
-                if (input) input.placeholder = '新作バッグ、コンサート予約、限定キャンペーン...';
+            if (hint) {
+                hint.style.display = 'block';
+                hint.textContent = changed === 'stock'
+                    ? 'プランの間隔で精密スキャン。情報の「事実」を捉えます。'
+                    : '24時間周期で広域スキャン。情報の「予感」を捉えます。';
             }
             checkUserSetup();
+        }
+
+        // 起動時のモードUI初期化（デフォルト：trend を選択状態に）
+        function initModeUI() {
+            document.querySelectorAll('.monitor-mode-item').forEach(function(item) {
+                var isTrend = item.dataset.mode === 'trend';
+                item.classList.toggle('selected', isTrend);
+                item.classList.toggle('mode-faded', !isTrend);
+            });
+            var hint = document.getElementById('monitor-mode-hint');
+            if (hint) {
+                hint.style.display = 'block';
+                hint.textContent = '24時間周期で広域スキャン。情報の「予感」を捉えます。';
+            }
+            checkUserSetup();
+        }
+
+        // ── 未来日付パーサー（記事タイトル・本文から発売予定日を抽出） ──
+        function parseFutureDate(text) {
+            if (!text) return null;
+            var now = new Date();
+            var patterns = [
+                // 4月15日
+                { re: /(\d{1,2})月(\d{1,2})日/, fn: function(m) {
+                    var d = new Date(now.getFullYear(), parseInt(m[1])-1, parseInt(m[2]));
+                    if (d <= now) d.setFullYear(d.getFullYear()+1);
+                    return d;
+                }},
+                // 4月
+                { re: /(\d{1,2})月/, fn: function(m) {
+                    var d = new Date(now.getFullYear(), parseInt(m[1])-1, 1);
+                    if (d <= now) d.setFullYear(d.getFullYear()+1);
+                    return d;
+                }},
+                // 来週
+                { re: /来週/, fn: function() {
+                    var d = new Date(now); d.setDate(d.getDate()+7); return d;
+                }},
+                // 来月
+                { re: /来月/, fn: function() {
+                    return new Date(now.getFullYear(), now.getMonth()+1, 1);
+                }},
+                // 今月
+                { re: /今月/, fn: function() {
+                    var d = new Date(now); d.setDate(d.getDate()+3); return d;
+                }},
+                // 春 → 4月
+                { re: /春/, fn: function() {
+                    var d = new Date(now.getFullYear(), 3, 1);
+                    if (d <= now) d.setFullYear(d.getFullYear()+1);
+                    return d;
+                }},
+                // 夏 → 7月
+                { re: /夏/, fn: function() {
+                    var d = new Date(now.getFullYear(), 6, 1);
+                    if (d <= now) d.setFullYear(d.getFullYear()+1);
+                    return d;
+                }},
+            ];
+            for (var p of patterns) {
+                var m = text.match(p.re);
+                if (m) {
+                    try {
+                        var d = p.fn(m);
+                        if (d && d > now) {
+                            return (d.getMonth()+1) + '/' + d.getDate() + ' 発売予定';
+                        }
+                    } catch(e) {}
+                }
+            }
+            return null;
+        }
+
+        // ── 偵察 UI ヘルパー ──────────────────────────────────────────
+        function setScoutLoading(isLoading) {
+            var fa  = document.getElementById('monitor-search-fa');
+            var sp  = document.getElementById('monitor-spinner');
+            var st  = document.getElementById('scout-status-text');
+            if (fa) fa.style.display = isLoading ? 'none' : '';
+            if (sp) sp.style.display = isLoading ? 'block' : 'none';
+            if (st) {
+                st.textContent = isLoading ? '偵察ルートを構築中（60日深層偵察）...' : '';
+                st.classList.toggle('visible', isLoading);
+            }
+        }
+
+        function setInsightLoading(isLoading) {
+            var fa = document.getElementById('insight-search-fa');
+            var sp = document.getElementById('insight-spinner');
+            var st = document.getElementById('insight-scout-status');
+            if (fa) fa.style.display = isLoading ? 'none' : '';
+            if (sp) sp.style.display = isLoading ? 'block' : 'none';
+            if (st) {
+                st.textContent = isLoading ? '偵察ルートを構築中（60日深層偵察）...' : '';
+                st.classList.toggle('visible', isLoading);
+            }
+        }
+
+        function triggerInsightScout() {
+            var word = document.getElementById('insight-search').value.trim();
+            renderTrendItems(word);
+            if (word) updateBannerAdContent(word);
+            if (word) {
+                hideIntelBadge();
+                intelScoutResults = [];
+                runIntelScout(word);
+            }
+        }
+
+        function showIntelBadge(count) {
+            var badge = document.getElementById('intel-badge');
+            if (!badge) return;
+            badge.textContent = '● 気配を検知（' + count + '件）— 履歴で確認する';
+            badge.style.display = 'block';
+        }
+
+        function hideIntelBadge() {
+            var badge = document.getElementById('intel-badge');
+            if (badge) { badge.style.display = 'none'; badge.textContent = ''; }
+        }
+
+        function goToIntelResult() {
+            // 履歴タブへ切り替え → NOTIFICATION エリアへスクロール
+            var histBtn = document.querySelector('.nav-item[onclick*="\'history\'"]');
+            if (histBtn) show('history', histBtn);
+            hideIntelBadge();
+            // 少し遅延してから NOTIFICATION セクションへスクロール
+            setTimeout(function() {
+                var histScreen = document.getElementById('history');
+                if (!histScreen) return;
+                var boxes = histScreen.querySelectorAll('.history-section-box');
+                var last = boxes[boxes.length - 1];
+                if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 120);
         }
 
         function executeMonitor() {
@@ -2166,14 +2506,18 @@
             if (errEl) errEl.style.display = 'none';
             lastMonitorKeyword = val;
 
-            // 監視モード収集
+            // 監視モード収集（.selected クラスで判定）
             const modes = [];
-            if (document.getElementById('mode-trend') && document.getElementById('mode-trend').checked) modes.push('trend');
-            if (document.getElementById('mode-stock') && document.getElementById('mode-stock').checked) modes.push('stock');
+            const selMode = document.querySelector('.monitor-mode-item.selected');
+            if (selMode) modes.push(selMode.dataset.mode);
             if (modes.length === 0) modes.push('stock');
 
-            // 目的選択モーダルを表示
-            openPurposeModal(val, modes);
+            updateBannerAdContent(val);
+            modes.forEach(mode => enqueueWatch(val, mode));
+            _startMonitorCore(val);
+            // バックグラウンド待機（10秒）をスキップして即時偵察発動・結果後に自動遷移
+            hideIntelBadge();
+            runIntelScout(val, true);
         }
 
         async function _startMonitorCore(val) {
@@ -2199,7 +2543,6 @@
                 if (btn) { btn.disabled = false; btn.textContent = '見守りを開始'; }
             }
             startPollingTimer(val);
-            alert('見守りを開始しました。11pxの繊細な通知でお知らせします。');
         }
 
         // チャット投稿：Gemini API 経由で送信し、NGワードをフロントでも事前チェック
@@ -2279,13 +2622,130 @@
             setInterval(updateNightModeStatus, 60 * 1000);
             updateBannerAdContent();
             startHistoryObserver();
-            // ダイヤルのスクロール検知を登録
             initDials();
-            // 保存済みプロフィールを連携画面のダイヤルUIに反映
             restoreDialUI();
-            // 初期画面のカスタムスクロールバー表示
+            // モードUIの初期発光状態を設定
+            initModeUI();
             requestAnimationFrame(() => updateSb(getActiveScreen()));
+            // スカウター：起動 10 秒後に非同期で偵察実行（UX をブロックしない）
+            setTimeout(runIntelScout, 10000);
         };
+
+        // ── インテル・スカウター 連携 ─────────────────────────────────
+        // forceKeyword:    executeMonitor / triggerInsightScout から即時呼び出される場合にキーワードを渡す
+        //                  省略時は lastMonitorKeyword またはデフォルトシードを使用
+        // autoNavigate:    true の場合、記事検知後に履歴画面へ自動遷移して NOTIFICATION へスクロール
+        async function runIntelScout(forceKeyword, autoNavigate) {
+            setScoutLoading(true);
+            setInsightLoading(true);
+            var zeroResult = null; // null | 'footprint' | 'none'
+            var foundCount = 0;   // totalFoundInFeed を finally で使うために保持
+            try {
+                const seeds = forceKeyword
+                    ? [forceKeyword]
+                    : (lastMonitorKeyword ? [lastMonitorKeyword] : null);
+                const res = await fetch('/api/scout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(seeds ? { keywords: seeds } : {})
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+
+                // ── デバッグ全開示ログ ──
+                console.log('[intel-scout] API response:', {
+                    newCount:        data.newCount,
+                    totalFoundInFeed: data.totalFoundInFeed,
+                    errors:          data.errors,
+                    scannedAt:       data.scannedAt ? new Date(data.scannedAt).toISOString() : null,
+                });
+
+                foundCount = data.totalFoundInFeed || 0;
+
+                if (!data.items || data.items.length === 0) {
+                    // キーワード指定での0件 → Google News に記事があったか否かで分岐
+                    if (forceKeyword) {
+                        zeroResult = (foundCount > 0) ? 'footprint' : 'none';
+                    }
+                    intelScoutResults = [];
+                } else {
+                    // 新着インテル記事を historyItems へ INTEL ステータスでマージ（重複 id は無視）
+                    const existingIds = new Set(historyItems.map(function(i) { return String(i.id); }));
+                    var added = 0;
+                    var mapped = [];
+                    data.items.forEach(function(item) {
+                        // 1. タイトル・本文から未来日付を解析（「4月発売」「来週予約開始」等）
+                        var releaseLabel = parseFutureDate(item.title + ' ' + (item.description || ''));
+                        // 2. 解析できなければ pubDate を「情報更新」として使用
+                        if (!releaseLabel && item.pubDate) {
+                            try {
+                                var pd = new Date(item.pubDate);
+                                releaseLabel = (pd.getMonth()+1) + '/' + pd.getDate() + ' 情報更新';
+                            } catch(e) {}
+                        }
+                        var entry = {
+                            id:           item.id,
+                            title:        item.title,
+                            status:       'INTEL',
+                            keyword:      item.keyword || '',
+                            url:          item.url,
+                            time:         new Date(item.createdAt).toLocaleDateString('ja-JP'),
+                            releaseLabel: releaseLabel || null,
+                            lastCheckedAt: item.createdAt,
+                        };
+                        mapped.push(entry);
+                        if (!existingIds.has(item.id)) {
+                            existingIds.add(item.id);
+                            historyItems.unshift(entry);
+                            added++;
+                        }
+                    });
+                    // 探索画面インライン表示用にキャッシュ
+                    intelScoutResults = mapped;
+
+                    if (added > 0) {
+                        var histScreen = document.getElementById('history');
+                        if (histScreen && histScreen.classList.contains('active')) renderHistory(historyItems);
+                        if (autoNavigate) {
+                            // executeMonitor 経由：履歴タブへ自動遷移 → NOTIFICATION へスクロール
+                            setTimeout(function() {
+                                var histBtn = document.querySelector('.nav-item[onclick*="\'history\'"]');
+                                if (histBtn) show('history', histBtn);
+                                setTimeout(function() {
+                                    var hScr = document.getElementById('history');
+                                    if (!hScr) return;
+                                    var boxes = hScr.querySelectorAll('.history-section-box');
+                                    var last = boxes[boxes.length - 1];
+                                    if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 150);
+                            }, 800);
+                        } else {
+                            showIntelBadge(added);
+                        }
+                    }
+                }
+
+                // 探索タブが開いていれば即時レンダリング（件数問わず）
+                var insScreen = document.getElementById('insight');
+                if (insScreen && insScreen.classList.contains('active')) {
+                    renderTrendItems(document.getElementById('insight-search').value);
+                }
+            } catch (e) {
+                console.error('[intel-scout] スキャンエラー:', e);
+            } finally {
+                setScoutLoading(false);
+                setInsightLoading(false);
+                if (zeroResult) {
+                    var zeroMsg = zeroResult === 'footprint'
+                        ? '広域スキャンにより' + foundCount + '件の気配を捕捉。全情報を開示します'
+                        : '過去60日間の深層スキャンを完了。予約・新作の有力な予兆は検知されませんでした。24H哨戒を継続します';
+                    var st = document.getElementById('scout-status-text');
+                    if (st) { st.textContent = zeroMsg; st.classList.add('visible'); }
+                    var ist = document.getElementById('insight-scout-status');
+                    if (ist) { ist.textContent = zeroMsg; ist.classList.add('visible'); }
+                }
+            }
+        }
 
         // 保存済みプロフィールをチップUIに反映
         function restoreDialUI() {
@@ -2297,13 +2757,23 @@
             activateChip('dial-gender',       userProfile.gender);
             activateChip('dial-cloth-size',   userProfile.clothSize);
             activateChip('dial-shoe-size',    userProfile.shoeSize);
-            activateChip('dial-child-gender', userProfile.childGender || 'none');
+            if (userProfile.childGender && userProfile.childGender !== 'none') {
+                activateChip('dial-child-gender', userProfile.childGender);
+            }
             activateChip('dial-child-size',   userProfile.childClothSize);
             activateChip('dial-child-shoe',   userProfile.childShoeSize);
-            (userProfile.interests || []).forEach(function(val) {
-                var chip = document.querySelector('#dial-interests .setting-chip[data-val="' + val + '"]');
-                if (chip) chip.classList.add('active');
-            });
+            // 設定済みならサマリー表示に切り替え
+            if (isUserConfigured()) {
+                var summaryText = buildHomeSettingSummary();
+                var summaryEl = document.getElementById('home-setting-summary-text');
+                var summaryWrap = document.getElementById('home-setting-summary-wrap');
+                var form = document.getElementById('home-setting-form');
+                if (summaryEl) summaryEl.textContent = summaryText;
+                if (summaryWrap) summaryWrap.style.display = 'block';
+                if (form) form.style.display = 'none';
+            }
+            // 設定状態に応じて見守りセクションのロックを制御
+            checkUserSetup();
         }
 
         // PWA Service Worker 登録（iOS/Android プッシュ通知・オフライン対応）

@@ -4,8 +4,8 @@
  * マルチソース: 各カテゴリに EC/公式サイト/X/ファンクラブ 等のソースが紐づく
  */
 
-import { getCategoryTree, SOURCE_TYPES } from '../lib/categories.js';
-import { sendJson } from '../lib/response.js';
+import { getCategoryTree, SOURCE_TYPES } from '../../lib/categories.js';
+import { sendJson } from '../../lib/response.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {

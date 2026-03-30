@@ -4,13 +4,15 @@
  * 「登録した瞬間に存在した情報は既読とし、それ以降の更新だけを通知する」を厳守
  */
 
-import { getCategoryTree, registerSource, saveUserSubscription } from '../lib/categories.js';
-import { getSeenKey } from '../lib/utils.js';
-import { markSeen } from '../lib/redis.js';
-import { normalizeItems } from '../lib/sns-normalizer.js';
-import { sendJson } from '../lib/response.js';
+import { getCategoryTree, registerSource, saveUserSubscription } from '../../lib/categories.js';
+import { getSeenKey } from '../../lib/utils.js';
+import { markSeen } from '../../lib/redis.js';
+import { normalizeItems } from '../../lib/sns-normalizer.js';
+import { sendJson } from '../../lib/response.js';
 
 function parseBody(req) {
+  // Firebase/Express では express.json() が req.body を展開済み
+  if (req.body && typeof req.body === 'object') return Promise.resolve(req.body);
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });
