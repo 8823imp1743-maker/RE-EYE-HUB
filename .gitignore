@@ -1,4 +1,30 @@
-node_modules
+# ── 依存 ──────────────────────────────────────
+node_modules/
+
+# ── Firebase ──────────────────────────────────
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebaserc.local
+
+# ── 環境変数・シークレット（絶対にコミットしない）──
 .env
-.vercel
+.env.local
+.env.*.local
+*.secret.local
+.secret.local
+
+# ── ビルド成果物 ───────────────────────────────
+.vercel/
+dist/
+
+# ── ログ ──────────────────────────────────────
 *.log
+npm-debug.log*
+
+# ── 証明書・秘密鍵 ────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx

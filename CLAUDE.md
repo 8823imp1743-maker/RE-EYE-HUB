@@ -2,6 +2,93 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## ⚡ 最優先事項：V11 リサーチ起点型 SERP 監視アーキテクチャ（2026-04-14）
+
+> **「URL を番犬のように見張るな。検索結果ページ（SERP）を見張れ。」**
+> これが V11 の核心。特定 URL の死活監視から脱却し、SERP 差分検知で「新しく出た店」を自動発見する。
+
+### 基本思想
+
+旧来の「在庫URL → HTTP ポーリング → IN/OUT 判定」では永遠に取りこぼしが発生する。
+なぜなら「今まで存在しなかった店舗 URL」は監視リストにそもそも存在しないからだ。
+
+V11 では **SERP そのものを監視対象** にする：
+1. 4軸クエリ（品番 + 色 + サイズ + 性別）を生成して楽天・Yahoo・Google Shopping を叩く
+2. 前回の SERP URL セット (`entry.serpUrls`) と今回の URL セットを diff する
+3. **新しく出現した URL** が「新着在庫シグナル」
+4. 新着 URL を 4軸 AI（`aiItemVerify()`）で最終確認してから通知する
+
+### 4軸クエリ生成フロー
+
+```
+keyword
+  └→ expandColorQuery()         // 水色 → 水色 ライトブルー celeste
+  └→ generateVibeQueries()      // Gemini が品番・色日英・cm/US サイズ・在庫意図語を最適合成
+  └→ searchAll() + searchGoogleShopping()  // 楽天・Yahoo・Google に並列投射
+```
+
+**禁止事項:** `expandColorQuery()` の呼び忘れ厳禁。色同義語展開なしのクエリは「半盲」。
+
+### serpUrls 差分検知
+
+```
+prev = entry.serpUrls ?? null
+  ↓  null の場合: 初回ベースライン（通知なし、serpUrls だけ記録）
+  ↓  Set あり:
+     newUrls = currentUrls.difference(prev)  ← これが新着シグナル
+     if newUrls.size > 0 → 新着店舗の在庫確認へ
+```
+
+- `entry.serpUrls` は Redis の `monitor:watched:{userId}` 内に JSON Set として保存
+- 毎サイクル上書き（前回分は捨てる）
+
+### 4軸 AI 最終確認（`aiItemVerify()`）
+
+新着 URL のタイトルに対して Gemini が以下 4 軸を同時検証：
+
+| 軸 | チェック内容 |
+|----|------------|
+| 品番 | ハイフン以下含む完全一致（例: CW2288-111） |
+| 色 | 水色=Celeste=light blue 等を同一視 |
+| サイズ | US/cm/mm 表記ゆれ吸収（±0.5cm 許容） |
+| 性別 | Women's/レディース/Men's/メンズを文脈判定 |
+
+**「どれ一つ欠けてもゴミ」— `pass: false` なら通知しない。**
+
+### プラン別リサーチ間隔
+
+| プラン | Cron 起動 | 実行条件 | 実効間隔 |
+|--------|----------|---------|---------|
+| VIP    | 毎1分    | `intervalSec: 300` (5分) + Jitter ±60s | 4〜6分 |
+| PRO    | 毎1分    | `intervalSec: 300` (5分) + Jitter ±60s | 4〜6分 |
+| STANDARD | 毎1分  | `intervalSec: 900` (15分) | ~15分 |
+| FREE   | 毎1分    | `intervalSec: 3600` (昼のみ) | ~60分 |
+
+Cron は `every 1 minutes` で毎分起動するが、`checkAllWatched()` 内の `getStockIntervalForPlan()` が
+「前回実行からプラン規定秒数が経過したアイテムのみ」を処理することで実効間隔を制御する。
+
+### 公式ドメイン特権パス（`checkOfficialAndNotify()`）
+
+`OFFICIAL_DOMAINS`（nike.com, coach.com 等）に一致する URL は SERP 監視をバイパスし、
+直接 HTTP フェッチ → 2軸ステート（officialStatus + marketStatus）管理 → カスケード検索 に進む。
+
+### 実装ファイルマップ
+
+| 責務 | ファイル |
+|------|---------|
+| SERP 監視メインループ | `api/monitor.js` → `checkAndNotifySerp()` |
+| 公式直接フェッチ | `api/monitor.js` → `checkOfficialAndNotify()` |
+| 4軸 AI 検証 | `lib/ai-extractor.js` → `aiItemVerify()` |
+| Vibe クエリ生成 | `lib/ai-extractor.js` → `generateVibeQueries()` |
+| 色同義語展開 | `lib/color-filter.js` → `expandColorQuery()` |
+| Google Shopping | `lib/google-shopping.js` → `searchGoogleShopping()` |
+| プラン別間隔 | `lib/plan-config.js` → `getStockIntervalForPlan()` |
+| Cron 起動 | `index.js` → `stockWatchScheduler`（every 1 minutes） |
+
+---
+
 ## コマンド
 
 ```bash

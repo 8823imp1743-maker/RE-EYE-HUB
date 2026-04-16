@@ -1,16 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getGeminiModel } from '../lib/plan-config.js';
 
 export default async function handler(req, res) {
-  // POSTリクエスト（データの送信）以外は受け付けない設定
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method Not Allowed' });
   }
 
-  // 先ほど設定した環境変数（GEMINI_API_KEY）を呼び出す
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  
-  // 使うモデルを指定（爆速で安価な 1.5-flash を選択）
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  // VIP: gemini-2.0-flash（最上位モデル）を使用
+  const model = genAI.getGenerativeModel({ model: getGeminiModel() });
 
   try {
     const { prompt } = req.body; // ユーザーからのメッセージを受け取る

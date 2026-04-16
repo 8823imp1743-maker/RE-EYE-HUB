@@ -25,14 +25,14 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36',
 ];
 
-// ── Referer プール ───────────────────────────────────────────────────
+// ── Referer プール（google.co.jp を先頭に固定） ──────────────────────
 const REFERER_BASES = [
+  'https://www.google.co.jp/search?q=',
+  'https://www.google.co.jp/',
   'https://www.google.com/search?q=',
   'https://search.yahoo.co.jp/search?p=',
   'https://www.bing.com/search?q=',
   'https://kakaku.com/search/search.aspx/?query=',
-  'https://item.rakuten.co.jp/search/?q=',
-  'https://shopping.yahoo.co.jp/search?p=',
 ];
 
 // ── Jitter ─────────────────────────────────────────────────────────
@@ -48,6 +48,22 @@ const REFERER_BASES = [
 export function withJitter(baseMs, pct = 0.12) {
   const delta = baseMs * pct;
   return Math.round(baseMs + (Math.random() * 2 - 1) * delta);
+}
+
+/**
+ * 動的ジッター（±30〜60秒）— リクエスト間の規則性を完全に排除する。
+ * 各プランの監視間隔に加算する絶対時間ゆらぎ（ms）を返す。
+ * 符号はランダムで、絶対値は 30〜60秒 の範囲。
+ *
+ * @param {number} minSec 最小ゆらぎ秒数（デフォルト 30）
+ * @param {number} maxSec 最大ゆらぎ秒数（デフォルト 60）
+ * @returns {number}  ミリ秒（正負どちらも）
+ */
+export function dynamicJitter(minSec = 30, maxSec = 60) {
+  const sign  = Math.random() < 0.5 ? 1 : -1;
+  const range = (maxSec - minSec) * 1000;
+  const abs   = Math.floor(minSec * 1000 + Math.random() * range);
+  return sign * abs;
 }
 
 /**

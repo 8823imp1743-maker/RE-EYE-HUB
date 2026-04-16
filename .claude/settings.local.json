@@ -1,15 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(vercel:*)",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''mcpServers'''',{}\\), indent=2\\)\\)\")",
-      "Bash(ls:*)",
-      "Bash(find C:Usersimp1743DesktopRE-EYE-HUB -not -path */node_modules/* -not -path */.git/* -type f)",
-      "Bash(npm install:*)",
-      "Bash(firebase use:*)",
       "Bash(firebase deploy:*)",
-      "Bash(find C:/Users/imp1743/Desktop/RE-EYE-HUB/lib -type f -name *.js)",
-      "Bash(firebase:*)"
+      "Bash(ls:*)",
+      "Bash(firebase functions:secrets:set RAKUTEN_APP_ID)",
+      "Bash(firebase functions:secrets:set RAKUTEN_ACCESS_KEY)",
+      "Bash(firebase functions:secrets:set RAKUTEN_AFFILIATE_ID)",
+      "Bash(firebase functions:secrets:set YAHOO_APP_ID)",
+      "Bash(firebase functions:secrets:set GEMINI_API_KEY)",
+      "Bash(firebase functions:secrets:set UPSTASH_REDIS_REST_URL)",
+      "Bash(firebase functions:secrets:set UPSTASH_REDIS_REST_TOKEN)",
+      "Bash(curl:*)",
+      "Bash(node:*)"
     ]
   }
 }

@@ -1,0 +1,110 @@
+/**
+ * RE-EYE-HUB プラン設定
+ *
+ * 現フェーズ: 単一オーナー運用
+ * CURRENT_PLAN は全システム共通の「デフォルトプラン」としてハードコード。
+ * 将来マルチユーザー化する際は Redis user:plan:{userId} で上書きする。
+ */
+
+// ── システムデフォルトプラン ────────────────────────────────
+export const CURRENT_PLAN = 'VIP';
+
+// ── Stock Watch ─────────────────────────────────────────────
+//   dayInterval  : 昼間（08:00–19:00）の監視間隔（秒）
+//   nightInterval: 夜間の監視間隔（秒）null = スキップ
+//   jitterSec    : ±揺らぎ秒数（0 = 揺らぎなし）
+export const STOCK_CONFIG = {
+  FREE:     { dayInterval: 3600, nightInterval: null, jitterSec: 0  },
+  STANDARD: { dayInterval:  900, nightInterval: 3600, jitterSec: 0  },
+  PRO:      { dayInterval:  300, nightInterval: 3600, jitterSec: 60 },
+  VIP:      { dayInterval:  300, nightInterval:  300, jitterSec: 60 }, // 24h 不眠不休
+};
+
+// ── Scout ────────────────────────────────────────────────────
+//   intervalSec: スカウト巡回間隔（秒）
+//   mode       : AIの思考レベル
+export const SCOUT_CONFIG = {
+  FREE:     { intervalSec: 86400, mode: 'summary'  }, // 1日1回
+  STANDARD: { intervalSec: 21600, mode: 'rss'      }, // 6時間
+  PRO:      { intervalSec: 21600, mode: 'ai_deep'  }, // 6時間 + AI深掘り
+  VIP:      { intervalSec:  7200, mode: 'vip_full' }, // 2時間 + 深夜フル
+};
+
+// ── Trend ────────────────────────────────────────────────────
+//   slots : 同時監視枠数
+//   aiMode: AIの推論モード
+export const TREND_CONFIG = {
+  FREE:     { slots:  3, aiMode: 'confirmed_only'  }, // 確定予約情報のみ
+  STANDARD: { slots:  5, aiMode: 'flag_priority'   }, // 予約フラグ重点捜査
+  PRO:      { slots:  5, aiMode: 'ambiguous_parse' }, // 「○月発売」曖昧解析
+  VIP:      { slots: 10, aiMode: 'future_predict'  }, // 解禁日の未来予測
+};
+
+// ── Gemini モデル ─────────────────────────────────────────────
+//   VIP は思考速度・精度ともに最上位モデルを使用
+export const GEMINI_MODEL = {
+  FREE:     'gemini-1.5-flash',
+  STANDARD: 'gemini-1.5-flash',
+  PRO:      'gemini-2.0-flash',
+  VIP:      'gemini-2.0-flash',
+};
+
+// ── ヘルパー ──────────────────────────────────────────────────
+
+/**
+ * Jitter（揺らぎ）付き待機
+ * @param {number} baseSec   ベース待機秒数
+ * @param {number} jitterSec ±揺らぎ幅（秒）。0 なら揺らぎなし
+ * @returns {Promise<void>}
+ */
+export function jitterWait(baseSec, jitterSec = 0) {
+  const delta = jitterSec > 0
+    ? Math.floor(Math.random() * jitterSec * 2) - jitterSec
+    : 0;
+  const ms = Math.max(0, (baseSec + delta) * 1000);
+  return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * 現プラン（CURRENT_PLAN）の Stock Watch インターバルを返す。
+ * @param {number} [nowHour] 0–23。省略時は現在時刻。
+ * @returns {{ intervalSec: number|null, jitterSec: number }}
+ *          intervalSec が null の場合はスキップ指示。
+ */
+export function getStockInterval(nowHour = new Date().getHours()) {
+  const cfg = STOCK_CONFIG[CURRENT_PLAN] ?? STOCK_CONFIG.FREE;
+  const isDay = nowHour >= 8 && nowHour < 19;
+  return {
+    intervalSec: isDay ? cfg.dayInterval : cfg.nightInterval,
+    jitterSec:   cfg.jitterSec,
+  };
+}
+
+/**
+ * 指定プランの Stock Watch インターバルを返す（アイテム別プラン対応）。
+ * @param {string} plan  'FREE'|'STANDARD'|'PRO'|'VIP'
+ * @param {number} [nowHour]
+ * @returns {{ intervalSec: number|null, jitterSec: number }}
+ */
+export function getStockIntervalForPlan(plan, nowHour = new Date().getHours()) {
+  const cfg = STOCK_CONFIG[plan] ?? STOCK_CONFIG.FREE;
+  const isDay = nowHour >= 8 && nowHour < 19;
+  return {
+    intervalSec: isDay ? cfg.dayInterval : cfg.nightInterval,
+    jitterSec:   cfg.jitterSec,
+  };
+}
+
+/**
+ * 現プランの Gemini モデル名を返す。
+ */
+export function getGeminiModel() {
+  return GEMINI_MODEL[CURRENT_PLAN] ?? GEMINI_MODEL.FREE;
+}
+
+/**
+ * 現プランの Trend スロット数を返す。
+ */
+export function getTrendSlots() {
+  return (TREND_CONFIG[CURRENT_PLAN] ?? TREND_CONFIG.FREE).slots;
+}

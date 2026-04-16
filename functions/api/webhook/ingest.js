@@ -27,8 +27,9 @@ export default async function handler(req, res) {
 
   const secret = req.headers['x-webhook-secret'];
   const expectedSecret = process.env.WEBHOOK_SECRET;
-  if (expectedSecret && secret !== expectedSecret) {
-    sendJson(res, 401, { error: 'Unauthorized' });
+  // WEBHOOK_SECRET 未設定 or 合言葉不一致 → 即拒否
+  if (!expectedSecret || secret !== expectedSecret) {
+    sendJson(res, 401, { error: 'Unauthorized: 認証に失敗しました' });
     return;
   }
 
