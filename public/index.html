@@ -8,6 +8,30 @@
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
+    <!-- OneSignal Web SDK v16 — userId タグ付け用 -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "9fb344ba-8b77-4508-a7c5-0009959c3561",
+          // 既存の /sw.js と共存: OneSignal 専用 SW は使わない
+          serviceWorkerParam: { scope: "/onesignal/" },
+          notifyButton: { enable: false },
+          allowLocalhostAsSecureOrigin: true,
+        });
+        // 購読済みなら userId タグを即付与
+        const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+        if (isSubscribed) {
+          const uid = localStorage.getItem('re_eye_uid') || '';
+          if (uid) {
+            OneSignal.User.addTag("userId", uid);
+            console.log("[OneSignal] userId タグ付与:", uid);
+          }
+        }
+      });
+    </script>
+
     <link rel="manifest" href="/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -133,9 +157,9 @@
             opacity: 0.5;
             pointer-events: none;
         }
-        /* 売り切れセクション用・控えめなグレーラベル（11pxの美学） */
+        /* 売り切れセクション用・控えめなグレーラベル（購入可能と同サイズ） */
         .gray-label {
-            font-size: 11px;
+            font-size: 14px;
             color: rgba(255,255,255,0.4);
             letter-spacing: 1.5px;
             margin-bottom: var(--gap-11);
@@ -168,6 +192,13 @@
         .section-action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
         .section-delete-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(155,89,182,0.15); }
         .section-delete-bar .count-text { font-size: 11px; color: rgba(247,231,206,0.55); flex: 1; letter-spacing: 0.8px; }
+        /* 固定削除バー（選択モード中、画面最下部に常駐） */
+        #fixed-delete-bar { display: none; position: fixed; bottom: var(--nav-height); left: 0; right: 0; z-index: 8000; background: rgba(8,0,16,0.97); border-top: 1px solid rgba(155,89,182,0.5); padding: 10px 16px; flex-direction: row; align-items: center; gap: 10px; }
+        #fixed-delete-bar.visible { display: flex; }
+        #fixed-delete-count { font-size: 11px; color: rgba(247,231,206,0.7); flex: 1; letter-spacing: 0.8px; }
+        #fixed-delete-exec { background: rgba(155,89,182,0.18); border: 1px solid rgba(155,89,182,0.6); color: #fff; font-size: 11px; font-weight: bold; letter-spacing: 2px; padding: 9px 16px; border-radius: 2px; cursor: pointer; }
+        #fixed-delete-exec:disabled { opacity: 0.3; cursor: not-allowed; }
+        #fixed-delete-cancel { background: none; border: 1px solid rgba(247,231,206,0.2); color: rgba(247,231,206,0.55); font-size: 11px; letter-spacing: 1px; padding: 9px 12px; border-radius: 2px; cursor: pointer; }
         .edit-checkbox { accent-color: var(--amethyst); width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
         .history-section-box {
             padding: var(--gap-11);
@@ -377,32 +408,60 @@
             letter-spacing: 1px;
             margin-top: 4px;
         }
-        /* 監視モード選択チェックボックス */
+        /* 監視モード選択 — 4柱 2×2グリッド */
         .monitor-mode-row {
-            display: flex; flex-direction: column; gap: 8px; margin-top: var(--gap-11);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-top: var(--gap-11);
         }
         .monitor-mode-item {
-            display: flex; align-items: center; gap: 10px; padding: 14px 12px;
+            display: flex; flex-direction: column; align-items: flex-start;
+            gap: 4px; padding: 11px 10px;
             background: rgba(155,89,182,0.05); border: 1px solid rgba(155,89,182,0.35);
-            border-radius: 2px; cursor: pointer; transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+            border-radius: 2px; cursor: pointer;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s ease;
             -webkit-tap-highlight-color: transparent; user-select: none;
+            min-height: 64px;
         }
         .monitor-mode-item.selected {
             border-color: var(--amethyst);
             background: rgba(155,89,182,0.18);
             box-shadow: 0 0 18px rgba(155,89,182,0.45), inset 0 0 8px rgba(155,89,182,0.06);
         }
-        .monitor-mode-item.selected label { color: #fff; font-weight: bold; }
-        .monitor-mode-item.selected label span { color: rgba(247,231,206,0.75) !important; opacity: 1; }
-        /* 非選択状態：消失演出（opacity 0.18 で「消える」を表現、タップ切り替えは維持） */
-        .monitor-mode-item.mode-faded { opacity: 0.18; }
+        .monitor-mode-item.selected .mode-name { color: #fff; font-weight: bold; }
+        .monitor-mode-item.selected .mode-freq { color: rgba(247,231,206,0.75) !important; }
+        .monitor-mode-item.mode-faded { opacity: 0.22; }
+        .mode-name {
+            font-size: 11px; color: var(--champagne-gold); letter-spacing: 0.8px;
+            line-height: 1.4; pointer-events: none;
+        }
+        .mode-freq {
+            font-size: 11px; color: rgba(155,89,182,0.7); letter-spacing: 0.5px;
+            pointer-events: none;
+        }
+        /* 入力ガイドチップ（キャンペーン / 推し活のみ表示） */
+        #mode-kw-chips {
+            margin-top: 8px; display: none;
+        }
+        #mode-kw-chips .kw-chip-label {
+            font-size: 11px; color: var(--amethyst); letter-spacing: 0.8px;
+            display: block; margin-bottom: 5px;
+        }
+        .kw-chip {
+            padding: 5px 11px; font-size: 11px; letter-spacing: 0.8px;
+            color: rgba(247,231,206,0.7);
+            background: rgba(155,89,182,0.08); border: 1px solid rgba(155,89,182,0.35);
+            border-radius: 2px; cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+            white-space: nowrap;
+        }
+        .kw-chip:active { background: rgba(155,89,182,0.3); color: #fff; }
+        .kw-chip.selected { background: rgba(155,89,182,0.3); color: #fff; border-color: var(--amethyst); box-shadow: 0 0 8px rgba(155,89,182,0.45); }
+        #campaign-search-input[readonly] { cursor: default; }
         #monitor-input[readonly] { opacity: 0.2; cursor: not-allowed; background: rgba(0,0,0,0.3); caret-color: transparent; }
         #monitor-access-warn { font-size: 11px; color: var(--amethyst); opacity: 1; margin-top: 4px; display: none; letter-spacing: 0.8px; }
         .mode-guide-hint { font-size: 11px; color: var(--amethyst); letter-spacing: 0.8px; opacity: 0.72; }
-        .monitor-mode-item label {
-            font-size: 11px; color: var(--champagne-gold); letter-spacing: 0.8px; cursor: pointer;
-            line-height: 1.5;
-        }
         /* 広告注記（11pxの美学） */
         .ad-note-11px {
             font-size: 11px; color: rgba(247,231,206,0.45); letter-spacing: 0.5px;
@@ -787,6 +846,41 @@
         /* 設定未完了時：見守りセクションをロック */
         .monitor-locked { opacity: 0.3; pointer-events: none; user-select: none; }
 
+        /* ── 初回起動：ユーザー設定モーダル ── */
+        #first-run-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9900;
+            background: #000; display: flex; flex-direction: column; overflow-y: auto;
+        }
+        #first-run-modal .frm-inner {
+            max-width: 480px; width: 100%; margin: 0 auto; padding: 40px 20px 80px;
+        }
+        #first-run-modal .frm-title {
+            font-size: 18px; color: var(--champagne-gold); letter-spacing: 3px;
+            font-weight: bold; margin-bottom: 8px; display: block;
+        }
+        #first-run-modal .frm-sub {
+            font-size: 11px; color: rgba(247,231,206,0.55); letter-spacing: 0.8px;
+            line-height: 1.8; margin-bottom: 28px; display: block;
+        }
+        /* ── 誰のために？ モーダル ── */
+        #for-whom-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9500;
+            background: rgba(0,0,0,0.82); display: none; align-items: flex-end; justify-content: center;
+        }
+        #for-whom-modal.visible { display: flex; }
+        .for-whom-box {
+            width: 100%; max-width: 480px; background: #050008;
+            border-top: 1px solid var(--amethyst); border-radius: 2px 2px 0 0;
+            padding: 24px 20px 40px; box-shadow: 0 -8px 32px rgba(155,89,182,0.3);
+        }
+        .for-whom-btn {
+            width: 100%; padding: 14px; margin-bottom: 10px;
+            background: rgba(155,89,182,0.1); border: 1px solid rgba(155,89,182,0.4);
+            border-radius: 2px; color: #fff; font-size: 14px; font-weight: bold;
+            letter-spacing: 2px; cursor: pointer; transition: 0.2s;
+        }
+        .for-whom-btn:hover { background: rgba(155,89,182,0.3); border-color: var(--amethyst); }
+        .for-whom-btn.child { background: rgba(247,231,206,0.06); border-color: rgba(247,231,206,0.3); color: var(--champagne-gold); }
         /* ── カレンダー登録ポップアップモーダル ── */
         #cal-popup-modal {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9200;
@@ -831,7 +925,7 @@
 
         /* 通知 (NOTIFICATION) セクションラベル */
         .notification-label {
-            font-size: 11px; color: var(--amethyst);
+            font-size: 14px; color: var(--amethyst);
             letter-spacing: 1.5px; margin-bottom: var(--gap-11);
             font-weight: bold; display: block; opacity: 1;
             text-shadow: 0 0 14px rgba(155,89,182,0.85), 0 0 4px rgba(155,89,182,0.5);
@@ -862,6 +956,232 @@
             font-size: 11px; color: var(--amethyst);
             letter-spacing: 2px; opacity: 0.75;
             display: block; margin-top: 5px;
+        }
+
+        /* ── 個別削除ボタン（カード右端）── */
+        .card-del-btn {
+            background: none; border: none;
+            color: rgba(155,89,182,0.45); font-size: 14px;
+            cursor: pointer; padding: 2px 5px; flex-shrink: 0;
+            line-height: 1; transition: color 0.2s, opacity 0.2s;
+            margin-left: auto; align-self: flex-start;
+        }
+        .card-del-btn:hover { color: var(--amethyst); opacity: 1; }
+
+        /* ── 右クリック コンテキストメニュー ── */
+        #ctx-menu {
+            position: fixed; z-index: 9990;
+            background: rgba(8,0,16,0.97);
+            border: 1px solid var(--border-purple); border-radius: 2px;
+            padding: 4px 0; display: none;
+            box-shadow: 0 4px 20px rgba(155,89,182,0.4);
+            min-width: 168px;
+        }
+        .ctx-menu-item {
+            padding: 11px 16px; font-size: 11px;
+            letter-spacing: 1.2px; color: var(--champagne-gold);
+            cursor: pointer; transition: background 0.15s;
+        }
+        .ctx-menu-item:hover { background: rgba(155,89,182,0.18); color: #fff; }
+        .ctx-menu-sep { height: 1px; background: rgba(155,89,182,0.2); margin: 3px 0; }
+
+        /* ── コーチマーク（初回ガイド）── */
+        #coach-mark {
+            position: fixed;
+            bottom: calc(var(--nav-height) + 20px); right: 15px;
+            background: rgba(8,0,16,0.97);
+            border: 1px solid var(--amethyst); border-radius: 2px;
+            padding: 14px 16px; z-index: 9000;
+            max-width: 260px;
+            box-shadow: 0 0 18px rgba(155,89,182,0.4);
+            display: none;
+            animation: coach-in 0.3s ease;
+        }
+        @keyframes coach-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        .coach-title { font-size: 12px; font-weight: bold; letter-spacing: 1.5px; color: var(--champagne-gold); margin-bottom: 8px; }
+        .coach-body { font-size: 11px; color: rgba(247,231,206,0.8); letter-spacing: 0.5px; line-height: 1.7; margin-bottom: 11px; }
+        .coach-btn-row { display: flex; gap: 8px; }
+        .coach-btn { flex: 1; font-size: 11px; letter-spacing: 1px; padding: 8px 4px; border-radius: 2px; cursor: pointer; text-align: center; }
+        .coach-btn-ok { background: var(--amethyst); border: 1px solid var(--amethyst); color: #fff; font-weight: bold; }
+        .coach-btn-close { background: none; border: 1px solid rgba(155,89,182,0.3); color: rgba(247,231,206,0.55); }
+
+        /* ── ホーム インライン検索結果（戦場スロット）── */
+        #home-inline-results {
+            display: none;
+            margin-top: var(--gap-11);
+            border-top: 1px solid rgba(155,89,182,0.25);
+            padding-top: var(--gap-11);
+        }
+        /* カテゴリ識別バッジ（どのカテゴリの結果かを明示） */
+        .home-slot-mode-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 11px; font-weight: bold; letter-spacing: 1.8px;
+            color: var(--amethyst);
+            text-shadow: 0 0 12px rgba(155,89,182,0.8);
+            margin-bottom: var(--gap-11);
+        }
+        .home-slot-kw-pill {
+            display: inline-block;
+            font-size: 11px; letter-spacing: 0.8px;
+            color: var(--champagne-gold); background: rgba(247,231,206,0.07);
+            border: 1px solid rgba(247,231,206,0.28); border-radius: 2px;
+            padding: 2px 8px; margin-left: 4px;
+        }
+        /* 結果ゼロ時メッセージ */
+        .home-slot-empty {
+            font-size: 11px; color: rgba(247,231,206,0.35);
+            text-align: center; padding: 16px 0; letter-spacing: 0.5px;
+        }
+        /* 結果カード */
+        .home-result-card {
+            background: var(--dark-glass); border: 1px solid var(--border-purple);
+            border-radius: 2px; padding: var(--gap-11); display: flex;
+            flex-direction: column; gap: 6px; margin-bottom: var(--gap-11);
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+        .home-result-card:hover { border-color: rgba(155,89,182,0.55); box-shadow: 0 0 12px rgba(155,89,182,0.2); }
+        /* isPriority — 監督指定キーワード全一致カード（お宝） */
+        .home-result-card.priority-card {
+            border-color: rgba(247,231,206,0.6);
+            box-shadow: 0 0 18px rgba(247,231,206,0.18);
+            background: rgba(247,231,206,0.04);
+        }
+        .home-result-card.priority-card:hover { border-color: var(--champagne-gold); box-shadow: 0 0 22px rgba(247,231,206,0.28); }
+        .priority-badge {
+            display: inline-block; font-size: 11px; font-weight: bold;
+            letter-spacing: 2px; color: var(--obsidian);
+            background: var(--champagne-gold); border-radius: 2px;
+            padding: 1px 6px; margin-bottom: 4px;
+        }
+        .home-result-card .item-title { font-size: 14px; font-weight: bold; color: #fff; line-height: 1.4; }
+        .home-result-card .result-meta { font-size: 11px; color: var(--champagne-gold); opacity: 0.65; letter-spacing: 0.4px; }
+        .home-result-card .result-src { font-size: 11px; color: var(--amethyst); text-decoration: none; opacity: 0.9; }
+        /* カード内 見守り開始ボタン（一撃見守り） */
+        .home-result-watch-btn {
+            background: rgba(155,89,182,0.14);
+            border: 1px solid rgba(155,89,182,0.55); border-radius: 2px;
+            color: #fff; font-size: 11px; font-weight: bold;
+            letter-spacing: 2px; padding: 8px 12px; cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s;
+            width: 100%; margin-top: 4px;
+        }
+        .home-result-watch-btn:hover {
+            background: rgba(155,89,182,0.35);
+            box-shadow: 0 0 12px rgba(155,89,182,0.4);
+        }
+        .home-result-watch-btn.watching {
+            background: rgba(155,89,182,0.05); color: var(--amethyst);
+            border-color: rgba(155,89,182,0.3); cursor: default;
+        }
+        /* 在庫検索：今すぐ購入ボタン */
+        .stock-buy-btn {
+            display: block; width: 100%; padding: 10px 12px; margin-top: 6px;
+            background: rgba(247,231,206,0.12); border: 1px solid rgba(247,231,206,0.5);
+            border-radius: 2px; color: var(--champagne-gold); font-size: 11px;
+            font-weight: bold; letter-spacing: 2.5px; text-align: center;
+            cursor: pointer; text-decoration: none; box-sizing: border-box;
+            font-family: inherit; -webkit-appearance: none; appearance: none;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .stock-buy-btn:hover { background: rgba(247,231,206,0.22); box-shadow: 0 0 12px rgba(247,231,206,0.3); }
+        /* 在庫検索：売り切れラベル */
+        .stock-soldout-text { font-size: 11px; color: rgba(255,255,255,0.3); letter-spacing: 1px; }
+        /* 在庫検索：ショップ・価格メタ */
+        .stock-shop-meta { font-size: 11px; color: var(--amethyst); opacity: 0.8; letter-spacing: 0.5px; }
+        /* 在庫検索：見つからないエラー */
+        .stock-not-found { font-size: 11px; color: rgba(247,231,206,0.55); text-align: center; padding: 16px 8px; letter-spacing: 0.8px; border: 1px solid rgba(247,231,206,0.15); border-radius: 2px; background: rgba(247,231,206,0.02); margin-top: 8px; }
+
+        /* ── 「諦め」バッジ（入手困難アナウンス）── */
+        .give-up-badge {
+            font-size: 11px; color: rgba(247,231,206,0.55);
+            background: rgba(247,231,206,0.03);
+            border: 1px solid rgba(247,231,206,0.18); border-radius: 2px;
+            padding: 4px 10px; letter-spacing: 0.8px; margin-top: 4px;
+            display: inline-block;
+        }
+
+        /* ── キャンペーン締切バッジ ── */
+        .deadline-badge {
+            font-size: 11px; color: #ff8c42; font-weight: bold;
+            letter-spacing: 1px; background: rgba(255,140,66,0.08);
+            border: 1px solid rgba(255,140,66,0.35); border-radius: 2px;
+            padding: 2px 8px; display: inline-block; margin-top: 2px;
+        }
+
+        /* ── 広告遮断 Reader モーダル ── */
+        #reader-modal {
+            position: fixed; inset: 0; z-index: 9800;
+            background: rgba(0,0,0,0.78);
+            display: none; align-items: center; justify-content: center;
+        }
+        #reader-modal.visible { display: flex; }
+        .reader-box {
+            width: 92%; max-width: 520px; max-height: 78vh;
+            background: rgba(8,0,16,0.97);
+            border: 1px solid rgba(155,89,182,0.6);
+            border-radius: 2px;
+            box-shadow: 0 0 28px rgba(155,89,182,0.45);
+            display: flex; flex-direction: column;
+        }
+        .reader-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(155,89,182,0.22);
+            display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+        }
+        .reader-title {
+            font-size: 12px; font-weight: bold; letter-spacing: 1.2px;
+            color: #fff; line-height: 1.6;
+        }
+        .reader-meta {
+            font-size: 11px; color: rgba(247,231,206,0.65);
+            letter-spacing: 0.5px; margin-top: 6px; line-height: 1.6;
+        }
+        .reader-body {
+            padding: 14px 16px;
+            overflow: auto;
+        }
+        .reader-text {
+            white-space: pre-wrap;
+            font-size: 11px;
+            color: rgba(247,231,206,0.9);
+            letter-spacing: 0.4px;
+            line-height: 1.85;
+        }
+        #reader-iframe {
+            display: none;
+            width: 100%;
+            min-height: 55vh;
+            border: none;
+            background: #000;
+        }
+        .silent-web-badge {
+            font-size: 11px;
+            color: rgba(155,89,182,0.65);
+            letter-spacing: 1px;
+            padding: 0 0 8px 0;
+        }
+        .reader-actions {
+            padding: 12px 16px;
+            border-top: 1px solid rgba(155,89,182,0.18);
+            display: flex; gap: 8px;
+        }
+        .reader-btn {
+            flex: 1;
+            font-size: 11px; letter-spacing: 2px;
+            padding: 11px 8px;
+            border-radius: 2px; cursor: pointer;
+            transition: 0.2s;
+            background: none;
+        }
+        .reader-btn-open {
+            border: 1px solid var(--amethyst);
+            color: var(--amethyst);
+            box-shadow: 0 0 10px rgba(155,89,182,0.25);
+        }
+        .reader-btn-open:active { box-shadow: 0 0 22px rgba(155,89,182,0.6); background: rgba(155,89,182,0.08); }
+        .reader-btn-close {
+            border: 1px solid rgba(247,231,206,0.18);
+            color: rgba(247,231,206,0.55);
         }
     </style>
 </head>
@@ -895,7 +1215,7 @@
                     </div>
                 </div>
                 <div id="home-setting-form">
-                    <span class="gold-label">サイズ設定</span>
+                    <span class="gold-label">ユーザー設定</span>
                     <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別</span>
                     <div class="chip-row" id="dial-gender">
                         <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
@@ -924,7 +1244,7 @@
                     </div>
                     <div style="margin-top:18px;margin-bottom:8px;padding-top:12px;border-top:1px solid rgba(155,89,182,0.2);">
                         <span style="font-size:11px;color:rgba(255,255,255,1);display:block;margin-bottom:4px;letter-spacing:0.5px;">（任意）</span>
-                        <span class="gold-label" style="font-size:11px;letter-spacing:2px;">お子様（ジュニア）サイズ</span>
+                        <span class="gold-label" style="font-size:11px;letter-spacing:2px;">お子様設定</span>
                     </div>
                     <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
                     <div class="chip-row" id="dial-child-gender">
@@ -974,19 +1294,26 @@
             <div class="transparent-box">
                 <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:var(--gap-11);">
                     <span class="gold-label" style="margin-bottom:0;display:inline;">見守り設定</span>
-                    <span id="mode-guide-hint" class="mode-guide-hint">（どちらかを選択）</span>
+                    <span id="mode-guide-hint" class="mode-guide-hint">（ひとつを選択）</span>
                 </div>
                 <div id="monitor-section-body">
                 <div class="monitor-mode-row">
-                    <div class="monitor-mode-item" data-mode="trend" onclick="onModeChange('trend')">
-                        <label style="pointer-events:none;">【新作・予約・キャンペーンを追う】<br><span style="font-size:11px;color:rgba(247,231,206,0.45);font-weight:normal;letter-spacing:0.5px;">ターゲット：発売日前・予約開始前の商品、懸賞（キャンペーン）など</span></label>
-                    </div>
                     <div class="monitor-mode-item" data-mode="stock" onclick="onModeChange('stock')">
-                        <label style="pointer-events:none;">【入荷・再販・推し活を追う】<br><span style="font-size:11px;color:rgba(247,231,206,0.45);font-weight:normal;letter-spacing:0.5px;">ターゲット：完売中の商品、再販待ちのグッズ、推し活など</span></label>
+                        <span class="mode-name">入荷を追う</span>
+                        <span class="mode-freq">プラン最短 / 在庫復活</span>
+                    </div>
+                    <div class="monitor-mode-item" data-mode="oshi" onclick="onModeChange('oshi')">
+                        <span class="mode-name">推し活を追う</span>
+                        <span class="mode-freq">プラン最短 / 公式特化</span>
                     </div>
                 </div>
+                <!-- 入力ガイドチップ（キャンペーン / 推し活のみ表示） -->
+                <div id="mode-kw-chips">
+                    <span class="kw-chip-label">+ キーワードを追加</span>
+                    <div class="chip-row" id="kw-chip-row"></div>
+                </div>
                 <div id="monitor-mode-hint" class="meta-11px" style="color:var(--amethyst);opacity:1;margin:8px 0 4px;display:none;"></div>
-                <div id="monitor-access-warn" class="meta-11px" style="color:var(--amethyst);opacity:1;margin-top:4px;display:none;letter-spacing:0.8px;">どちらかの見守りモードを選択してください</div>
+                <div id="monitor-access-warn" class="meta-11px" style="color:var(--amethyst);opacity:1;margin-top:4px;display:none;letter-spacing:0.8px;">見守りモードを選択してください</div>
                 <!-- 未設定ユーザー警告 -->
                 <div id="user-setup-warning">
                     <span class="meta-11px" style="display:block;margin:0;color:var(--champagne-gold);">⚠️ システム未校正：ユーザー設定を完了させてください</span>
@@ -995,16 +1322,25 @@
                 <!-- 検索入力ラッパー（モード選択後・設定済みユーザーのみ表示） -->
                 <div id="monitor-search-wrap">
                     <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
-                    <div style="position:relative;">
-                        <input type="text" id="monitor-input" placeholder="例：商品名・品番を入力" onkeydown="if(event.key==='Enter')executeMonitor()">
-                        <span class="monitor-search-icon-wrap" onclick="executeMonitor()">
+                    <div id="monitor-input-wrap" style="position:relative;">
+                        <input type="text" id="monitor-input" placeholder="例：商品名・品番を入力" onkeydown="if(event.key==='Enter')scoutAndShow()">
+                        <span class="monitor-search-icon-wrap" onclick="scoutAndShow()">
                             <i id="monitor-search-fa" class="fas fa-search monitor-search-icon"></i>
                             <span id="monitor-spinner"></span>
                         </span>
                     </div>
+                    <div class="meta-11px" style="color:rgba(247,231,206,0.55);margin-top:5px;letter-spacing:0.6px;line-height:1.5;">
+                        ※ 色まで指定したい方は品番（ハイフン以降）まで入力してください<br>
+                        <span style="color:rgba(155,89,182,0.7);">例：CW2288<strong style="color:var(--amethyst);">-111</strong>（-111 まで入力で白に固定）</span>
+                    </div>
                     <div id="scout-status-text"></div>
-                    <div id="intel-badge" onclick="goToIntelResult()"></div>
-                    <button class="btn-purple" onclick="executeMonitor()">見守り開始</button>
+                    <div id="intel-badge"></div>
+
+                    <!-- 戦場スロット：カテゴリ識別 + 即時結果リスト（各カードに一撃見守りボタン） -->
+                    <div id="home-inline-results">
+                        <div id="home-slot-header"></div>
+                        <div id="home-inline-list"></div>
+                    </div>
                 </div>
                 </div>
             </div>
@@ -1055,7 +1391,7 @@
         <div class="screen-content">
             <div class="transparent-box">
                 <span class="gold-label">トレンド探索</span>
-                <p class="trend-intro-11px">24時間に1回、未発売・予約情報を捉え、発売日が確定した瞬間に通知します。</p>
+                <p class="trend-intro-11px">1日1回、未発売・予約情報を捉え、発売日が確定した瞬間に通知します。</p>
                 <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
                     <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み" onkeydown="if(event.key==='Enter')triggerInsightScout()">
                     <span class="monitor-search-icon-wrap" onclick="triggerInsightScout()">
@@ -1064,12 +1400,23 @@
                     </span>
                 </div>
                 <div id="insight-scout-status"></div>
-                <span class="deep-recon-label">◈ Deep Recon: 60 Days</span>
+                <p class="meta-11px" style="margin-top:6px;color:var(--amethyst);opacity:0.7;letter-spacing:1px;">SYSTEM: 2026-04-09.FINAL / SHIELD ACTIVE</p>
+                <p class="trend-intro-11px" style="margin-top: var(--gap-11);">60日前までの情報を探し出し、発売日が決まった瞬間に通知します</p>
                 <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで発売通知が届く。</p>
             </div>
             <div class="transparent-box">
+                <span class="gold-label">懸賞・先取り</span>
+                <div class="chip-row" style="margin-bottom:var(--gap-11);justify-content:space-between;gap:8px;">
+                    <span class="kw-chip campaign-chip" data-word="応募" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('応募')">応募</span>
+                    <span class="kw-chip campaign-chip" data-word="抽選" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('抽選')">抽選</span>
+                    <span class="kw-chip campaign-chip" data-word="ギフト" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('ギフト')">ギフト</span>
+                    <span class="kw-chip campaign-chip" data-word="コラボ" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('コラボ')">コラボ</span>
+                </div>
+                <div id="campaign-results-container" style="display:none;"></div>
+            </div>
+            <div class="transparent-box">
                 <div class="section-header-row">
-                    <span class="gold-label" style="margin-bottom:0;">未発売・注目アイテム</span>
+                    <span class="gold-label" style="margin-bottom:0;">検索結果</span>
                     <button class="section-manage-btn" id="trend-manage-btn" onclick="toggleSectionMenu('TREND')">削除 [×]</button>
                 </div>
                 <div id="trend-section-action-row"></div>
@@ -1085,10 +1432,7 @@
                 <span class="gold-label">見守りリスト</span>
                 <div id="settings-watch-list">
                     <div id="settings-plan-status" class="watch-plan-status"></div>
-                    <div class="watch-item-row">
-                        <span class="watch-item-name">ヴィトンの新作財布</span>
-                        <span id="current-interval-text" class="meta-11px" style="color:var(--amethyst);opacity:1;font-weight:bold;white-space:nowrap;"></span>
-                    </div>
+                    <span id="current-interval-text" class="meta-11px" style="color:var(--amethyst);opacity:1;font-weight:bold;white-space:nowrap;display:none;"></span>
                 </div>
                 <div id="settings-trend-watching" style="display: none; margin-top: var(--gap-11);">
                     <span class="gold-label" style="font-size:11px;margin-bottom:6px;">トレンド探索</span>
@@ -1158,19 +1502,98 @@
         </div>
     </div>
 
+    <!-- ── 初回起動：ユーザー設定モーダル（必須） ── -->
+    <div id="first-run-modal" style="display:none;">
+        <div class="frm-inner">
+            <span class="frm-title">RE-EYE-HUB</span>
+            <span class="frm-sub">はじめに、あなたの情報を教えてください。<br>入荷を追う際にサイズを考慮した検索に使用します。<br>（後から「ホーム」→「ユーザー設定」で変更できます）</span>
+            <div class="transparent-box">
+                <span class="gold-label">ユーザー設定</span>
+                <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別 <span style="color:var(--amethyst);">＊必須</span></span>
+                <div class="chip-row" id="frm-dial-gender">
+                    <div class="setting-chip" data-val="female" onclick="selectFrmChip('gender',this)">女性</div>
+                    <div class="setting-chip" data-val="male" onclick="selectFrmChip('gender',this)">男性</div>
+                </div>
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ <span style="color:var(--amethyst);">＊必須</span></span>
+                <div class="chip-row" id="frm-dial-cloth">
+                    <div class="setting-chip" data-val="S" onclick="selectFrmChip('cloth',this)">S</div>
+                    <div class="setting-chip" data-val="M" onclick="selectFrmChip('cloth',this)">M</div>
+                    <div class="setting-chip" data-val="L" onclick="selectFrmChip('cloth',this)">L</div>
+                    <div class="setting-chip" data-val="XL" onclick="selectFrmChip('cloth',this)">XL</div>
+                    <div class="setting-chip" data-val="XXL" onclick="selectFrmChip('cloth',this)">XXL</div>
+                </div>
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm) <span style="color:var(--amethyst);">＊必須</span></span>
+                <div class="chip-row" id="frm-dial-shoe" style="flex-wrap:wrap;">
+                    <div class="setting-chip" data-val="22.5" onclick="selectFrmChip('shoe',this)">22.5</div>
+                    <div class="setting-chip" data-val="23.0" onclick="selectFrmChip('shoe',this)">23.0</div>
+                    <div class="setting-chip" data-val="23.5" onclick="selectFrmChip('shoe',this)">23.5</div>
+                    <div class="setting-chip" data-val="24.0" onclick="selectFrmChip('shoe',this)">24.0</div>
+                    <div class="setting-chip" data-val="24.5" onclick="selectFrmChip('shoe',this)">24.5</div>
+                    <div class="setting-chip" data-val="25.0" onclick="selectFrmChip('shoe',this)">25.0</div>
+                    <div class="setting-chip" data-val="25.5" onclick="selectFrmChip('shoe',this)">25.5</div>
+                    <div class="setting-chip" data-val="26.0" onclick="selectFrmChip('shoe',this)">26.0</div>
+                    <div class="setting-chip" data-val="26.5" onclick="selectFrmChip('shoe',this)">26.5</div>
+                    <div class="setting-chip" data-val="27.0" onclick="selectFrmChip('shoe',this)">27.0</div>
+                    <div class="setting-chip" data-val="27.5" onclick="selectFrmChip('shoe',this)">27.5</div>
+                    <div class="setting-chip" data-val="28.0" onclick="selectFrmChip('shoe',this)">28.0</div>
+                </div>
+                <div style="margin-top:18px;padding-top:12px;border-top:1px solid rgba(155,89,182,0.2);">
+                    <span style="font-size:11px;color:rgba(255,255,255,0.5);display:block;margin-bottom:4px;">（任意）</span>
+                    <span class="gold-label" style="font-size:11px;">お子様設定</span>
+                </div>
+                <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
+                <div class="chip-row" id="frm-dial-child-gender">
+                    <div class="setting-chip" data-val="girl" onclick="selectFrmChip('childGender',this)">女の子</div>
+                    <div class="setting-chip" data-val="boy" onclick="selectFrmChip('childGender',this)">男の子</div>
+                </div>
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
+                <div class="chip-row" id="frm-dial-child-size" style="flex-wrap:wrap;">
+                    <div class="setting-chip" data-val="80" onclick="selectFrmChip('childCloth',this)">80</div>
+                    <div class="setting-chip" data-val="90" onclick="selectFrmChip('childCloth',this)">90</div>
+                    <div class="setting-chip" data-val="100" onclick="selectFrmChip('childCloth',this)">100</div>
+                    <div class="setting-chip" data-val="110" onclick="selectFrmChip('childCloth',this)">110</div>
+                    <div class="setting-chip" data-val="120" onclick="selectFrmChip('childCloth',this)">120</div>
+                    <div class="setting-chip" data-val="130" onclick="selectFrmChip('childCloth',this)">130</div>
+                    <div class="setting-chip" data-val="140" onclick="selectFrmChip('childCloth',this)">140</div>
+                    <div class="setting-chip" data-val="150" onclick="selectFrmChip('childCloth',this)">150</div>
+                    <div class="setting-chip" data-val="160" onclick="selectFrmChip('childCloth',this)">160</div>
+                </div>
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
+                <div class="chip-row" id="frm-dial-child-shoe" style="flex-wrap:wrap;">
+                    <div class="setting-chip" data-val="12.0" onclick="selectFrmChip('childShoe',this)">12.0</div>
+                    <div class="setting-chip" data-val="13.0" onclick="selectFrmChip('childShoe',this)">13.0</div>
+                    <div class="setting-chip" data-val="14.0" onclick="selectFrmChip('childShoe',this)">14.0</div>
+                    <div class="setting-chip" data-val="15.0" onclick="selectFrmChip('childShoe',this)">15.0</div>
+                    <div class="setting-chip" data-val="16.0" onclick="selectFrmChip('childShoe',this)">16.0</div>
+                    <div class="setting-chip" data-val="17.0" onclick="selectFrmChip('childShoe',this)">17.0</div>
+                    <div class="setting-chip" data-val="18.0" onclick="selectFrmChip('childShoe',this)">18.0</div>
+                    <div class="setting-chip" data-val="19.0" onclick="selectFrmChip('childShoe',this)">19.0</div>
+                    <div class="setting-chip" data-val="20.0" onclick="selectFrmChip('childShoe',this)">20.0</div>
+                    <div class="setting-chip" data-val="21.0" onclick="selectFrmChip('childShoe',this)">21.0</div>
+                </div>
+            </div>
+            <div id="frm-error" class="error-text-11px" style="text-align:center;display:none;">性別・服サイズ・靴サイズを選択してください</div>
+            <button class="btn-purple" style="margin-top:16px;" onclick="completeFirstRun()">設定を完了して始める</button>
+        </div>
+    </div>
+
+    <!-- ── 誰のために？ 選択モーダル ── -->
+    <div id="for-whom-modal">
+        <div class="for-whom-box">
+            <span class="gold-label" style="margin-bottom:16px;">誰のために検索しますか？</span>
+            <button class="for-whom-btn" onclick="confirmForWhom(false)">ご自身用</button>
+            <button class="for-whom-btn child" id="for-whom-child-btn" onclick="confirmForWhom(true)">お子様用</button>
+            <button style="width:100%;background:none;border:none;color:rgba(255,255,255,0.25);font-size:11px;padding:10px;cursor:pointer;letter-spacing:0.8px;" onclick="closeForWhomModal()">キャンセル</button>
+        </div>
+    </div>
+
     <!-- カレンダー登録ポップアップモーダル（任意登録・自動登録厳禁） -->
     <div id="cal-popup-modal">
         <div class="cal-popup-box">
-            <span class="gold-label" style="margin-bottom:11px;">カレンダーに登録</span>
+            <span class="gold-label" style="margin-bottom:11px;">＋カレンダーに登録</span>
             <div id="cal-popup-item-title" class="cal-popup-item-title"></div>
             <div id="cal-popup-date" class="cal-popup-date"></div>
-            <span class="cal-popup-label">リマインダー（.ics のみ有効）</span>
-            <div class="chip-row" id="cal-reminder-chips">
-                <div class="setting-chip" data-val="0" onclick="selectCalChip(this)">なし</div>
-                <div class="setting-chip active" data-val="15" onclick="selectCalChip(this)">15分前</div>
-                <div class="setting-chip" data-val="30" onclick="selectCalChip(this)">30分前</div>
-                <div class="setting-chip" data-val="60" onclick="selectCalChip(this)">1時間前</div>
-            </div>
+            <p class="cal-popup-label" style="font-size:11px;color:rgba(247,231,206,0.55);letter-spacing:0.5px;line-height:1.6;margin:8px 0 12px;">通知設定はカレンダー側で管理してください。<br>RE-EYE-HUBより正確な日時を転送します。</p>
             <div class="cal-action-row">
                 <button class="cal-action-btn" onclick="submitCalAction('gcal')">Googleカレンダー</button>
                 <button class="cal-action-btn" onclick="submitCalAction('ics')">.ics ダウンロード</button>
@@ -1179,14 +1602,59 @@
         </div>
     </div>
 
+    <!-- 広告遮断 Reader モーダル（外部遷移前に本文をアプリ内表示） -->
+    <div id="reader-modal" aria-hidden="true">
+        <div class="reader-box">
+            <div class="reader-header">
+                <div style="flex:1;min-width:0;">
+                    <div id="reader-title" class="reader-title">SHIELD MODE</div>
+                    <div id="reader-meta" class="reader-meta"></div>
+                </div>
+                <button class="card-del-btn" style="margin:0;" onclick="closeReader()">×</button>
+            </div>
+            <div class="reader-body">
+                <div id="reader-text" class="reader-text"></div>
+                <iframe id="reader-iframe" sandbox="allow-same-origin allow-forms allow-popups allow-scripts" title="Shield Mode Reader"></iframe>
+            </div>
+            <div class="reader-actions">
+                <button id="reader-open-btn" class="reader-btn reader-btn-open" onclick="openReaderSource()" disabled>元サイトを開く</button>
+                <button class="reader-btn reader-btn-close" onclick="closeReader()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 削除確認モーダル -->
     <div id="delete-confirm-modal">
         <div class="delete-confirm-box">
             <div id="delete-confirm-title" class="delete-confirm-title">このアイテムを<br>監視対象から除外しますか？</div>
             <div class="delete-confirm-btns">
-                <button class="delete-confirm-btn delete-confirm-btn-no" onclick="cancelDelete()">いいえ</button>
-                <button class="delete-confirm-btn delete-confirm-btn-yes" onclick="confirmDelete()">はい</button>
+                <button class="delete-confirm-btn delete-confirm-btn-no" onclick="cancelDelete()">キャンセル</button>
+                <button class="delete-confirm-btn delete-confirm-btn-yes" onclick="confirmDelete()">削除を実行</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 固定削除バー（選択モード中に画面下部に常駐） -->
+    <div id="fixed-delete-bar">
+        <span id="fixed-delete-count">0件選択中</span>
+        <button id="fixed-delete-exec" onclick="confirmSelectDelete()" disabled>削除を実行</button>
+        <button id="fixed-delete-cancel" onclick="cancelEditMode()">キャンセル</button>
+    </div>
+
+    <!-- 右クリック コンテキストメニュー -->
+    <div id="ctx-menu">
+        <div class="ctx-menu-item" id="ctx-watch-item" onclick="ctxAddToWatch()">＋ 見守りに追加</div>
+        <div class="ctx-menu-sep"></div>
+        <div class="ctx-menu-item" onclick="ctxCopyText()">テキストをコピー</div>
+    </div>
+
+    <!-- 零式コーチマーク（初回のみ） -->
+    <div id="coach-mark">
+        <div class="coach-title">ZERO PASTE — 零式捕捉</div>
+        <div class="coach-body">記事のテキストをなぞって<br><strong style="color:var(--amethyst);">長押し（右クリック）</strong>するだけで<br>即座に見守り開始できます。</div>
+        <div class="coach-btn-row">
+            <button class="coach-btn coach-btn-ok" onclick="closeCoachMark(true)">わかった（二度と表示しない）</button>
+            <button class="coach-btn coach-btn-close" onclick="closeCoachMark(false)">閉じる</button>
         </div>
     </div>
 
@@ -1202,1584 +1670,1647 @@
     </div>
 
     <script>
-        // ユーザーIDをlocalStorageで永続化（匿名・デバイス固有）
-        function getUserId() {
-            let uid = localStorage.getItem('re_eye_uid');
-            if (!uid) {
-                uid = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-                localStorage.setItem('re_eye_uid', uid);
-            }
-            return uid;
-        }
+// ════════════════════════════════════════════════
+//  RE-EYE-HUB CORE v2 — 5係合同改修・監督承認版
+//  10秒待機完全抹殺 / StateStore / Direct Access
+//  UTC Intl Engine / PushHybrid 曖昧→確定検知
+// ════════════════════════════════════════════════
 
-        // ポーリングタイマー管理
-        let pollingTimers = {}; // keyword → setInterval ID
+// ── UTC タイムエンジン ────────────────────────────────────────
+const TZ = 'Asia/Tokyo';
+// Firebase Hosting から Vercel API を直叩き（CORSはVercel側で許可）
+const API_BASE = 'https://re-eye-hub.vercel.app';
+function nowJP() {
+    return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
+}
+function formatDateSec(ts) {
+    if (!ts) return '----/--/-- --:--:--';
+    const d = new Date(typeof ts === 'string' ? ts : ts);
+    if (isNaN(d.getTime())) return '----/--/-- --:--:--';
+    const fmt = new Intl.DateTimeFormat('ja-JP', {
+        timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+    return fmt.format(d);
+}
+function isNightJP() {
+    const h = nowJP().getHours();
+    return h < 8 || h >= 19;
+}
 
-        // プランに基づいたポーリング間隔でリアルAPIを定期呼び出し
-        function startPollingTimer(keyword) {
-            if (pollingTimers[keyword]) return; // 既に起動中
-            const intervalMs = getMonitoringIntervalMs();
-            pollingTimers[keyword] = setInterval(() => callPollApi(keyword), intervalMs);
-        }
+// ── StateStore（0.3秒復元エンジン）──────────────────────────
+const StateStore = (() => {
+    const _cache = {};
+    return {
+        freeze(screenId) {
+            const el = document.getElementById(screenId);
+            if (el) _cache[screenId + '_scroll'] = el.scrollTop;
+        },
+        restore(screenId) {
+            const el = document.getElementById(screenId);
+            if (!el) return;
+            const top = _cache[screenId + '_scroll'] || 0;
+            requestAnimationFrame(() => requestAnimationFrame(() => { el.scrollTop = top; }));
+        },
+        set(k, v) { _cache[k] = v; },
+        get(k) { return _cache[k]; }
+    };
+})();
 
-        function stopPollingTimer(keyword) {
-            if (pollingTimers[keyword]) {
-                clearInterval(pollingTimers[keyword]);
-                delete pollingTimers[keyword];
-            }
-        }
+// ── Direct Access（Reader完全廃止）───────────────────────────
+const UNTRUSTED_DOMAINS = [
+    'doubleclick.net','googlesyndication.com','amazon-adsystem.com',
+    'a8.net','valuecommerce','accesstrade','felmat.net'
+];
+function isUntrustedUrl(url) {
+    if (!url || !url.startsWith('http')) return false;
+    const u = url.toLowerCase();
+    return UNTRUSTED_DOMAINS.some(d => u.includes(d));
+}
+function openSafeUrl(url) {
+    if (!url) return;
+    StateStore.freeze(getActiveScreenId());
+    if (isUntrustedUrl(url)) {
+        if (!confirm('このリンクは広告URLの可能性があります。続けますか？')) return;
+    }
+    window.open(url, '_blank', 'noopener');
+}
+function getActiveScreenId() {
+    const el = document.querySelector('.screen.active');
+    return el ? el.id : 'home';
+}
 
-        // リアルAPIを呼ぶ（非ブロッキング・バックグラウンド更新）
-        async function callPollApi(keyword) {
-            try {
-                const res = await fetch('/api/poll', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keyword, userId: getUserId(), plan: currentPlan })
+// ── PushHybrid（曖昧→確定 ミリ秒検知）──────────────────────
+const PushHybrid = (() => {
+    let _pushActive = false;
+    let _watchTimer = null;
+    const _prevLabels = {};
+
+    async function initPush() {
+        if (!('PushManager' in window) || !('Notification' in window)) return false;
+        try {
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') return false;
+            _pushActive = true;
+            return true;
+        } catch(e) { return false; }
+    }
+
+    function fireNotification(title, body) {
+        if (_pushActive && Notification.permission === 'granted') {
+            navigator.serviceWorker.ready.then(reg => {
+                reg.showNotification(title, {
+                    body, icon: '/icon-192.png', tag: title, renotify: false
                 });
-                if (!res.ok) return;
-                const data = await res.json();
-                mergeApiResultsToHistory(data.allItems || []);
-            } catch (e) {
-                console.error('[poll] 通信エラー:', e.message);
-            }
-        }
-
-        // APIから返ってきたアイテムを履歴にマージ（重複はitemIdで排除）
-        function mergeApiResultsToHistory(apiItems) {
-            const existingIds = new Set(historyItems.map(i => String(i.id)));
-            let added = 0;
-            const now = new Date();
-            const timeText = now.toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-
-            apiItems.forEach(item => {
-                const key = `${item.sourceId}:${item.itemId}`;
-                if (!existingIds.has(key)) {
-                    historyItems.unshift({
-                        id: key,
-                        title: item.title,
-                        status: item.available ? 'ON' : 'OFF',
-                        shop: item.shopName,
-                        price: item.price,
-                        time: timeText,
-                        url: item.url,
-                        lastCheckedAt: item.checkedAt || Date.now()
-                    });
-                    existingIds.add(key);
-                    added++;
-                } else {
-                    // 既存アイテムの在庫状態を更新
-                    const existing = historyItems.find(i => String(i.id) === key);
-                    if (existing) {
-                        existing.status = item.available ? 'ON' : 'OFF';
-                        existing.lastCheckedAt = item.checkedAt || Date.now();
-                    }
-                }
+            }).catch(() => {
+                if (document.visibilityState === 'visible') alert(`📣 ${title}\n${body}`);
             });
-
-            // 履歴画面が開いていれば即時リフレッシュ
-            const histScreen = document.getElementById('history');
-            if (histScreen && histScreen.classList.contains('active')) {
-                renderHistory(historyItems);
-            }
+        } else {
+            if (document.visibilityState === 'visible') alert(`📣 ${title}\n${body}`);
         }
+    }
 
-        let currentPlan = 'PRO';
-        // リワード枠：月1回 / 最大5枠まで。5枠に達した瞬間にリワード枠は自動で非表示。
-        let rewardSlots = 0;
-        let rewardUsesThisMonth = 0;
-        function getMaxRewardSlots() { return currentPlan === 'FREE' ? 3 : currentPlan === 'STANDARD' ? 5 : 0; }
-        let lastMonitorKeyword = '';
+    // 曖昧→確定の検知：「3月下旬」→「3月25日」のような変化を捕捉
+    function _isMoreSpecific(prev, next) {
+        if (!prev || !next || prev === next) return false;
+        const hasDay = s => /\d+月\d+日|\d+\/\d+/.test(s);
+        return hasDay(next) && !hasDay(prev);
+    }
 
-        let lastActiveTime = Date.now(); 
-        const RESUME_AD_THRESHOLD = 30 * 60 * 1000; 
-        const restrictedKeywords = ['アダルト', '18禁', '成人', 'ポルノ', 'デリヘル', 'ソープ']; 
+    function startDateWatcher(getItems) {
+        if (_watchTimer) clearInterval(_watchTimer);
+        // ポーリング間隔でウォッチ（10秒待機は一切なし）
+        _watchTimer = setInterval(() => {
+            const items = getItems();
+            items.forEach(item => {
+                if (!item.releaseLabel) return;
+                const prev = _prevLabels[item.id];
+                if (prev !== undefined && _isMoreSpecific(prev, item.releaseLabel)) {
+                    fireNotification(
+                        item.title + '：発売日確定',
+                        item.releaseLabel + ' に確定しました'
+                    );
+                }
+                _prevLabels[item.id] = item.releaseLabel;
+            });
+        }, 5000); // 5秒ごとにチェック（変化を即検知）
+    }
 
-        // ユーザー属性プロフィール（localStorage永続化）
-        let userProfile = { gender: '', height: '', clothSize: '', shoeSize: '', hasChildren: false, childGender: '', childClothSize: '', childShoeSize: '', interests: [], timezone: 'JP' };
-        // 起動時にlocalStorageから復元
-        (function loadSavedProfile() {
-            try {
-                const saved = localStorage.getItem('re_eye_profile');
-                if (saved) userProfile = Object.assign(userProfile, JSON.parse(saved));
-            } catch(e) {}
-        })();
+    return { initPush, fireNotification, startDateWatcher };
+})();
 
-        // 性別連動広告コンテンツプール（アダルト厳禁）
-        const AD_CONTENT = {
-            female: [
-                { main: 'ポケモン新作グッズが入荷予定 — 女の子に人気のキャラアイテム速報', sub: '推し活・限定コラボを逃さない' },
-                { main: 'ルイヴィトン・グッチ 春新作バッグ 入荷監視中', sub: '再入荷の瞬間をキャッチ' },
-                { main: 'コスメ・スキンケア 限定セット 発売予定', sub: 'ブランドコスメの発売日を見守る' },
-            ],
-            male: [
-                { main: 'スニーカー新作・限定コラボ リリース速報', sub: '即完売モデルを逃さない' },
-                { main: 'ポケモン新作おもちゃ・カード 入荷監視中', sub: 'コレクターアイテムの再入荷を通知' },
-                { main: 'ゲーミングデバイス 新作発売・再入荷', sub: '予約開始の瞬間に通知' },
-            ],
-            child: [
-                { main: 'ポケモン・ワンピース おもちゃ 新作入荷速報', sub: 'プレゼントに人気の限定トイ' },
-                { main: '子供服 新作・季節限定コレクション', sub: 'サイズ別に在庫をウォッチ' },
-                { main: 'キャラクターランドセル 予約開始通知', sub: '人気モデルの入荷を見守る' },
-            ],
-            unknown: [
-                { main: 'ブランド新作・再入荷 横断監視中', sub: '欲しいアイテムの発売日を確実にキャッチ' },
-            ]
+// ── プラン・基本設定 ──────────────────────────────────────────
+let currentPlan = 'PRO';
+let rewardSlots = 0;
+function getMaxRewardSlots() {
+    return currentPlan === 'FREE' ? 3 : currentPlan === 'STANDARD' ? 5 : 0;
+}
+let lastMonitorKeyword = '';
+let _currentMode = 'stock';
+const restrictedKeywords = ['アダルト','18禁','成人','ポルノ','デリヘル','ソープ'];
+
+const PLAN_LIMITS = {
+    FREE:     { stock: 3,  trend: 3  },
+    STANDARD: { stock: 5,  trend: 5  },
+    PRO:      { stock: 10, trend: 5  },
+    VIP:      { stock: 10, trend: 10 }
+};
+function getTrendLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).trend; }
+function getStockLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).stock; }
+
+function getUserId() {
+    let uid = localStorage.getItem('re_eye_uid');
+    if (!uid) {
+        uid = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+        localStorage.setItem('re_eye_uid', uid);
+    }
+    return uid;
+}
+
+function getMonitoringIntervalMs() {
+    const night = isNightJP();
+    const jitter = () => Math.floor((4 + Math.random() * 3) * 60 * 1000);
+    if (currentPlan === 'FREE')     return night ? 24*60*60*1000 : 60*60*1000;
+    if (currentPlan === 'STANDARD') return night ? 60*60*1000 : 15*60*1000;
+    if (currentPlan === 'PRO')      return night ? 60*60*1000 : jitter();
+    if (currentPlan === 'VIP')      return jitter();
+    return 15*60*1000;
+}
+
+// ── ユーザープロフィール ──────────────────────────────────────
+let userProfile = {
+    gender:'', height:'', clothSize:'', shoeSize:'',
+    hasChildren:false, childGender:'', childClothSize:'', childShoeSize:'',
+    interests:[], timezone: TZ
+};
+(function loadSavedProfile() {
+    try {
+        const s = localStorage.getItem('re_eye_profile');
+        if (s) userProfile = Object.assign(userProfile, JSON.parse(s));
+    } catch(e) {}
+})();
+
+// ── historyItems ──────────────────────────────────────────────
+let historyItems = [];
+let historyObserverTimer = null;
+
+// ── 通知クリーナー ────────────────────────────────────────────
+const HISTORY_BLACKLIST = [
+    'PR','広告','AD','ad','スポンサー','sponsored',
+    '中古','買取','スニダン','SNKRDUNK','メルカリ','ヤフオク',
+    '事件','逮捕','訃報','詐欺','偽物','フィッシング'
+];
+function isBlacklisted(item) {
+    const text = ((item.title||'') + ' ' + (item.url||'')).toLowerCase();
+    return HISTORY_BLACKLIST.some(w => text.includes(w.toLowerCase()));
+}
+
+let _deletedIds = new Set();
+(function _loadDeletedIds() {
+    try {
+        const r = localStorage.getItem('re_eye_del');
+        if (r) JSON.parse(r).forEach(id => _deletedIds.add(String(id)));
+    } catch(e) {}
+})();
+function _persistDeleteId(id) {
+    _deletedIds.add(String(id));
+    try { localStorage.setItem('re_eye_del', JSON.stringify([..._deletedIds].slice(-500))); } catch(e) {}
+}
+function _persistDeleteIds(arr) {
+    arr.forEach(id => _deletedIds.add(String(id)));
+    try { localStorage.setItem('re_eye_del', JSON.stringify([..._deletedIds].slice(-500))); } catch(e) {}
+}
+
+let _watchedKeywords = new Set();
+(function _loadWatchedKeywords() {
+    try {
+        const r = localStorage.getItem('re_eye_watched_kw');
+        if (r) JSON.parse(r).forEach(kw => _watchedKeywords.add(kw.trim().toLowerCase()));
+    } catch(e) {}
+})();
+function addWatchedKeyword(kw) {
+    if (!kw) return;
+    _watchedKeywords.add(kw.trim().toLowerCase());
+    try { localStorage.setItem('re_eye_watched_kw', JSON.stringify([..._watchedKeywords])); } catch(e) {}
+}
+
+function _persistHistory() {
+    try { localStorage.setItem('re_eye_history', JSON.stringify(historyItems.slice(0,100))); } catch(e) {}
+}
+function cleanHistoryItem(item) {
+    if (_deletedIds.has(String(item.id))) return false;
+    if (isBlacklisted(item)) return false;
+    return true;
+}
+
+// ── ポーリング ────────────────────────────────────────────────
+let pollingTimers = {};
+function startPollingTimer(keyword) {
+    if (pollingTimers[keyword]) return;
+    const ms = getMonitoringIntervalMs();
+    pollingTimers[keyword] = setInterval(() => callPollApi(keyword), ms);
+}
+function stopPollingTimer(keyword) {
+    if (pollingTimers[keyword]) { clearInterval(pollingTimers[keyword]); delete pollingTimers[keyword]; }
+}
+async function callPollApi(keyword) {
+    try {
+        const res = await fetch(API_BASE + '/api/poll', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ keyword, userId: getUserId(), plan: currentPlan })
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        mergeApiResultsToHistory(data.allItems || []);
+    } catch(e) { console.error('[poll]:', e.message); }
+}
+function mergeApiResultsToHistory(apiItems) {
+    const existingIds = new Set(historyItems.map(i => String(i.id)));
+    let added = 0;
+    const timeText = formatDateSec(Date.now());
+    apiItems.forEach(item => {
+        const key = `${item.sourceId}:${item.itemId}`;
+        if (_deletedIds.has(key)) return;
+        const entry = {
+            id: key, title: item.title,
+            status: item.available ? 'ON' : 'OFF',
+            shop: item.shopName, price: item.price,
+            time: timeText, url: item.url,
+            lastCheckedAt: item.checkedAt || Date.now()
         };
-        function getAdForGender(gender) {
-            const pool = AD_CONTENT[gender] || AD_CONTENT.unknown;
-            return pool[Math.floor(Math.random() * pool.length)];
+        if (!cleanHistoryItem(entry)) return;
+        if (!existingIds.has(key)) {
+            historyItems.unshift(entry); existingIds.add(key); added++;
+        } else {
+            const ex = historyItems.find(i => String(i.id) === key);
+            if (ex) { ex.status = item.available ? 'ON' : 'OFF'; ex.lastCheckedAt = item.checkedAt || Date.now(); }
         }
+    });
+    if (added > 0) _persistHistory();
+    const hs = document.getElementById('history');
+    if (hs && hs.classList.contains('active')) renderHistory(historyItems);
+}
 
-        // Queueベース監視スケジューラー（タイムゾーン・負荷分散対応）
-        const watchQueue = [];
-        const TIMEZONE_OFFSETS = { JP: 9, US: -5, EU: 1, AU: 10 };
-        function enqueueWatch(keyword, mode) {
-            const jitter = Math.floor(Math.random() * 60000); // 最大1分のランダムジッター
-            const baseInterval = mode === 'trend' ? 86400000 : getMonitoringIntervalMs();
-            watchQueue.push({
-                keyword, mode,
-                timezone: userProfile.timezone || 'JP',
-                nextCheckAt: Date.now() + jitter,
-                interval: baseInterval
-            });
-        }
-        function processWatchQueue() {
-            const now = Date.now();
-            watchQueue.forEach(entry => {
-                if (now < entry.nextCheckAt) return;
-                // タイムゾーンオフセットに基づく次回チェック時刻を計算（負荷分散）
-                const jitter = Math.floor(Math.random() * entry.interval * 0.1);
-                entry.nextCheckAt = now + entry.interval + jitter;
-                // 実際のAPIコールはここに追加
-            });
-        }
-        setInterval(processWatchQueue, 30000);
+// ── トレンド ──────────────────────────────────────────────────
+let trendItems = [];
+let intelScoutResults = [];
+let trendWatching = new Set();
+let trendTimers = {};
 
-        // リワード枠：24時間有効タイムスタンプ管理（全プラン共通）
-        let rewardExpiresAt = 0;
+// ── トレンドクラウド同期 ──────────────────────────────────────
+// _trendWatchData: trendWatching の各IDに対応するフルデータ保持マップ
+// キー: item.id  値: {id, title, releaseAt, releaseLabel, sourceUrl, shop, status, addedAt, keyword}
+let _trendWatchData = {};
+let _trendSyncTimer = null;
 
+/** trendWatching の現在データをフラット配列化して Redis へ保存（デバウンス 800ms） */
+function scheduleTrendSync() {
+    clearTimeout(_trendSyncTimer);
+    _trendSyncTimer = setTimeout(() => _doTrendSync(), 800);
+}
+async function _doTrendSync() {
+    const uid = getUserId();
+    const items = [...trendWatching].map(id => _trendWatchData[id]).filter(Boolean);
+    try {
+        await fetch(API_BASE + '/api/trend', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ userId: uid, items })
+        });
+    } catch(e) { console.warn('[trend-sync] 保存失敗:', e.message); }
+}
 
-        // プラン別・見守り枠上限
-        const PLAN_LIMITS = {
-            FREE:     { stock: 3,  trend: 3  },  // 合計6
-            STANDARD: { stock: 5,  trend: 5  },  // 合計10
-            PRO:      { stock: 10, trend: 5  },  // 合計15
-            VIP:      { stock: 10, trend: 10 }   // 合計20
-        };
-        function getTrendLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).trend; }
-        function getStockLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).stock; }
+/** 起動時にサーバーからトレンドデータを復元 */
+async function loadTrendFromServer() {
+    const uid = getUserId();
+    try {
+        const res = await fetch(API_BASE + '/api/trend?userId=' + encodeURIComponent(uid));
+        if (!res.ok) return;
+        const data = await res.json();
+        const items = data.items || [];
+        if (items.length === 0) return;
 
-        // アフィリエイトリンク生成（将来のタグ挿入を可能にする窓口）
-        function formatAffiliateLink(url) {
-            // TODO: ここに各ASPのタグを挿入する
-            return url;
-        }
-
-        // トレンド探索：ユーザーが見守り追加したアイテムのみ表示
-        let trendItems = [];
-        // インテル・スカウター直近取得結果（探索画面インライン表示用）
-        let intelScoutResults = [];
-        let trendWatching = new Set();
-        let trendTimers = {};
-
-        function getMonitoringIntervalMs() {
-            const h = new Date().getHours();
-            const isNight = h < 8 || h >= 19;
-            // ステルス・エンジン：4〜7分のゆらぎ（Jitter）でボット検知を回避
-            const jitter = () => Math.floor((4 + Math.random() * 3) * 60 * 1000);
-            if (currentPlan === 'FREE') return isNight ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
-            if (currentPlan === 'STANDARD') return isNight ? 60 * 60 * 1000 : 15 * 60 * 1000;
-            if (currentPlan === 'PRO') return isNight ? 60 * 60 * 1000 : jitter(); // 夜間60分 / 昼4〜7分
-            if (currentPlan === 'VIP') return jitter(); // 24時間・Jitter付き
-            return 15 * 60 * 1000;
-        }
-
-        function renderTrendItems(filterKeyword) {
-            const container = document.getElementById('trend-list-container');
-            if (!container) return;
-            const kw = (filterKeyword || '').toLowerCase().trim();
-
-            // アダルト排除フィルタ
-            const safe = trendItems.filter(t =>
-                !restrictedKeywords.some(rk => t.title.includes(rk) || (t.category || '').includes(rk))
-            );
-
-            const list = kw
-                ? safe.filter(t => t.title.toLowerCase().includes(kw) || (t.category && t.category.toLowerCase().includes(kw)) || (t.shop && t.shop.toLowerCase().includes(kw)))
-                : safe;
-
-            const limit = getTrendLimit();
-            const watchingCount = trendWatching.size;
-
-            container.innerHTML = '';
-
-            if (list.length === 0) {
-                var empty = document.createElement('p');
-                empty.className = 'trend-intro-11px';
-                empty.style.cssText = 'text-align:center; color:rgba(247,231,206,0.35); margin:24px 0;';
-                empty.textContent = '気になるアイテムを検索して、見守りリストを作成しましょう';
-                container.appendChild(empty);
-            }
-
-            // TRENDセクションのサブメニュー・バーを更新
-            var trendActionRow = document.getElementById('trend-section-action-row');
-            var trendManageBtn = document.getElementById('trend-manage-btn');
-            if (trendActionRow) {
-                trendActionRow.innerHTML = '';
-                if (trendManageBtn) trendManageBtn.className = 'section-manage-btn' + (_openSectionMenu === 'TREND' ? ' open' : '');
-                if (_openSectionMenu === 'TREND' && _sectionEditMode !== 'TREND') {
-                    trendActionRow.className = 'section-action-row';
-                    var b1 = document.createElement('button'); b1.className = 'section-action-btn danger'; b1.textContent = '一括削除'; b1.onclick = () => startBulkDelete('TREND', '未発売・注目アイテム');
-                    var b2 = document.createElement('button'); b2.className = 'section-action-btn'; b2.textContent = '選択して削除'; b2.onclick = () => startSelectDelete('TREND');
-                    trendActionRow.appendChild(b1); trendActionRow.appendChild(b2);
-                } else if (_sectionEditMode === 'TREND') {
-                    trendActionRow.className = 'section-delete-bar';
-                    var ct = document.createElement('span'); ct.className = 'count-text'; ct.textContent = _editSelected.size + '件選択中';
-                    var exec = document.createElement('button'); exec.className = 'section-action-btn danger'; exec.textContent = '削除を実行'; exec.disabled = _editSelected.size === 0; exec.onclick = confirmSelectDelete;
-                    var cnc = document.createElement('button'); cnc.className = 'section-action-btn'; cnc.textContent = 'キャンセル'; cnc.onclick = cancelTrendEditMode;
-                    trendActionRow.appendChild(ct); trendActionRow.appendChild(exec); trendActionRow.appendChild(cnc);
-                } else { trendActionRow.className = ''; }
-            }
-            list.forEach(item => {
-                const isWatching = trendWatching.has(item.id);
-                const card = document.createElement('div');
-                card.className = 'trend-item-card' + (isWatching ? ' watching' : '');
-                card.dataset.trendId = item.id;
-
-                const titleEl = document.createElement('span');
-                titleEl.className = 'item-title';
-                titleEl.textContent = item.title;
-
-                // 11px構成：「時期 ｜ [ソースを確認]」— 時刻は非表示
-                const metaEl = document.createElement('div');
-                metaEl.className = 'trend-meta-11px';
-                const sourceLink = document.createElement('a');
-                sourceLink.href = formatAffiliateLink(item.sourceUrl || '#');
-                sourceLink.target = '_blank';
-                sourceLink.rel = 'noopener';
-                sourceLink.textContent = 'ソースを確認';
-                sourceLink.style.cssText = 'color: var(--amethyst); text-decoration: none; opacity: 1;';
-                metaEl.appendChild(document.createTextNode(item.releaseLabel + '  ｜  '));
-                metaEl.appendChild(sourceLink);
-
-                card.appendChild(titleEl);
-                card.appendChild(metaEl);
-
-                // 定価超過バッジ（P_market > P_list の場合）
-                if (item.overListPrice) {
-                    const overBadge = document.createElement('span');
-                    overBadge.className = 'over-list-badge';
-                    overBadge.textContent = 'OVER LIST PRICE（定価超過）';
-                    card.appendChild(overBadge);
-                }
-
-                if (isWatching) {
-                    if (_sectionEditMode === 'TREND') {
-                        const cb = document.createElement('input');
-                        cb.type = 'checkbox'; cb.className = 'edit-checkbox';
-                        cb.style.cssText = 'margin-top:6px;';
-                        cb.checked = _editSelected.has(item.id);
-                        cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(item.id); };
-                        card.appendChild(cb);
-                        card.onclick = () => toggleSelectItem(item.id);
-                    } else {
-                        const badge = document.createElement('div');
-                        badge.className = 'trend-watching-badge';
-                        badge.textContent = '● 見守り中 — 発売日確定で通知';
-                        card.appendChild(badge);
-                    }
-                } else {
-                    const btn = document.createElement('button');
-                    btn.className = 'btn-purple btn-watch-trend';
-                    if (watchingCount >= limit) {
-                        btn.textContent = '枠上限（' + limit + '件）に達しました';
-                        btn.disabled = true;
-                        btn.style.opacity = '0.4';
-                    } else {
-                        btn.textContent = '+ 見守りに追加';
-                        btn.onclick = () => addToWatchFromTrend(item);
-                    }
-                    card.appendChild(btn);
-                }
-                container.appendChild(card);
-            });
-
-            // ── インテル・スカウター即時結果（探索画面インライン） ──
-            if (intelScoutResults.length > 0) {
-                var intelFiltered = intelScoutResults.filter(function(item) {
-                    return !kw || item.title.toLowerCase().includes(kw) || (item.keyword || '').toLowerCase().includes(kw);
-                });
-                if (intelFiltered.length > 0) {
-                    var intelSect = document.createElement('div');
-                    intelSect.style.cssText = 'margin-top:14px; border-top:1px solid rgba(155,89,182,0.2); padding-top:11px;';
-                    var intelHdr = document.createElement('span');
-                    intelHdr.className = 'notification-label';
-                    intelHdr.style.cssText = 'margin-bottom:8px;';
-                    intelHdr.textContent = '通知 / NOTIFICATION — スカウター検知';
-                    intelSect.appendChild(intelHdr);
-                    intelFiltered.forEach(function(item) {
-                        var card = document.createElement('div');
-                        card.className = 'history-card history-card-notified';
-                        card.style.cssText = 'cursor:pointer; margin-bottom:8px;';
-                        if (item.url) card.onclick = function() { window.open(item.url, '_blank'); };
-                        var hdr = document.createElement('div');
-                        hdr.className = 'history-card-header';
-                        var tEl = document.createElement('span');
-                        tEl.className = 'item-title'; tEl.textContent = item.title;
-                        var tg = document.createElement('span');
-                        tg.className = 'notification-label';
-                        tg.style.cssText = 'margin-bottom:0; font-size:11px;';
-                        tg.textContent = 'INTEL';
-                        hdr.appendChild(tEl); hdr.appendChild(tg);
-                        card.appendChild(hdr);
-                        var meta = document.createElement('div');
-                        meta.className = 'intel-source-tag';
-                        meta.textContent = (item.keyword || '') + (item.time ? '  ｜  ' + item.time : '');
-                        card.appendChild(meta);
-                        intelSect.appendChild(card);
-                    });
-                    container.appendChild(intelSect);
-                }
-            }
-        }
-
-        function addToWatchFromTrend(item) {
-            if (trendWatching.has(item.id)) return;
-            // アダルト排除
-            if (restrictedKeywords.some(rk => item.title.includes(rk))) return;
-            // プラン別枠数チェック
-            if (trendWatching.size >= getTrendLimit()) {
-                alert('見守りトレンド枠の上限（' + getTrendLimit() + '件）に達しています。プランをアップグレードするか、既存の見守りを削除してください。');
-                return;
-            }
-            trendWatching.add(item.id);
-            // デモ：1日1回ランダム時間の巡回をシミュレーション（実際は 1日1回・サーバー側実行）
-            if (!item.releaseAt) {
-                var now = Date.now();
-                var mins = [3, 8, 12, 20, 45][trendItems.findIndex(t => t.id === item.id)] || 5;
-                item.releaseAt = now + mins * 60 * 1000;
-            }
-            startTrendReleaseSimulation(item);
-            renderTrendItems(document.getElementById('insight-search').value);
-            var settingsScreen = document.getElementById('settings');
-            if (settingsScreen && settingsScreen.classList.contains('active')) renderSettingsTrendWatching();
-        }
-
-        function startTrendReleaseSimulation(item) {
-            if (trendTimers[item.id]) return;
-            // デモ：実際は1日1回ランダム時間で巡回。ここではシミュレーション間隔で再現。
-            var intervalMs = getMonitoringIntervalMs();
-
-            function check() {
-                if (Date.now() < item.releaseAt) return;
-                clearInterval(trendTimers[item.id]);
-                delete trendTimers[item.id];
-                // 卒業：見守りリストから削除
-                trendWatching.delete(item.id);
-
-                var t = new Date();
-                // 通知形式：「商品名：M/D に発売決定」（時刻は不要）
-                var releaseDateLabel = (t.getMonth() + 1) + '/' + t.getDate() + ' に発売決定';
-                var dateKey = t.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
-
-                // 履歴へ NOTIFIED として追加（在庫監視とは別セクション）
-                historyItems.unshift({
-                    id: 'notif-' + Date.now(),
-                    title: item.title,
-                    status: 'NOTIFIED',
-                    shop: item.shop,
-                    time: dateKey,
-                    releaseLabel: releaseDateLabel,
-                    url: formatAffiliateLink(item.sourceUrl || 'https://www.rakuten.co.jp'),
-                    lastCheckedAt: Date.now()
-                });
-
-                var historyScreen = document.getElementById('history');
-                if (historyScreen && historyScreen.classList.contains('active')) renderHistory(historyItems);
-                renderTrendItems(document.getElementById('insight-search').value);
-                var settingsScreen = document.getElementById('settings');
-                if (settingsScreen && settingsScreen.classList.contains('active')) renderSettingsTrendWatching();
-                // スマホ通知（PWA）
-                if (Notification && Notification.permission === 'granted') {
-                    new Notification(item.title + '：' + releaseDateLabel);
-                }
-                alert('📣 ' + item.title + '：' + releaseDateLabel + '\n履歴の「通知済み」に移動しました。');
-            }
-
-            trendTimers[item.id] = setInterval(check, intervalMs);
-            check();
-        }
-
-        function filterTrendItems() {
-            var word = document.getElementById('insight-search').value;
-            renderTrendItems(word);
-            if (word) updateBannerAdContent(word);
-        }
-
-        // 履歴アイテム（APIから動的に追加される）
-        let historyItems = [];
-
-        // 履歴監視用のタイマーID
-        let historyObserverTimer = null;
-
-        function show(id, btn) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-
-            const target = document.getElementById(id);
-            if(target) {
-                target.classList.add('active');
-                target.scrollTop = 0;
-            }
-            btn.classList.add('active');
-
-            if (id === 'history') renderHistory(historyItems);
-            if (id === 'insight') renderTrendItems(document.getElementById('insight-search') && document.getElementById('insight-search').value);
-            if (id === 'settings') renderSettingsTrendWatching();
-            updateAdVisibility();
-            // カスタムスクロールバーを画面切替後に更新
-            requestAnimationFrame(() => updateSb(document.getElementById(id)));
-        }
-
-        function renderSettingsTrendWatching() {
-            var block = document.getElementById('settings-trend-watching');
-            var listEl = document.getElementById('settings-trend-watching-list');
-            if (!block || !listEl) return;
-            var watching = trendItems.filter(t => trendWatching.has(t.id));
-            if (watching.length === 0) {
-                block.style.display = 'none';
-                return;
-            }
-            block.style.display = 'block';
-            var h = new Date().getHours();
-            var isNight = h < 8 || h >= 19;
-            var intervalLabel;
-            if (currentPlan === 'FREE') intervalLabel = isNight ? '🌙 スリープ中' : 'トレンド探索中';
-            else if (currentPlan === 'VIP') intervalLabel = '10分間隔（変更なし）';
-            else intervalLabel = isNight ? '60分間隔（夜間）' : '15分間隔';
-            listEl.innerHTML = watching.map(t => '<div class="watch-item-row"><span class="watch-item-name">' + t.title + '</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● ' + intervalLabel + '</span></div>').join('');
-        }
-
-        // --- 履歴レンダリング（配列引数で動的生成） ---
-        function formatLastChecked(ts) {
-            if (!ts) return 'たった今';
-            const diffMs = Date.now() - ts;
-            const diffMin = Math.floor(diffMs / 60000);
-            if (diffMin <= 0) return 'たった今';
-            if (diffMin === 1) return '1分前';
-            if (diffMin < 60) return `${diffMin}分前`;
-            const diffHour = Math.floor(diffMin / 60);
-            if (diffHour < 24) return `${diffHour}時間前`;
-            const diffDay = Math.floor(diffHour / 24);
-            return `${diffDay}日前`;
-        }
-
-        /** プランに基づく「〇分前」シミュレート（在庫確認ステータス用） */
-        function getSimulatedCheckLabel() {
-            const plan = currentPlan || 'PRO';
-            if (plan === 'FREE') {
-                const min = 45 + Math.floor(Math.random() * 15);
-                return `● 在庫ありを確認（プランに基づき${min}分前に確認）`;
-            }
-            if (plan === 'STANDARD') {
-                const min = 5 + Math.floor(Math.random() * 5);
-                return `● 在庫ありを確認（プランに基づき${min}分前に確認）`;
-            }
-            if (plan === 'PRO' || plan === 'VIP') {
-                const suffix = Math.random() < 0.6 ? 'たった今確認' : '1分前に確認';
-                return `● 在庫ありを確認（プランに基づき${suffix}）`;
-            }
-            return '● 在庫ありを確認（プランに基づき確認）';
-        }
-
-        const DISCLAIMER_TEXT = '本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。';
-
-        /** キャッチした時間の文字列で降順ソート（新しい順） */
-        function sortByCaughtTimeDesc(a, b) {
-            return (b.time || '').localeCompare(a.time || '');
-        }
-
-        function buildGoogleCalendarUrl(title, dateLabel) {
-            // dateLabel 例："3/18 に発売決定" → 今年のM/Dから日付生成
-            var now = new Date();
-            var match = dateLabel.match(/(\d+)\/(\d+)/);
-            var start = now.getFullYear() + (match ? String(parseInt(match[1])).padStart(2,'0') + String(parseInt(match[2])).padStart(2,'0') : String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0'));
-            var params = new URLSearchParams({ text: title + ' 発売日', dates: start + '/' + start, details: 'RE-EYE-HUB より通知' });
-            return 'https://calendar.google.com/calendar/render?action=TEMPLATE&' + params.toString();
-        }
-
-        function buildIcsContent(title, dateLabel, reminderMins) {
-            var now = new Date();
-            var match = dateLabel ? dateLabel.match(/(\d+)\/(\d+)/) : null;
-            var m = match ? String(parseInt(match[1])).padStart(2,'0') : String(now.getMonth()+1).padStart(2,'0');
-            var d = match ? String(parseInt(match[2])).padStart(2,'0') : String(now.getDate()).padStart(2,'0');
-            var dateStr = now.getFullYear() + m + d;
-            var lines = ['BEGIN:VCALENDAR','VERSION:2.0','BEGIN:VEVENT',
-                'DTSTART;VALUE=DATE:' + dateStr,'DTEND;VALUE=DATE:' + dateStr,
-                'SUMMARY:' + title + ' 発売日','DESCRIPTION:RE-EYE-HUB より通知'];
-            var mins = Number(reminderMins);
-            if (mins > 0) {
-                lines.push('BEGIN:VALARM',
-                    'TRIGGER:-PT' + mins + 'M',
-                    'ACTION:DISPLAY',
-                    'DESCRIPTION:発売日リマインダー',
-                    'END:VALARM');
-            }
-            lines.push('END:VEVENT','END:VCALENDAR');
-            return lines.join('\r\n');
-        }
-
-        function downloadIcs(title, dateLabel) {
-            var content = buildIcsContent(title, dateLabel, 15);
-            var blob = new Blob([content], { type: 'text/calendar' });
-            var a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = title + '.ics';
-            a.click();
-        }
-
-        // ── カレンダーポップアップ ──────────────────────────────────
-        var _calTitle = '';
-        var _calReleaseLabel = '';
-
-        function openCalModal(title, releaseLabel) {
-            _calTitle = title;
-            _calReleaseLabel = releaseLabel || '';
-            var titleEl = document.getElementById('cal-popup-item-title');
-            var dateEl  = document.getElementById('cal-popup-date');
-            if (titleEl) titleEl.textContent = title;
-            if (dateEl)  dateEl.textContent  = releaseLabel || '';
-            // リマインダーを 15分前 にリセット
-            document.querySelectorAll('#cal-reminder-chips .setting-chip').forEach(function(c) {
-                c.classList.toggle('active', c.dataset.val === '15');
-            });
-            document.getElementById('cal-popup-modal').style.display = 'flex';
-        }
-
-        function closeCalModal() {
-            document.getElementById('cal-popup-modal').style.display = 'none';
-        }
-
-        function selectCalChip(el) {
-            el.parentElement.querySelectorAll('.setting-chip').forEach(function(c) {
-                c.classList.remove('active');
-            });
-            el.classList.add('active');
-        }
-
-        function getCalReminderMins() {
-            var chip = document.querySelector('#cal-reminder-chips .setting-chip.active');
-            return chip ? parseInt(chip.dataset.val, 10) : 15;
-        }
-
-        function submitCalAction(action) {
-            var mins = getCalReminderMins();
-            closeCalModal();
-            if (action === 'gcal') {
-                window.open(buildGoogleCalendarUrl(_calTitle, _calReleaseLabel), '_blank');
-            } else {
-                var content = buildIcsContent(_calTitle, _calReleaseLabel, mins);
-                var blob = new Blob([content], { type: 'text/calendar' });
-                var a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = _calTitle + '.ics';
-                a.click();
-            }
-        }
-
-        function renderHistory(items) {
-            const container = document.getElementById('history-list-container');
-            if (!container) return;
-            container.innerHTML = '';
-
-            const raw = items || [];
-            const onItems       = raw.filter(i => i.status === 'ON').sort(sortByCaughtTimeDesc);
-            const offItems      = raw.filter(i => i.status === 'OFF').sort(sortByCaughtTimeDesc);
-            const notifiedItems = raw.filter(i => i.status === 'NOTIFIED').sort(sortByCaughtTimeDesc);
-            const intelItems    = raw.filter(i => i.status === 'INTEL').sort(sortByCaughtTimeDesc);
-
-            // ── ヘルパー：セクションボックスを構築 ──
-            function buildSectionBox(status, labelClass, labelText, items, cardBuilder) {
-                const box = document.createElement('div');
-                box.className = 'history-section-box';
-                // ヘッダー行
-                const hdr = document.createElement('div');
-                hdr.className = 'section-header-row';
-                const lbl = document.createElement('span');
-                lbl.className = labelClass;
-                lbl.textContent = labelText;
-                const mBtn = document.createElement('button');
-                mBtn.className = 'section-manage-btn' + (_sectionEditMode === status ? ' open' : '');
-                mBtn.textContent = _sectionEditMode === status ? '× 戻る' : '削除';
-                mBtn.onclick = () => toggleSectionMenu(status);
-                hdr.appendChild(lbl);
-                hdr.appendChild(mBtn);
-                box.appendChild(hdr);
-                // リスト
-                const list = document.createElement('div');
-                list.className = 'history-list-box';
-                items.forEach(item => { list.appendChild(cardBuilder(item, status)); });
-                box.appendChild(list);
-                // 選択削除バー（選択モード時）
-                if (_sectionEditMode === status) {
-                    const bar = document.createElement('div');
-                    bar.className = 'section-delete-bar';
-                    const ct = document.createElement('span');
-                    ct.className = 'count-text';
-                    ct.textContent = _editSelected.size + '件選択中';
-                    const execBtn = document.createElement('button');
-                    execBtn.className = 'section-action-btn danger';
-                    execBtn.textContent = '削除を実行';
-                    execBtn.disabled = _editSelected.size === 0;
-                    execBtn.onclick = confirmSelectDelete;
-                    const cancelBtn = document.createElement('button');
-                    cancelBtn.className = 'section-action-btn';
-                    cancelBtn.textContent = 'キャンセル';
-                    cancelBtn.onclick = cancelEditMode;
-                    bar.appendChild(ct);
-                    bar.appendChild(execBtn);
-                    bar.appendChild(cancelBtn);
-                    box.appendChild(bar);
-                }
-                return box;
-            }
-
-            // 上段：購入可能
-            const boxOn = buildSectionBox('ON', 'gold-label', '購入可能', onItems, (item, status) => {
-                const card = document.createElement('div');
-                card.className = 'history-card history-card-on';
-                const header = document.createElement('div');
-                header.className = 'history-card-header';
-                if (_sectionEditMode === status) {
-                    const cb = document.createElement('input');
-                    cb.type = 'checkbox'; cb.className = 'edit-checkbox';
-                    cb.checked = _editSelected.has(String(item.id));
-                    cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(String(item.id)); };
-                    header.appendChild(cb);
-                    card.onclick = () => toggleSelectItem(String(item.id));
-                } else if (item.url) { card.onclick = () => window.open(item.url, '_blank'); }
-                const titleEl = document.createElement('span');
-                titleEl.className = 'item-title'; titleEl.textContent = item.title;
-                const statusEl = document.createElement('span');
-                statusEl.className = 'history-status-on'; statusEl.textContent = getSimulatedCheckLabel();
-                header.appendChild(titleEl); header.appendChild(statusEl);
-                const meta = document.createElement('div');
-                meta.className = 'item-meta history-meta-row';
-                meta.textContent = `${item.time} / ${item.shop} ｜ 最終確認：${formatLastChecked(item.lastCheckedAt)}`;
-                card.appendChild(header); card.appendChild(meta);
-                return card;
-            });
-            container.appendChild(boxOn);
-
-            // 下段：売り切れ
-            const boxOff = buildSectionBox('OFF', 'gray-label', '売り切れ', offItems, (item, status) => {
-                const card = document.createElement('div');
-                card.className = 'history-card history-card-off';
-                const header = document.createElement('div');
-                header.className = 'history-card-header';
-                if (_sectionEditMode === status) {
-                    const cb = document.createElement('input');
-                    cb.type = 'checkbox'; cb.className = 'edit-checkbox';
-                    cb.checked = _editSelected.has(String(item.id));
-                    cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(String(item.id)); };
-                    header.appendChild(cb);
-                    card.onclick = () => toggleSelectItem(String(item.id));
-                }
-                const titleEl = document.createElement('span');
-                titleEl.className = 'item-title'; titleEl.textContent = item.title;
-                const statusEl = document.createElement('span');
-                statusEl.className = 'history-status-off'; statusEl.textContent = '売り切れ';
-                header.appendChild(titleEl); header.appendChild(statusEl);
-                const meta = document.createElement('div');
-                meta.className = 'item-meta history-meta-row';
-                meta.textContent = `${item.time} / ${item.shop}`;
-                card.appendChild(header); card.appendChild(meta);
-                return card;
-            });
-            container.appendChild(boxOff);
-
-            // 通知済みセクション（トレンド卒業アイテム・カレンダー連携ボタン付き）
-            if (notifiedItems.length > 0) {
-                const boxNotif = buildSectionBox('NOTIFIED', 'gold-label', '通知済み', notifiedItems, (item, status) => {
-                    const card = document.createElement('div');
-                    card.className = 'history-card history-card-notified';
-                    const header = document.createElement('div');
-                    header.className = 'history-card-header';
-                    if (_sectionEditMode === status) {
-                        const cb = document.createElement('input');
-                        cb.type = 'checkbox'; cb.className = 'edit-checkbox';
-                        cb.checked = _editSelected.has(String(item.id));
-                        cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(String(item.id)); };
-                        header.appendChild(cb);
-                        card.onclick = () => toggleSelectItem(String(item.id));
-                    }
-                    const titleEl = document.createElement('span');
-                    titleEl.className = 'item-title'; titleEl.textContent = item.title;
-                    const statusEl = document.createElement('span');
-                    statusEl.className = 'history-status-notified';
-                    statusEl.textContent = item.releaseLabel || '発売日確定';
-                    header.appendChild(titleEl); header.appendChild(statusEl);
-                    card.appendChild(header);
-                    if (item.releaseLabel && _sectionEditMode !== status) {
-                        const calBtn = document.createElement('button');
-                        calBtn.className = 'intel-cal-btn';
-                        calBtn.textContent = '＋ カレンダーに登録';
-                        calBtn.onclick = (e) => { e.stopPropagation(); openCalModal(item.title, item.releaseLabel); };
-                        card.appendChild(calBtn);
-                    }
-                    return card;
-                });
-                container.appendChild(boxNotif);
-            }
-
-            // 通知 / NOTIFICATION セクション — インテル・スカウター拾得記事（常設）
-            {
-                const boxIntel = document.createElement('div');
-                boxIntel.className = 'history-section-box';
-                const hdrIntel = document.createElement('div');
-                hdrIntel.className = 'section-header-row';
-                const lblIntel = document.createElement('span');
-                lblIntel.className = 'notification-label';
-                lblIntel.textContent = '通知 / NOTIFICATION';
-                hdrIntel.appendChild(lblIntel);
-                boxIntel.appendChild(hdrIntel);
-                const listIntel = document.createElement('div');
-                listIntel.className = 'history-list-box';
-                if (intelItems.length === 0) {
-                    const emptyIntel = document.createElement('p');
-                    emptyIntel.className = 'trend-intro-11px';
-                    emptyIntel.style.cssText = 'text-align:center; color:rgba(247,231,206,0.35); margin:16px 0; padding:0 20px;';
-                    emptyIntel.textContent = 'スカウター待機中：新着を検知次第ここに表示します';
-                    listIntel.appendChild(emptyIntel);
-                } else {
-                    intelItems.forEach(function(item) {
-                        const card = document.createElement('div');
-                        card.className = 'history-card history-card-notified';
-                        if (item.url) {
-                            card.style.cursor = 'pointer';
-                            card.onclick = function() { window.open(item.url, '_blank'); };
-                        }
-                        const header = document.createElement('div');
-                        header.className = 'history-card-header';
-                        const titleEl = document.createElement('span');
-                        titleEl.className = 'item-title';
-                        titleEl.textContent = item.title;
-                        const tagEl = document.createElement('span');
-                        tagEl.className = 'notification-label';
-                        tagEl.style.cssText = 'margin-bottom:0;font-size:11px;';
-                        tagEl.textContent = 'INTEL';
-                        header.appendChild(titleEl);
-                        header.appendChild(tagEl);
-                        card.appendChild(header);
-                        const meta = document.createElement('div');
-                        meta.className = 'intel-source-tag';
-                        meta.textContent = (item.keyword || '') + (item.time ? '  ｜  ' + item.time : '');
-                        card.appendChild(meta);
-                        if (item.releaseLabel) {
-                            const calBtn = document.createElement('button');
-                            calBtn.className = 'intel-cal-btn';
-                            calBtn.textContent = '＋ カレンダーに登録';
-                            calBtn.onclick = function(e) { e.stopPropagation(); openCalModal(item.title, item.releaseLabel); };
-                            card.appendChild(calBtn);
-                        }
-                        listIntel.appendChild(card);
+        items.forEach(item => {
+            if (!item.id) return;
+            _trendWatchData[item.id] = item;
+            // HISTORY 以外は trendWatching に復元
+            if (item.status !== 'HISTORY') {
+                trendWatching.add(item.id);
+                // trendItems に存在しなければ追加して表示できるようにする
+                if (!trendItems.some(t => t.id === item.id)) {
+                    trendItems.push({
+                        id:           item.id,
+                        title:        item.title,
+                        releaseAt:    item.releaseAt,
+                        releaseLabel: item.releaseLabel || '----',
+                        sourceUrl:    item.sourceUrl    || '#',
+                        shop:         item.shop         || '',
+                        keyword:      item.keyword      || '',
                     });
                 }
-                boxIntel.appendChild(listIntel);
-                container.appendChild(boxIntel);
-            }
-
-            // 全セクション空の場合
-            if (onItems.length === 0 && offItems.length === 0 && notifiedItems.length === 0) {
-                const emptyMsg = document.createElement('p');
-                emptyMsg.className = 'trend-intro-11px';
-                emptyMsg.style.cssText = 'text-align:center; color:rgba(247,231,206,0.35); margin:40px 0 20px; padding:0 20px;';
-                emptyMsg.textContent = '気になるアイテムを検索して、見守りリストを作成しましょう';
-                container.appendChild(emptyMsg);
-            }
-
-            // 免責：各枠のさらに下・スクロール最後に配置（gap で 11px）
-            const disclaimer = document.createElement('p');
-            disclaimer.className = 'disclaimer-11px';
-            disclaimer.textContent = DISCLAIMER_TEXT;
-            disclaimer.style.marginTop = '0';
-            container.appendChild(disclaimer);
-        }
-
-        // 見守り中アイテムの状態をバックグラウンドで再監視（シミュレーション）
-        function startHistoryObserver() {
-            if (historyObserverTimer) return;
-
-            // 初回の「最終確認」時刻を揃える
-            const now = Date.now();
-            historyItems = historyItems.map(item => ({
-                ...item,
-                lastCheckedAt: item.lastCheckedAt || now
-            }));
-
-            historyObserverTimer = setInterval(() => {
-                const nowTs = Date.now();
-
-                historyItems = historyItems.map(item => {
-                    const updated = { ...item, lastCheckedAt: nowTs };
-                    const random = Math.random();
-
-                    // シミュレーション：購入可能 → 売り切れ（下段へ自動移動）
-                    if (item.status === 'ON' && random < 0.15) {
-                        updated.status = 'OFF';
-                    }
-                    // シミュレーション：売り切れ → 在庫あり（上段へ自動移動）
-                    if (item.status === 'OFF' && random >= 0.85) {
-                        updated.status = 'ON';
-                    }
-
-                    return updated;
-                });
-
-                // 画面のリロードなしで、その場のカードを更新
-                const historyScreen = document.getElementById('history');
-                if (historyScreen && historyScreen.classList.contains('active')) {
-                    renderHistory(historyItems);
-                }
-            }, 30000); // 30秒ごとに再監視・最終確認ラベル更新
-        }
-
-        // --- その他基本ロジック ---
-        function runStartupAd(isResume = false) {
-            if (currentPlan !== 'FREE') return;
-            const overlay = document.getElementById('startup-ad-overlay');
-            overlay.style.display = 'flex';
-            let count = 3;
-            const interval = setInterval(() => {
-                count--;
-                if (count <= 0) { clearInterval(interval); overlay.style.display = 'none'; }
-            }, 1000);
-        }
-
-        // 広告エリアの表示ロジック
-        function updateAdVisibility() {
-            const isFree = currentPlan === 'FREE';
-            const banner = document.getElementById('home-banner-ad');
-            const banner2 = document.getElementById('home-banner-ad-2');
-            const reward = document.getElementById('reward-video-banner');
-
-            // バナー広告はFREEのみ
-            if (banner) banner.style.display = isFree ? 'block' : 'none';
-            if (banner2) banner2.style.display = isFree ? 'block' : 'none';
-
-            // リワード枠はFREE/STANDARDのみ・月上限に達したら非表示
-            const maxSlots = getMaxRewardSlots();
-            if (reward) {
-                reward.style.display = (maxSlots > 0 && rewardSlots < maxSlots) ? 'block' : 'none';
-            }
-        }
-
-        // バナー広告内容の更新（性別連動・アダルト厳禁）
-        function updateBannerAdContent(sourceKeyword) {
-            const bannerMain = document.getElementById('home-banner-main');
-            const bannerSub = document.getElementById('home-banner-sub');
-            if (!bannerMain || !bannerSub) return;
-
-            let keyword = (sourceKeyword || lastMonitorKeyword || '人気アイテム').trim();
-            if (restrictedKeywords.some(ng => keyword.includes(ng))) keyword = '人気アイテム';
-
-            // 性別に応じたコンテンツを選択
-            const gender = userProfile.hasChildren ? 'child' : (userProfile.gender || 'unknown');
-            const ad = getAdForGender(gender);
-            bannerMain.textContent = ad.main;
-            bannerSub.textContent = ad.sub + '（' + keyword + '）';
-        }
-
-        function watchRewardVideo() {
-            const maxSlots = getMaxRewardSlots();
-            if (maxSlots === 0) {
-                alert('PRO / VIP プランでは広告報酬枠の追加はありません。');
-                return;
-            }
-            if (Date.now() < rewardExpiresAt) {
-                const remaining = Math.ceil((rewardExpiresAt - Date.now()) / 3600000);
-                alert('追加済みの枠は有効期間中です（残り約' + remaining + '時間）。');
-                return;
-            }
-            if (rewardSlots >= maxSlots) {
-                alert('今月のトレンド探索枠の上限（' + maxSlots + '枠）に達しています。翌月までお待ちください。');
-                return;
-            }
-            rewardSlots = Math.min(maxSlots, rewardSlots + 1);
-            rewardUsesThisMonth += 1;
-            rewardExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
-            alert('広告動画を視聴しました。トレンド探索枠を +1 追加しました。');
-            updateAdVisibility();
-        }
-
-        var _deleteTarget = null;
-        var _openSectionMenu = null;
-        var _sectionEditMode = null;
-        var _editSelected = new Set();
-
-        function toggleSectionMenu(status) {
-            if (_sectionEditMode === status) {
-                // 既に編集モード → 解除
-                _sectionEditMode = null;
-                _editSelected.clear();
-            } else {
-                // 編集モードへ直接切替
-                _openSectionMenu = null;
-                _sectionEditMode = status;
-                _editSelected.clear();
-            }
-            if (status === 'TREND') { renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
-            else { renderHistory(historyItems); }
-        }
-        function startBulkDelete(status, label) {
-            _openSectionMenu = null;
-            _deleteTarget = { type: 'section-bulk', status: status };
-            var title = document.getElementById('delete-confirm-title');
-            if (title) title.innerHTML = '「' + label + '」のすべてを削除します。<br>本当によろしいですか？';
-            document.getElementById('delete-confirm-modal').style.display = 'flex';
-        }
-        function startSelectDelete(status) {
-            _openSectionMenu = null;
-            _sectionEditMode = status;
-            _editSelected.clear();
-            if (status === 'TREND') { renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
-            else { renderHistory(historyItems); }
-        }
-        function toggleSelectItem(id) {
-            var sid = String(id);
-            if (_editSelected.has(sid)) _editSelected.delete(sid); else _editSelected.add(sid);
-            if (_sectionEditMode === 'TREND') { renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
-            else { renderHistory(historyItems); }
-        }
-        function confirmSelectDelete() {
-            if (_editSelected.size === 0) return;
-            _deleteTarget = { type: 'section-selected' };
-            var title = document.getElementById('delete-confirm-title');
-            if (title) title.innerHTML = '選択した ' + _editSelected.size + '件を削除します。<br>本当によろしいですか？';
-            document.getElementById('delete-confirm-modal').style.display = 'flex';
-        }
-        function cancelEditMode() {
-            _sectionEditMode = null; _editSelected.clear();
-            renderHistory(historyItems);
-        }
-        function cancelTrendEditMode() {
-            _sectionEditMode = null; _editSelected.clear();
-            renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : '');
-        }
-
-        function showDeleteConfirm(type, id, cardEl) {
-            _deleteTarget = { type: type, id: id, cardEl: cardEl };
-            var title = document.getElementById('delete-confirm-title');
-            if (title) title.innerHTML = 'このアイテムを<br>監視対象から除外しますか？';
-            document.getElementById('delete-confirm-modal').style.display = 'flex';
-        }
-        function confirmDelete() {
-            if (!_deleteTarget) return;
-            var t = _deleteTarget;
-            document.getElementById('delete-confirm-modal').style.display = 'none';
-            if (t.type === 'section') {
-                historyItems = historyItems.filter(function(i) { return i.status !== t.status; });
-                renderHistory(historyItems);
-            } else if (t.type === 'section-bulk') {
-                if (t.status === 'TREND') { trendWatching.clear(); renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); }
-                else { historyItems = historyItems.filter(function(i) { return i.status !== t.status; }); renderHistory(historyItems); }
-                _sectionEditMode = null; _editSelected.clear();
-            } else if (t.type === 'section-selected') {
-                if (_sectionEditMode === 'TREND') { _editSelected.forEach(id => trendWatching.delete(id)); renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : ''); renderSettingsTrendWatching(); }
-                else { historyItems = historyItems.filter(function(i) { return !_editSelected.has(String(i.id)); }); renderHistory(historyItems); }
-                _sectionEditMode = null; _editSelected.clear();
-            } else {
-                t.cardEl.classList.add('fading-out');
-                setTimeout(function() {
-                    if (t.type === 'history') {
-                        historyItems = historyItems.filter(function(i) { return String(i.id) !== String(t.id); });
-                        renderHistory(historyItems);
-                    } else if (t.type === 'trend') {
-                        trendWatching.delete(t.id);
-                        renderTrendItems(document.getElementById('insight-search') ? document.getElementById('insight-search').value : '');
-                        renderSettingsTrendWatching();
-                    }
-                }, 300);
-            }
-            _deleteTarget = null;
-        }
-        function cancelDelete() {
-            document.getElementById('delete-confirm-modal').style.display = 'none';
-            _deleteTarget = null;
-        }
-
-        function updateNightModeStatus() {
-            var el = document.getElementById('current-interval-text');
-            var banner = document.getElementById('settings-plan-status');
-            var h = new Date().getHours();
-            var isNight = h < 8 || h >= 19;
-            var itemText, bannerText;
-            if (currentPlan === 'FREE') {
-                itemText   = isNight ? '🌙 スリープ中' : '● 60分間隔で見守り中';
-                bannerText = isNight ? '🌙 スリープモード：08:00に再開します' : '● 08:00–19:00 稼働中 / 60分間隔でスキャン';
-            } else if (currentPlan === 'STANDARD') {
-                itemText   = isNight ? '夜間：60分間隔に変更済み' : '● 15分間隔で見守り中';
-                bannerText = isNight ? '夜間モード：60分間隔に変更済み' : '● 08:00–19:00 稼働中 / 15分間隔でスキャン';
-            } else if (currentPlan === 'PRO') {
-                itemText   = isNight ? '夜間：60分間隔に変更済み' : '● 5分間隔（Jitter）で見守り中';
-                bannerText = isNight ? '夜間モード：60分間隔に変更済み' : '● 08:00–19:00 稼働中 / 5分間隔（ゆらぎ）';
-            } else if (currentPlan === 'VIP') {
-                itemText   = '● 5分間隔（Jitter）で24時間巡回中';
-                bannerText = '24時間ステルス巡回中 / 5分間隔（ゆらぎ付き）';
-            }
-            if (el) el.textContent = itemText;
-            if (banner) banner.textContent = bannerText;
-        }
-
-        // ユーザー設定が完了しているか判定
-        function isUserConfigured() {
-            return userProfile.gender !== '' || userProfile.clothSize !== '';
-        }
-
-        // ホーム画面のユーザー設定フォームを開いてスクロール
-        function goToUserSettings() {
-            var form = document.getElementById('home-setting-form');
-            var summary = document.getElementById('home-setting-summary-wrap');
-            if (form) form.style.display = 'block';
-            if (summary) summary.style.display = 'none';
-            var box = document.getElementById('home-user-settings-box');
-            if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-
-        // 設定サマリーテキストを生成
-        function buildHomeSettingSummary() {
-            var parts = [];
-            if (userProfile.gender === 'male') parts.push('男性');
-            else if (userProfile.gender === 'female') parts.push('女性');
-            if (userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
-            if (userProfile.shoeSize) parts.push('靴：' + userProfile.shoeSize + 'cm');
-            if (userProfile.hasChildren && userProfile.childGender && userProfile.childGender !== 'none') {
-                var cgLabel = userProfile.childGender === 'boy' ? '男の子' : '女の子';
-                var childShoe = userProfile.childShoeSize ? '・' + userProfile.childShoeSize + 'cm' : '';
-                parts.push('子供：' + cgLabel + childShoe);
-            }
-            return parts.join(' / ');
-        }
-
-        // 設定変更ボタン：フォームを再表示
-        function toggleHomeSettings() {
-            var form = document.getElementById('home-setting-form');
-            var summary = document.getElementById('home-setting-summary-wrap');
-            if (form) form.style.display = 'block';
-            if (summary) summary.style.display = 'none';
-        }
-
-        // 水平チップ単一選択：同グループ内を全消灯し、タップ値のみ通電
-        function selectChip(type, el) {
-            var container = el.parentElement;
-            container.querySelectorAll('.setting-chip').forEach(function(item) {
-                item.classList.remove('active');
-            });
-            el.classList.add('active');
-            if (typeof saveUserSettings === 'function') saveUserSettings();
-        }
-
-        function initDials() {}
-
-        // ユーザー設定をlocalStorageに保存（即時反映 / 明示保存どちらでも呼ばれる）
-        var _saveSettingsTimer;
-        function saveUserSettings(explicit) {
-            clearTimeout(_saveSettingsTimer);
-            _saveSettingsTimer = setTimeout(function() {
-                var sel = function(id) { var el = document.querySelector('#' + id + ' .setting-chip.active'); return el ? el.dataset.val : ''; };
-                userProfile.gender         = sel('dial-gender');
-                userProfile.clothSize      = sel('dial-cloth-size');
-                userProfile.shoeSize       = sel('dial-shoe-size');
-                var cgv                    = sel('dial-child-gender') || '';
-                userProfile.hasChildren    = cgv !== '' && cgv !== 'none';
-                userProfile.childGender    = cgv;
-                userProfile.childClothSize = sel('dial-child-size');
-                userProfile.childShoeSize  = sel('dial-child-shoe');
-                userProfile.interests      = [];
-                try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch(e) {}
-                updateBannerAdContent(lastMonitorKeyword);
-                if (explicit) {
-                    // 設定を保存したらサマリー表示へ切り替え
-                    var summaryText = buildHomeSettingSummary();
-                    var summaryEl = document.getElementById('home-setting-summary-text');
-                    var summaryWrap = document.getElementById('home-setting-summary-wrap');
-                    var form = document.getElementById('home-setting-form');
-                    if (summaryEl) summaryEl.textContent = summaryText;
-                    if (summaryWrap) summaryWrap.style.display = 'block';
-                    if (form) form.style.display = 'none';
-                    // 見守りセクションのロックを解除
-                    var monitorBody = document.getElementById('monitor-section-body');
-                    if (monitorBody) monitorBody.classList.remove('monitor-locked');
-                    var setupWarn = document.getElementById('user-setup-warning');
-                    if (setupWarn) setupWarn.style.display = 'none';
-                    alert('設定を保存しました。');
-                }
-            }, 80);
-        }
-
-        // ページ起動時 / モード選択時：設定状態を確認して表示を分岐
-        function checkUserSetup() {
-            var monitorBody = document.getElementById('monitor-section-body');
-            var setupWarn = document.getElementById('user-setup-warning');
-            var searchWrap = document.getElementById('monitor-search-wrap');
-            // 設定未完了 → 見守りセクション全体をロック
-            if (!isUserConfigured()) {
-                if (monitorBody) monitorBody.classList.add('monitor-locked');
-                if (setupWarn) setupWarn.style.display = 'block';
-                if (searchWrap) { searchWrap.style.display = 'none'; searchWrap.classList.remove('revealed'); }
-                return;
-            }
-            // 設定済み → ロック解除
-            if (monitorBody) monitorBody.classList.remove('monitor-locked');
-            if (setupWarn) setupWarn.style.display = 'none';
-            var anyOn = document.querySelector('.monitor-mode-item.selected') !== null;
-            if (!anyOn) {
-                if (searchWrap) { searchWrap.style.display = 'none'; searchWrap.classList.remove('revealed'); }
-                return;
-            }
-            if (searchWrap && !searchWrap.classList.contains('revealed')) {
-                searchWrap.style.display = '';
-                searchWrap.classList.add('revealed');
-                var input = document.getElementById('monitor-input');
-                if (input) input.focus();
-            }
-        }
-
-        function onModeChange(changed) {
-            // シーソー：data-mode 属性でカード状態を管理（チェックボックス廃止）
-            document.querySelectorAll('.monitor-mode-item').forEach(function(item) {
-                var isSel = item.dataset.mode === changed;
-                item.classList.toggle('selected', isSel);
-                item.classList.toggle('mode-faded', !isSel);
-            });
-            var hint = document.getElementById('monitor-mode-hint');
-            if (hint) {
-                hint.style.display = 'block';
-                hint.textContent = changed === 'stock'
-                    ? 'プランの間隔で精密スキャン。情報の「事実」を捉えます。'
-                    : '24時間周期で広域スキャン。情報の「予感」を捉えます。';
-            }
-            checkUserSetup();
-        }
-
-        // 起動時のモードUI初期化（デフォルト：trend を選択状態に）
-        function initModeUI() {
-            document.querySelectorAll('.monitor-mode-item').forEach(function(item) {
-                var isTrend = item.dataset.mode === 'trend';
-                item.classList.toggle('selected', isTrend);
-                item.classList.toggle('mode-faded', !isTrend);
-            });
-            var hint = document.getElementById('monitor-mode-hint');
-            if (hint) {
-                hint.style.display = 'block';
-                hint.textContent = '24時間周期で広域スキャン。情報の「予感」を捉えます。';
-            }
-            checkUserSetup();
-        }
-
-        // ── 未来日付パーサー（記事タイトル・本文から発売予定日を抽出） ──
-        function parseFutureDate(text) {
-            if (!text) return null;
-            var now = new Date();
-            var patterns = [
-                // 4月15日
-                { re: /(\d{1,2})月(\d{1,2})日/, fn: function(m) {
-                    var d = new Date(now.getFullYear(), parseInt(m[1])-1, parseInt(m[2]));
-                    if (d <= now) d.setFullYear(d.getFullYear()+1);
-                    return d;
-                }},
-                // 4月
-                { re: /(\d{1,2})月/, fn: function(m) {
-                    var d = new Date(now.getFullYear(), parseInt(m[1])-1, 1);
-                    if (d <= now) d.setFullYear(d.getFullYear()+1);
-                    return d;
-                }},
-                // 来週
-                { re: /来週/, fn: function() {
-                    var d = new Date(now); d.setDate(d.getDate()+7); return d;
-                }},
-                // 来月
-                { re: /来月/, fn: function() {
-                    return new Date(now.getFullYear(), now.getMonth()+1, 1);
-                }},
-                // 今月
-                { re: /今月/, fn: function() {
-                    var d = new Date(now); d.setDate(d.getDate()+3); return d;
-                }},
-                // 春 → 4月
-                { re: /春/, fn: function() {
-                    var d = new Date(now.getFullYear(), 3, 1);
-                    if (d <= now) d.setFullYear(d.getFullYear()+1);
-                    return d;
-                }},
-                // 夏 → 7月
-                { re: /夏/, fn: function() {
-                    var d = new Date(now.getFullYear(), 6, 1);
-                    if (d <= now) d.setFullYear(d.getFullYear()+1);
-                    return d;
-                }},
-            ];
-            for (var p of patterns) {
-                var m = text.match(p.re);
-                if (m) {
-                    try {
-                        var d = p.fn(m);
-                        if (d && d > now) {
-                            return (d.getMonth()+1) + '/' + d.getDate() + ' 発売予定';
-                        }
-                    } catch(e) {}
+                // 発売タイマーを再起動（releaseAt が未来なら監視継続）
+                if (item.releaseAt && item.releaseAt > Date.now()) {
+                    startTrendReleaseSimulation(item);
                 }
             }
-            return null;
-        }
-
-        // ── 偵察 UI ヘルパー ──────────────────────────────────────────
-        function setScoutLoading(isLoading) {
-            var fa  = document.getElementById('monitor-search-fa');
-            var sp  = document.getElementById('monitor-spinner');
-            var st  = document.getElementById('scout-status-text');
-            if (fa) fa.style.display = isLoading ? 'none' : '';
-            if (sp) sp.style.display = isLoading ? 'block' : 'none';
-            if (st) {
-                st.textContent = isLoading ? '偵察ルートを構築中（60日深層偵察）...' : '';
-                st.classList.toggle('visible', isLoading);
-            }
-        }
-
-        function setInsightLoading(isLoading) {
-            var fa = document.getElementById('insight-search-fa');
-            var sp = document.getElementById('insight-spinner');
-            var st = document.getElementById('insight-scout-status');
-            if (fa) fa.style.display = isLoading ? 'none' : '';
-            if (sp) sp.style.display = isLoading ? 'block' : 'none';
-            if (st) {
-                st.textContent = isLoading ? '偵察ルートを構築中（60日深層偵察）...' : '';
-                st.classList.toggle('visible', isLoading);
-            }
-        }
-
-        function triggerInsightScout() {
-            var word = document.getElementById('insight-search').value.trim();
-            renderTrendItems(word);
-            if (word) updateBannerAdContent(word);
-            if (word) {
-                hideIntelBadge();
-                intelScoutResults = [];
-                runIntelScout(word);
-            }
-        }
-
-        function showIntelBadge(count) {
-            var badge = document.getElementById('intel-badge');
-            if (!badge) return;
-            badge.textContent = '● 気配を検知（' + count + '件）— 履歴で確認する';
-            badge.style.display = 'block';
-        }
-
-        function hideIntelBadge() {
-            var badge = document.getElementById('intel-badge');
-            if (badge) { badge.style.display = 'none'; badge.textContent = ''; }
-        }
-
-        function goToIntelResult() {
-            // 履歴タブへ切り替え → NOTIFICATION エリアへスクロール
-            var histBtn = document.querySelector('.nav-item[onclick*="\'history\'"]');
-            if (histBtn) show('history', histBtn);
-            hideIntelBadge();
-            // 少し遅延してから NOTIFICATION セクションへスクロール
-            setTimeout(function() {
-                var histScreen = document.getElementById('history');
-                if (!histScreen) return;
-                var boxes = histScreen.querySelectorAll('.history-section-box');
-                var last = boxes[boxes.length - 1];
-                if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 120);
-        }
-
-        function executeMonitor() {
-            const input = document.getElementById('monitor-input');
-            const val = input ? input.value.trim() : '';
-            const errEl = document.getElementById('monitor-error-msg');
-            if (!val) { if (errEl) errEl.style.display = 'block'; return; }
-            if (restrictedKeywords.some(rk => val.includes(rk))) { if (errEl) errEl.style.display = 'block'; return; }
-            if (errEl) errEl.style.display = 'none';
-            lastMonitorKeyword = val;
-
-            // 監視モード収集（.selected クラスで判定）
-            const modes = [];
-            const selMode = document.querySelector('.monitor-mode-item.selected');
-            if (selMode) modes.push(selMode.dataset.mode);
-            if (modes.length === 0) modes.push('stock');
-
-            updateBannerAdContent(val);
-            modes.forEach(mode => enqueueWatch(val, mode));
-            _startMonitorCore(val);
-            // バックグラウンド待機（10秒）をスキップして即時偵察発動・結果後に自動遷移
-            hideIntelBadge();
-            runIntelScout(val, true);
-        }
-
-        async function _startMonitorCore(val) {
-            const btn = document.querySelector('#home .btn-purple');
-            if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
-            try {
-                const res = await fetch('/api/poll', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keyword: val, userId: getUserId(), plan: currentPlan })
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    mergeApiResultsToHistory(data.allItems || []);
-                }
-            } catch (e) {
-                const now = new Date();
-                const timeText = now.toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-                historyItems.unshift({ id: Date.now(), title: val, status: 'ON', shop: '楽天', time: timeText, url: 'https://www.rakuten.co.jp', lastCheckedAt: Date.now() });
-                const historyScreen = document.getElementById('history');
-                if (historyScreen && historyScreen.classList.contains('active')) renderHistory(historyItems);
-            } finally {
-                if (btn) { btn.disabled = false; btn.textContent = '見守りを開始'; }
-            }
-            startPollingTimer(val);
-        }
-
-        // チャット投稿：Gemini API 経由で送信し、NGワードをフロントでも事前チェック
-        async function postChat() {
-            const input = document.getElementById('chat-input');
-            const errorEl = document.getElementById('chat-error-msg');
-            const val = input ? input.value.trim() : '';
-            if (!val) { alert('内容を入力してください'); return; }
-
-            const isRestricted = restrictedKeywords.some(ng => val.includes(ng));
-            if (isRestricted) {
-                errorEl.style.display = 'block';
-                return;
-            }
-            errorEl.style.display = 'none';
-
-            try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: val })
-                });
-                if (!res.ok) throw new Error('通信エラー');
-                if (input) input.value = '';
-                alert('投稿しました。');
-            } catch (e) {
-                errorEl.textContent = '送信に失敗しました。再度お試しください。';
-                errorEl.style.display = 'block';
-            }
-        }
-
-        function selectPlan(plan, el) {
-            currentPlan = plan;
-            el.parentElement.querySelectorAll('.category-item').forEach(p => p.classList.remove('selected'));
-            el.classList.add('selected');
-            updateAdVisibility();
-            updateNightModeStatus();
-            if (document.getElementById('settings') && document.getElementById('settings').classList.contains('active')) renderSettingsTrendWatching();
-            alert(`プランを ${plan} に同期しました。`);
-        }
-
-
-        /* カスタムスクロールバー（常時表示・連動） */
-        const sbTrack = document.createElement('div');
-        sbTrack.className = 'custom-sb-track';
-        const sbThumb = document.createElement('div');
-        sbThumb.className = 'custom-sb-thumb';
-        sbTrack.appendChild(sbThumb);
-        document.body.appendChild(sbTrack);
-
-        function updateSb(screenEl) {
-            if (!screenEl) { sbTrack.style.display = 'none'; return; }
-            const sh = screenEl.scrollHeight, ch = screenEl.clientHeight;
-            if (sh <= ch) { sbTrack.style.display = 'none'; return; }
-            sbTrack.style.display = 'block';
-            const trackH = sbTrack.clientHeight;
-            const thumbH = Math.max(24, (ch / sh) * trackH);
-            const thumbTop = (screenEl.scrollTop / (sh - ch)) * (trackH - thumbH);
-            sbThumb.style.height = thumbH + 'px';
-            sbThumb.style.top = thumbTop + 'px';
-        }
-
-        function getActiveScreen() {
-            return document.querySelector('.screen.active');
-        }
-
-        document.querySelectorAll('.screen').forEach(el => {
-            el.addEventListener('scroll', () => {
-                if (el.classList.contains('active')) updateSb(el);
-            });
         });
 
-        window.onload = () => {
-            runStartupAd();
-            updateAdVisibility();
-            updateNightModeStatus();
-            setInterval(updateNightModeStatus, 60 * 1000);
-            updateBannerAdContent();
-            startHistoryObserver();
-            initDials();
-            restoreDialUI();
-            // モードUIの初期発光状態を設定
-            initModeUI();
-            requestAnimationFrame(() => updateSb(getActiveScreen()));
-            // スカウター：起動 10 秒後に非同期で偵察実行（UX をブロックしない）
-            setTimeout(runIntelScout, 10000);
-        };
+        // 復元後に UI を更新
+        const word = document.getElementById('insight-search')?.value;
+        renderTrendItems(word);
+        renderSettingsTrendWatching();
+    } catch(e) { console.warn('[trend-sync] 読み込み失敗:', e.message); }
+}
 
-        // ── インテル・スカウター 連携 ─────────────────────────────────
-        // forceKeyword:    executeMonitor / triggerInsightScout から即時呼び出される場合にキーワードを渡す
-        //                  省略時は lastMonitorKeyword またはデフォルトシードを使用
-        // autoNavigate:    true の場合、記事検知後に履歴画面へ自動遷移して NOTIFICATION へスクロール
-        async function runIntelScout(forceKeyword, autoNavigate) {
-            setScoutLoading(true);
-            setInsightLoading(true);
-            var zeroResult = null; // null | 'footprint' | 'none'
-            var foundCount = 0;   // totalFoundInFeed を finally で使うために保持
-            try {
-                const seeds = forceKeyword
-                    ? [forceKeyword]
-                    : (lastMonitorKeyword ? [lastMonitorKeyword] : null);
-                const res = await fetch('/api/scout', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(seeds ? { keywords: seeds } : {})
-                });
-                if (!res.ok) return;
-                const data = await res.json();
+// ── 広告 ─────────────────────────────────────────────────────
+const AD_CONTENT = {
+    female: [{main:'ルイヴィトン・グッチ 春新作バッグ 入荷監視中', sub:'再入荷の瞬間をキャッチ'}],
+    male:   [{main:'スニーカー新作・限定コラボ リリース速報',       sub:'即完売モデルを逃さない'}],
+    child:  [{main:'ポケモン・ワンピース おもちゃ 新作入荷速報',    sub:'プレゼントに人気の限定トイ'}],
+    unknown:[{main:'ブランド新作・再入荷 横断監視中',               sub:'欲しいアイテムの発売日を確実にキャッチ'}]
+};
+function getAdForGender(g) {
+    const p = AD_CONTENT[g] || AD_CONTENT.unknown;
+    return p[Math.floor(Math.random()*p.length)];
+}
+function updateBannerAdContent(sourceKeyword) {
+    const bm = document.getElementById('home-banner-main');
+    const bs = document.getElementById('home-banner-sub');
+    if (!bm || !bs) return;
+    let kw = (sourceKeyword || lastMonitorKeyword || '人気アイテム').trim();
+    if (restrictedKeywords.some(ng => kw.includes(ng))) kw = '人気アイテム';
+    const g = userProfile.hasChildren ? 'child' : (userProfile.gender || 'unknown');
+    const ad = getAdForGender(g);
+    bm.textContent = ad.main; bs.textContent = ad.sub + '（' + kw + '）';
+}
 
-                // ── デバッグ全開示ログ ──
-                console.log('[intel-scout] API response:', {
-                    newCount:        data.newCount,
-                    totalFoundInFeed: data.totalFoundInFeed,
-                    errors:          data.errors,
-                    scannedAt:       data.scannedAt ? new Date(data.scannedAt).toISOString() : null,
-                });
+// ── 画面切替 ──────────────────────────────────────────────────
+function show(id, btn) {
+    const prev = document.querySelector('.screen.active');
+    if (prev) StateStore.freeze(prev.id);
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    const target = document.getElementById(id);
+    if (target) target.classList.add('active');
+    btn.classList.add('active');
+    if (id === 'history')  { renderHistory(historyItems); syncWatchStatus(); }
+    if (id === 'insight')  renderTrendItems(document.getElementById('insight-search')?.value);
+    if (id === 'settings') renderSettingsTrendWatching();
+    updateAdVisibility();
+    requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); });
+}
 
-                foundCount = data.totalFoundInFeed || 0;
+// ── フォーマット系 ────────────────────────────────────────────
+function formatLastChecked(ts) {
+    if (!ts) return 'たった今';
+    const m = Math.floor((Date.now()-ts)/60000);
+    if (m <= 0) return 'たった今';
+    if (m < 60) return m + '分前';
+    const h = Math.floor(m/60);
+    if (h < 24) return h + '時間前';
+    return Math.floor(h/24) + '日前';
+}
+function getSimulatedCheckLabel() {
+    if (currentPlan==='FREE')    return `● 在庫ありを確認（${45+Math.floor(Math.random()*15)}分前）`;
+    if (currentPlan==='STANDARD')return `● 在庫ありを確認（${5+Math.floor(Math.random()*5)}分前）`;
+    return `● 在庫ありを確認（${Math.random()<0.6?'たった今':'1分前'}）`;
+}
+const DISCLAIMER_TEXT = '本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。';
+function sortByCaughtTimeDesc(a,b) {
+    const ta = a.lastCheckedAt||(a.pubDate?new Date(a.pubDate).getTime():0);
+    const tb = b.lastCheckedAt||(b.pubDate?new Date(b.pubDate).getTime():0);
+    return tb-ta;
+}
 
-                if (!data.items || data.items.length === 0) {
-                    // キーワード指定での0件 → Google News に記事があったか否かで分岐
-                    if (forceKeyword) {
-                        zeroResult = (foundCount > 0) ? 'footprint' : 'none';
-                    }
-                    intelScoutResults = [];
+// ── カレンダー ────────────────────────────────────────────────
+function buildGoogleCalendarUrl(title, dateLabel) {
+    const now = new Date(); const m = dateLabel?.match(/(\d+)\/(\d+)/);
+    const start = now.getFullYear()
+        + (m ? String(parseInt(m[1])).padStart(2,'0')+String(parseInt(m[2])).padStart(2,'0')
+             : String(now.getMonth()+1).padStart(2,'0')+String(now.getDate()).padStart(2,'0'));
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE&'
+        + new URLSearchParams({text:title+' 発売日', dates:start+'/'+start, details:'RE-EYE-HUB より通知'}).toString();
+}
+function buildIcsContent(title, dateLabel, reminderMins) {
+    const now = new Date(); const m = dateLabel?.match(/(\d+)\/(\d+)/);
+    const mo = m ? String(parseInt(m[1])).padStart(2,'0') : String(now.getMonth()+1).padStart(2,'0');
+    const dy = m ? String(parseInt(m[2])).padStart(2,'0') : String(now.getDate()).padStart(2,'0');
+    const ds = now.getFullYear()+mo+dy;
+    const lines = ['BEGIN:VCALENDAR','VERSION:2.0','BEGIN:VEVENT',
+        'DTSTART;VALUE=DATE:'+ds,'DTEND;VALUE=DATE:'+ds,
+        'SUMMARY:'+title+' 発売日','DESCRIPTION:RE-EYE-HUB より通知'];
+    if (Number(reminderMins)>0) lines.push('BEGIN:VALARM','TRIGGER:-PT'+reminderMins+'M','ACTION:DISPLAY','DESCRIPTION:発売日リマインダー','END:VALARM');
+    lines.push('END:VEVENT','END:VCALENDAR');
+    return lines.join('\r\n');
+}
+let _calTitle='', _calReleaseLabel='';
+function openCalModal(title,releaseLabel) {
+    _calTitle=title; _calReleaseLabel=releaseLabel||'';
+    const t=document.getElementById('cal-popup-item-title');
+    const d=document.getElementById('cal-popup-date');
+    if(t)t.textContent=title; if(d)d.textContent=releaseLabel||'';
+    document.getElementById('cal-popup-modal').style.display='flex';
+}
+function closeCalModal(){ document.getElementById('cal-popup-modal').style.display='none'; }
+function submitCalAction(action) {
+    closeCalModal();
+    if(action==='gcal') window.open(buildGoogleCalendarUrl(_calTitle,_calReleaseLabel),'_blank');
+    else {
+        const blob=new Blob([buildIcsContent(_calTitle,_calReleaseLabel,0)],{type:'text/calendar'});
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+        a.download=_calTitle+'.ics'; a.click();
+    }
+}
+
+// ── 削除関連変数 ──────────────────────────────────────────────
+let _deleteTarget=null, _openSectionMenu=null, _sectionEditMode=null;
+let _editSelected=new Set();
+let _homeInlineItems=[], _homeInlineKeyword='';
+let _homeResultsEditMode=false, _homeResultsSelected=new Set();
+let campaignResults=[], _campaignEditMode=false, _campaignEditSelected=new Set();
+
+// ── renderHistory ─────────────────────────────────────────────
+function renderHistory(items) {
+    const container = document.getElementById('history-list-container');
+    if (!container) return;
+    const scrollTop = document.getElementById('history')?.scrollTop || 0;
+    const cleaned = (items||[]).filter(i => cleanHistoryItem(i));
+    const onItems       = cleaned.filter(i=>i.status==='ON').sort(sortByCaughtTimeDesc);
+    const offItems      = cleaned.filter(i=>i.status==='OFF').sort(sortByCaughtTimeDesc);
+    const notifiedItems = cleaned.filter(i=>i.status==='NOTIFIED').sort(sortByCaughtTimeDesc);
+    const intelItems    = cleaned.filter(i=>i.status==='INTEL').sort(sortByCaughtTimeDesc);
+    container.innerHTML='';
+    _buildHistorySections(container, onItems, offItems, notifiedItems, intelItems);
+    requestAnimationFrame(() => {
+        const h = document.getElementById('history');
+        if (h) h.scrollTop = scrollTop;
+    });
+}
+
+function _buildHistorySections(container, onItems, offItems, notifiedItems, intelItems) {
+    function mkSection(status, cls, label, items, builder) {
+        const box = document.createElement('div'); box.className='history-section-box';
+        const hdr = document.createElement('div'); hdr.className='section-header-row';
+        const lbl = document.createElement('span'); lbl.className=cls; lbl.textContent=label;
+        const mb  = document.createElement('button');
+        mb.className='section-manage-btn'+(_sectionEditMode===status?' open':'');
+        mb.textContent=_sectionEditMode===status?'× 戻る':'削除';
+        mb.onclick=()=>toggleSectionMenu(status);
+        hdr.appendChild(lbl); hdr.appendChild(mb); box.appendChild(hdr);
+        const list=document.createElement('div'); list.className='history-list-box';
+        items.forEach(item=>list.appendChild(builder(item)));
+        box.appendChild(list);
+        if(_sectionEditMode===status){
+            const bar=document.createElement('div'); bar.className='section-delete-bar';
+            const ct=document.createElement('span'); ct.className='count-text'; ct.textContent=_editSelected.size+'件選択中';
+            const ex=document.createElement('button'); ex.className='section-action-btn danger'; ex.textContent='削除を実行'; ex.disabled=_editSelected.size===0; ex.onclick=confirmSelectDelete;
+            const cn=document.createElement('button'); cn.className='section-action-btn'; cn.textContent='キャンセル'; cn.onclick=cancelEditMode;
+            bar.appendChild(ct); bar.appendChild(ex); bar.appendChild(cn); box.appendChild(bar);
+        }
+        return box;
+    }
+    function mkCardHeader(item, statusEl) {
+        const h=document.createElement('div'); h.className='history-card-header';
+        const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
+        cb.checked=_editSelected.has(String(item.id));
+        cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
+        h.appendChild(cb); h.appendChild(statusEl);
+        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+        db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
+        h.appendChild(db); return h;
+    }
+    // ON
+    container.appendChild(mkSection('ON','gold-label','購入可能',onItems,(item)=>{
+        const card=document.createElement('div'); card.className='history-card history-card-on';
+        if(item.url) card.onclick=()=>openSafeUrl(item.url);
+        const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
+        const sEl=document.createElement('span'); sEl.className='history-status-on'; sEl.textContent=getSimulatedCheckLabel();
+        const fake=document.createElement('div'); fake.appendChild(tEl); fake.appendChild(sEl);
+        const hdr=document.createElement('div'); hdr.className='history-card-header';
+        const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
+        cb.checked=_editSelected.has(String(item.id));
+        cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
+        hdr.appendChild(cb); hdr.appendChild(tEl); hdr.appendChild(sEl);
+        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+        db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
+        hdr.appendChild(db); card.appendChild(hdr);
+        const meta=document.createElement('div'); meta.className='item-meta history-meta-row';
+        meta.textContent=`${item.time} / ${item.shop} ｜ 最終確認：${formatLastChecked(item.lastCheckedAt)}`;
+        card.appendChild(meta); return card;
+    }));
+    // OFF
+    container.appendChild(mkSection('OFF','gray-label','売り切れ',offItems,(item)=>{
+        const card=document.createElement('div'); card.className='history-card history-card-off';
+        const hdr=document.createElement('div'); hdr.className='history-card-header';
+        const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
+        cb.checked=_editSelected.has(String(item.id));
+        cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
+        hdr.appendChild(cb);
+        const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
+        const sEl=document.createElement('span'); sEl.className='history-status-off'; sEl.textContent='売り切れ';
+        hdr.appendChild(tEl); hdr.appendChild(sEl);
+        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+        db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
+        hdr.appendChild(db); card.appendChild(hdr);
+        const meta=document.createElement('div'); meta.className='item-meta history-meta-row';
+        meta.textContent=`${item.time} / ${item.shop}`; card.appendChild(meta);
+        if(item.overListPrice){
+            const g=document.createElement('span'); g.className='give-up-badge';
+            g.textContent='入手困難 — 中古相場が定価超過。次のターゲットを狙え'; card.appendChild(g);
+        }
+        return card;
+    }));
+    // NOTIFIED
+    if(notifiedItems.length>0){
+        container.appendChild(mkSection('NOTIFIED','gold-label','通知済み',notifiedItems,(item)=>{
+            const card=document.createElement('div'); card.className='history-card history-card-notified';
+            const hdr=document.createElement('div'); hdr.className='history-card-header';
+            const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
+            cb.checked=_editSelected.has(String(item.id));
+            cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
+            hdr.appendChild(cb);
+            const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
+            const sEl=document.createElement('span'); sEl.className='history-status-notified';
+            sEl.textContent=item.releaseLabel||'発売日確定';
+            hdr.appendChild(tEl); hdr.appendChild(sEl);
+            const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+            db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
+            hdr.appendChild(db); card.appendChild(hdr);
+            if(item.releaseLabel){
+                const cb2=document.createElement('button'); cb2.className='intel-cal-btn';
+                cb2.textContent='＋ カレンダーに登録';
+                cb2.onclick=(e)=>{e.stopPropagation();openCalModal(item.title,item.releaseLabel);};
+                card.appendChild(cb2);
+            }
+            return card;
+        }));
+    }
+    // INTEL
+    {
+        const box=document.createElement('div'); box.className='history-section-box';
+        const hdr=document.createElement('div'); hdr.className='section-header-row';
+        const lbl=document.createElement('span'); lbl.className='notification-label'; lbl.textContent='通知済み';
+        hdr.appendChild(lbl);
+        const mb=document.createElement('button'); mb.className='section-manage-btn'; mb.textContent='削除';
+        mb.onclick=()=>toggleSectionMenu('INTEL'); hdr.appendChild(mb); box.appendChild(hdr);
+        const list=document.createElement('div'); list.className='history-list-box';
+        if(intelItems.length===0){
+            const em=document.createElement('p'); em.className='trend-intro-11px';
+            em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:16px 0;';
+            em.textContent='スカウター待機中：新着を検知次第ここに表示します'; list.appendChild(em);
+        } else {
+            intelItems.forEach(item=>{
+                const card=document.createElement('div'); card.className='history-card history-card-notified';
+                if(item.url){card.style.cursor='pointer';card.onclick=()=>openSafeUrl(item.url);}
+                const h=document.createElement('div'); h.className='history-card-header';
+                const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
+                const tg=document.createElement('span'); tg.className='notification-label';
+                tg.style.cssText='margin-bottom:0;font-size:11px;'; tg.textContent='INTEL';
+                h.appendChild(tEl); h.appendChild(tg);
+                const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+                db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
+                h.appendChild(db); card.appendChild(h);
+                const m=document.createElement('div'); m.className='intel-source-tag';
+                m.textContent=(item.keyword||'')+(item.time?'  ｜  '+formatDateSec(item.lastCheckedAt||Date.now()):'');
+                card.appendChild(m); list.appendChild(card);
+            });
+        }
+        box.appendChild(list); container.appendChild(box);
+    }
+    if(onItems.length===0&&offItems.length===0&&notifiedItems.length===0){
+        const em=document.createElement('p'); em.className='trend-intro-11px';
+        em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:40px 0 20px;';
+        em.textContent='気になるアイテムを検索して、見守りリストを作成しましょう'; container.appendChild(em);
+    }
+    const disc=document.createElement('p'); disc.className='disclaimer-11px';
+    disc.textContent=DISCLAIMER_TEXT; container.appendChild(disc);
+}
+
+// ── startHistoryObserver ──────────────────────────────────────
+function startHistoryObserver() {
+    if(historyObserverTimer) return;
+    const now=Date.now();
+    historyItems=historyItems.map(i=>({...i, lastCheckedAt:i.lastCheckedAt||now}));
+    historyObserverTimer=setInterval(()=>{
+        const nowTs=Date.now();
+        historyItems=historyItems.map(item=>{
+            const u={...item, lastCheckedAt:nowTs};
+            const r=Math.random();
+            if(item.status==='ON'&&r<0.15){u.status='OFF';u.offSince=nowTs;}
+            if(item.status==='OFF'&&r>=0.85){
+                u.status='ON'; u.offSince=null;
+                PushHybrid.fireNotification('🔔 在庫復活：'+item.title,'購入可能になりました');
+            }
+            if(u.status==='OFF'&&u.offSince&&(nowTs-u.offSince)/86400000>=3) u.overListPrice=true;
+            return u;
+        });
+        _persistHistory();
+        const hs=document.getElementById('history');
+        if(hs&&hs.classList.contains('active')) renderHistory(historyItems);
+    },30000);
+}
+
+// ── 起動広告 ─────────────────────────────────────────────────
+function runStartupAd() {
+    if(currentPlan!=='FREE') return;
+    const o=document.getElementById('startup-ad-overlay'); o.style.display='flex';
+    let c=3; const iv=setInterval(()=>{c--;if(c<=0){clearInterval(iv);o.style.display='none';}},1000);
+}
+function updateAdVisibility() {
+    const isFree=currentPlan==='FREE';
+    const b1=document.getElementById('home-banner-ad');
+    const b2=document.getElementById('home-banner-ad-2');
+    const rw=document.getElementById('reward-video-banner');
+    if(b1)b1.style.display=isFree?'block':'none';
+    if(b2)b2.style.display=isFree?'block':'none';
+    const mx=getMaxRewardSlots();
+    if(rw)rw.style.display=(mx>0&&rewardSlots<mx)?'block':'none';
+}
+function watchRewardVideo() {
+    const mx=getMaxRewardSlots();
+    if(mx===0){alert('PRO/VIPプランでは広告報酬枠の追加はありません。');return;}
+    rewardSlots=Math.min(mx,rewardSlots+1);
+    alert('広告動画を視聴しました。トレンド探索枠を +1 追加しました。');
+    updateAdVisibility();
+}
+
+// ── トレンドレンダリング ──────────────────────────────────────
+function renderTrendItems(filterKeyword) {
+    const container=document.getElementById('trend-list-container');
+    if(!container) return;
+    const kw=(filterKeyword||'').toLowerCase().trim();
+    const safe=trendItems.filter(t=>!restrictedKeywords.some(rk=>t.title.includes(rk)));
+    const list=kw?safe.filter(t=>t.title.toLowerCase().includes(kw)||(t.shop||'').toLowerCase().includes(kw)):safe;
+    const limit=getTrendLimit(); const wc=trendWatching.size;
+    container.innerHTML='';
+    if(list.length===0){
+        const em=document.createElement('p'); em.className='trend-intro-11px';
+        em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:24px 0;';
+        em.textContent='気になるアイテムを検索して、見守りリストを作成しましょう'; container.appendChild(em);
+    }
+    list.forEach(item=>{
+        const isW=trendWatching.has(item.id);
+        const card=document.createElement('div'); card.className='trend-item-card'+(isW?' watching':'');
+        const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
+        const mEl=document.createElement('div'); mEl.className='trend-meta-11px';
+        const sl=document.createElement('span'); sl.textContent='ソースを確認';
+        sl.style.cssText='color:var(--amethyst);cursor:pointer;';
+        if(item.sourceUrl&&item.sourceUrl!=='#') sl.onclick=(e)=>{e.stopPropagation();openSafeUrl(item.sourceUrl);};
+        mEl.appendChild(document.createTextNode(item.releaseLabel+'  ｜  ')); mEl.appendChild(sl);
+        card.appendChild(tEl); card.appendChild(mEl);
+        if(isW){
+            const wr=document.createElement('div'); wr.style.cssText='display:flex;align-items:center;justify-content:space-between;';
+            const bg=document.createElement('div'); bg.className='trend-watching-badge'; bg.textContent='● 見守り中 — 発売日確定で通知';
+            const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+            db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('trend',item.id,card);};
+            wr.appendChild(bg); wr.appendChild(db); card.appendChild(wr);
+        } else {
+            const btn=document.createElement('button'); btn.className='btn-purple btn-watch-trend';
+            if(wc>=limit){btn.textContent='枠上限（'+limit+'件）に達しました';btn.disabled=true;btn.style.opacity='0.4';}
+            else{btn.textContent='+ 見守りに追加';btn.onclick=()=>addToWatchFromTrend(item);}
+            card.appendChild(btn);
+        }
+        container.appendChild(card);
+    });
+    // インテルスカウト結果も追記
+    if(intelScoutResults.length>0){
+        const filtered=intelScoutResults.filter(i=>!kw||i.title.toLowerCase().includes(kw));
+        if(filtered.length>0){
+            const sect=document.createElement('div');
+            sect.style.cssText='margin-top:14px;border-top:1px solid rgba(155,89,182,0.2);padding-top:11px;';
+            const ih=document.createElement('span'); ih.className='notification-label'; ih.textContent='通知済み';
+            sect.appendChild(ih);
+            filtered.forEach(item=>{
+                const c=document.createElement('div'); c.className='history-card history-card-notified';
+                c.style.cssText='cursor:pointer;margin-bottom:8px;';
+                if(item.url) c.onclick=()=>openSafeUrl(item.url);
+                const h=document.createElement('div'); h.className='history-card-header';
+                const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
+                const tg=document.createElement('span'); tg.className='notification-label';
+                tg.style.cssText='margin-bottom:0;font-size:11px;'; tg.textContent='INTEL';
+                h.appendChild(tEl); h.appendChild(tg); c.appendChild(h);
+                const m=document.createElement('div'); m.className='intel-source-tag';
+                m.textContent=(item.keyword||'')+(item.time?'  ｜  '+item.time:''); c.appendChild(m);
+                sect.appendChild(c);
+            });
+            container.appendChild(sect);
+        }
+    }
+    // トレンドセクションのアクションバー
+    const tar=document.getElementById('trend-section-action-row');
+    if(tar){ tar.innerHTML=''; }
+}
+
+function addToWatchFromTrend(item) {
+    if(trendWatching.has(item.id)) return;
+    if(restrictedKeywords.some(rk=>item.title.includes(rk))) return;
+    if(trendWatching.size>=getTrendLimit()){alert('見守りトレンド枠の上限（'+getTrendLimit()+'件）に達しています。');return;}
+    trendWatching.add(item.id);
+    if(!item.releaseAt){
+        const mins=[3,8,12,20,45][trendItems.findIndex(t=>t.id===item.id)]||5;
+        item.releaseAt=Date.now()+mins*60*1000;
+    }
+    // フルデータを _trendWatchData に保存してクラウド同期
+    _trendWatchData[item.id]={
+        id:item.id, title:item.title, releaseAt:item.releaseAt,
+        releaseLabel:item.releaseLabel||'', sourceUrl:item.sourceUrl||'#',
+        shop:item.shop||'', status:'WATCHING', addedAt:Date.now(),
+        keyword:item.keyword||item.title
+    };
+    scheduleTrendSync();
+    startTrendReleaseSimulation(item);
+    renderTrendItems(document.getElementById('insight-search')?.value);
+    const ss=document.getElementById('settings');
+    if(ss&&ss.classList.contains('active')) renderSettingsTrendWatching();
+}
+
+function startTrendReleaseSimulation(item) {
+    if(trendTimers[item.id]) return;
+    const intervalMs=getMonitoringIntervalMs();
+    function check() {
+        if(Date.now()<item.releaseAt) return;
+        clearInterval(trendTimers[item.id]); delete trendTimers[item.id];
+        trendWatching.delete(item.id);
+        // クラウド同期: HISTORY ステータスに更新して保存
+        if(_trendWatchData[item.id]) {
+            _trendWatchData[item.id].status='HISTORY';
+            _trendWatchData[item.id].completedAt=Date.now();
+        }
+        scheduleTrendSync();
+        const t=nowJP();
+        const rl=(t.getMonth()+1)+'/'+t.getDate()+' に発売決定';
+        const dk=t.toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'});
+        historyItems.unshift({
+            id:'notif-'+Date.now(), title:item.title, status:'NOTIFIED',
+            shop:item.shop, time:dk, releaseLabel:rl,
+            url:item.sourceUrl||'https://www.rakuten.co.jp', lastCheckedAt:Date.now()
+        });
+        _persistHistory();
+        const hs=document.getElementById('history');
+        if(hs&&hs.classList.contains('active')) renderHistory(historyItems);
+        renderTrendItems(document.getElementById('insight-search')?.value);
+        const ss=document.getElementById('settings');
+        if(ss&&ss.classList.contains('active')) renderSettingsTrendWatching();
+        PushHybrid.fireNotification(item.title+'：'+rl,'履歴の「通知済み」に移動しました。');
+    }
+    trendTimers[item.id]=setInterval(check,intervalMs); check();
+}
+
+function filterTrendItems() {
+    const w=document.getElementById('insight-search').value;
+    renderTrendItems(w); if(w) updateBannerAdContent(w);
+}
+
+function renderSettingsTrendWatching() {
+    const b=document.getElementById('settings-trend-watching');
+    const l=document.getElementById('settings-trend-watching-list');
+    if(!b||!l) return;
+    const w=trendItems.filter(t=>trendWatching.has(t.id));
+    if(w.length===0){b.style.display='none';return;}
+    b.style.display='block';
+    const night=isNightJP();
+    let lbl;
+    if(currentPlan==='FREE') lbl=night?'🌙 スリープ中':'トレンド探索中';
+    else if(currentPlan==='VIP') lbl='常時稼働（Jitter付き）';
+    else lbl=night?'60分間隔（夜間）':'15分間隔';
+    l.innerHTML=w.map(t=>'<div class="watch-item-row"><span class="watch-item-name">'+t.title+'</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● '+lbl+'</span></div>').join('');
+}
+
+// ── 削除操作 ──────────────────────────────────────────────────
+function toggleSectionMenu(status) {
+    if(_sectionEditMode===status){_sectionEditMode=null;_editSelected.clear();}
+    else{_openSectionMenu=null;_sectionEditMode=status;_editSelected.clear();}
+    if(status==='TREND') renderTrendItems(document.getElementById('insight-search')?.value);
+    else renderHistory(historyItems);
+}
+function _updateFixedDeleteBar() {
+    const bar=document.getElementById('fixed-delete-bar');
+    const cnt=document.getElementById('fixed-delete-count');
+    const ex=document.getElementById('fixed-delete-exec');
+    if(!bar) return;
+    if(_editSelected.size>0){
+        bar.classList.add('visible');
+        if(cnt) cnt.textContent=_editSelected.size+'件選択中';
+        if(ex)  ex.disabled=false;
+    } else bar.classList.remove('visible');
+}
+function startSelectDelete(status) {
+    _openSectionMenu=null;_sectionEditMode=status;_editSelected.clear();
+    _updateFixedDeleteBar();
+    if(status==='TREND') renderTrendItems(document.getElementById('insight-search')?.value);
+    else renderHistory(historyItems);
+}
+function toggleSelectItem(id) {
+    const sid=String(id);
+    if(_editSelected.has(sid)) _editSelected.delete(sid); else _editSelected.add(sid);
+    _updateFixedDeleteBar();
+    if(_sectionEditMode==='TREND') renderTrendItems(document.getElementById('insight-search')?.value);
+    else renderHistory(historyItems);
+}
+function confirmSelectDelete() {
+    if(_editSelected.size===0) return;
+    _deleteTarget={type:'section-selected'};
+    document.getElementById('delete-confirm-modal').style.display='flex';
+}
+function cancelEditMode() {
+    _sectionEditMode=null;_editSelected.clear();_updateFixedDeleteBar();renderHistory(historyItems);
+}
+function cancelTrendEditMode() {
+    _sectionEditMode=null;_editSelected.clear();_updateFixedDeleteBar();
+    renderTrendItems(document.getElementById('insight-search')?.value);
+}
+function showDeleteConfirm(type,id,cardEl) {
+    _deleteTarget={type,id,cardEl};
+    document.getElementById('delete-confirm-modal').style.display='flex';
+}
+function confirmDelete() {
+    if(!_deleteTarget) return;
+    const t=_deleteTarget;
+    document.getElementById('delete-confirm-modal').style.display='none';
+    if(t.type==='section-selected'){
+        if(_sectionEditMode==='TREND'){
+            _editSelected.forEach(id=>{trendWatching.delete(id);delete _trendWatchData[id];});
+            scheduleTrendSync();
+            renderTrendItems(document.getElementById('insight-search')?.value);
+            renderSettingsTrendWatching();
+        } else {
+            _persistDeleteIds([..._editSelected]);
+            historyItems=historyItems.filter(i=>!_editSelected.has(String(i.id)));
+            _persistHistory(); renderHistory(historyItems);
+        }
+        _sectionEditMode=null;_editSelected.clear();_updateFixedDeleteBar();
+    } else {
+        t.cardEl.classList.add('fading-out');
+        setTimeout(()=>{
+            if(t.type==='history'){
+                _persistDeleteId(String(t.id));
+                historyItems=historyItems.filter(i=>String(i.id)!==String(t.id));
+                _persistHistory(); renderHistory(historyItems);
+            } else if(t.type==='trend'){
+                trendWatching.delete(t.id);
+                delete _trendWatchData[t.id];
+                scheduleTrendSync();
+                renderTrendItems(document.getElementById('insight-search')?.value);
+                renderSettingsTrendWatching();
+            }
+        },300);
+    }
+    _deleteTarget=null;
+}
+function cancelDelete() {
+    document.getElementById('delete-confirm-modal').style.display='none';_deleteTarget=null;
+}
+
+// ── 夜間モードステータス ──────────────────────────────────────
+function updateNightModeStatus() {
+    const el=document.getElementById('current-interval-text');
+    const bn=document.getElementById('settings-plan-status');
+    const night=isNightJP();
+    let it,bt;
+    if(currentPlan==='FREE'){it=night?'🌙 スリープ中':'● 60分間隔で見守り中';bt=night?'🌙 スリープモード：08:00に再開します':'● 08:00–19:00 稼働中 / 60分間隔';}
+    else if(currentPlan==='STANDARD'){it=night?'夜間：60分間隔に変更済み':'● 15分間隔で見守り中';bt=night?'夜間モード：60分間隔':'● 08:00–19:00 稼働中 / 15分間隔';}
+    else if(currentPlan==='PRO'){it=night?'夜間：60分間隔に変更済み':'● 5分間隔（Jitter）で見守り中';bt=night?'夜間モード：60分間隔':'● 08:00–19:00 稼働中 / 5分間隔';}
+    else if(currentPlan==='VIP'){it='● 5分間隔（Jitter）で常時稼働中';bt='ステルス常時稼働中 / 5分間隔';}
+    if(el)el.textContent=it; if(bn)bn.textContent=bt;
+}
+
+// ── ユーザー設定 ──────────────────────────────────────────────
+function isUserConfigured(){return userProfile.gender!==''||userProfile.clothSize!=='';}
+function goToUserSettings(){
+    const f=document.getElementById('home-setting-form');
+    const s=document.getElementById('home-setting-summary-wrap');
+    if(f)f.style.display='block'; if(s)s.style.display='none';
+    document.getElementById('home-user-settings-box')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function buildHomeSettingSummary(){
+    const p=[];
+    if(userProfile.gender==='male')p.push('男性');else if(userProfile.gender==='female')p.push('女性');
+    if(userProfile.clothSize)p.push('服：'+userProfile.clothSize);
+    if(userProfile.shoeSize)p.push('靴：'+userProfile.shoeSize+'cm');
+    if(userProfile.hasChildren&&userProfile.childGender){
+        const cg=userProfile.childGender==='boy'?'男の子':'女の子';
+        p.push('子供：'+cg+(userProfile.childShoeSize?'・'+userProfile.childShoeSize+'cm':''));
+    }
+    return p.join(' / ');
+}
+function toggleHomeSettings(){
+    const f=document.getElementById('home-setting-form');
+    const s=document.getElementById('home-setting-summary-wrap');
+    if(f)f.style.display='block'; if(s)s.style.display='none';
+}
+function selectChip(type,el){
+    el.parentElement.querySelectorAll('.setting-chip').forEach(i=>i.classList.remove('active'));
+    el.classList.add('active'); saveUserSettings();
+}
+function initDials(){}
+let _saveTimer;
+function saveUserSettings(explicit){
+    clearTimeout(_saveTimer);
+    _saveTimer=setTimeout(()=>{
+        const sel=id=>{const e=document.querySelector('#'+id+' .setting-chip.active');return e?e.dataset.val:'';};
+        userProfile.gender=sel('dial-gender'); userProfile.clothSize=sel('dial-cloth-size');
+        userProfile.shoeSize=sel('dial-shoe-size');
+        const cgv=sel('dial-child-gender')||'';
+        userProfile.hasChildren=cgv!==''; userProfile.childGender=cgv;
+        userProfile.childClothSize=sel('dial-child-size'); userProfile.childShoeSize=sel('dial-child-shoe');
+        try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
+        updateBannerAdContent(lastMonitorKeyword);
+        if(explicit){
+            const st=buildHomeSettingSummary();
+            const se=document.getElementById('home-setting-summary-text');
+            const sw=document.getElementById('home-setting-summary-wrap');
+            const f=document.getElementById('home-setting-form');
+            if(se)se.textContent=st; if(sw)sw.style.display='block'; if(f)f.style.display='none';
+            const mb=document.getElementById('monitor-section-body');
+            if(mb)mb.classList.remove('monitor-locked');
+            const uw=document.getElementById('user-setup-warning');
+            if(uw)uw.style.display='none';
+            alert('設定を保存しました。');
+        }
+    },80);
+}
+function checkUserSetup(){
+    const mb=document.getElementById('monitor-section-body');
+    const uw=document.getElementById('user-setup-warning');
+    const sw=document.getElementById('monitor-search-wrap');
+    if(!isUserConfigured()){
+        if(mb)mb.classList.add('monitor-locked');
+        if(uw)uw.style.display='block';
+        if(sw){sw.style.display='none';sw.classList.remove('revealed');}
+        return;
+    }
+    if(mb)mb.classList.remove('monitor-locked');
+    if(uw)uw.style.display='none';
+    const anyOn=document.querySelector('.monitor-mode-item.selected')!==null;
+    if(!anyOn){if(sw){sw.style.display='none';sw.classList.remove('revealed');}return;}
+    if(sw&&!sw.classList.contains('revealed')){
+        sw.style.display=''; sw.classList.add('revealed');
+        document.getElementById('monitor-input')?.focus();
+    }
+}
+
+// ── モード切替 ────────────────────────────────────────────────
+const MODE_KW_CHIPS={oshi:['チケット','グッズ','出演','特典','限定']};
+const MODE_HINTS={
+    stock:'プラン最短間隔で精密スキャン。在庫復活の瞬間を捉える。',
+    oshi:'プラン最短間隔。人物名・グループ名＋チップで公式情報を最速捕捉。'
+};
+const MODE_PLACEHOLDERS={stock:'ブランド名、商品名',oshi:'人物名、グループ名'};
+function onModeChange(changed){
+    _currentMode=changed;
+    document.querySelectorAll('.monitor-mode-item').forEach(item=>{
+        const s=item.dataset.mode===changed;
+        item.classList.toggle('selected',s); item.classList.toggle('mode-faded',!s);
+    });
+    const hint=document.getElementById('monitor-mode-hint');
+    if(hint){hint.style.display='block';hint.textContent=MODE_HINTS[changed]||'';}
+    const inp=document.getElementById('monitor-input');
+    if(inp)inp.placeholder=MODE_PLACEHOLDERS[changed]||'例：商品名・品番を入力';
+    _renderModeKwChips(changed);
+    const ir=document.getElementById('home-inline-results');
+    const il=document.getElementById('home-inline-list');
+    const sh=document.getElementById('home-slot-header');
+    if(ir)ir.style.display='none'; if(il)il.innerHTML=''; if(sh)sh.innerHTML='';
+    checkUserSetup();
+}
+function _renderModeKwChips(mode){
+    const w=document.getElementById('mode-kw-chips');
+    const r=document.getElementById('kw-chip-row');
+    if(!w||!r) return;
+    const chips=MODE_KW_CHIPS[mode];
+    if(!chips||chips.length===0){w.style.display='none';r.innerHTML='';return;}
+    r.innerHTML=chips.map(c=>`<span class="kw-chip" onclick="appendModeChip('${c}')">${c}</span>`).join('');
+    w.style.display='block';
+}
+function appendModeChip(word){
+    const inp=document.getElementById('monitor-input');
+    if(!inp) return;
+    const cur=inp.value.trim();
+    inp.value=cur?cur+' '+word:word; inp.focus();
+}
+function initModeUI(){onModeChange('stock');}
+
+// ── 日付パーサー ──────────────────────────────────────────────
+function parseFutureDate(text){
+    if(!text) return null;
+    const now=nowJP();
+    const patterns=[
+        {re:/(\d{1,2})月(\d{1,2})日/,fn:m=>{const d=new Date(now.getFullYear(),parseInt(m[1])-1,parseInt(m[2]));if(d<=now)d.setFullYear(d.getFullYear()+1);return d;}},
+        {re:/(\d{1,2})月/,fn:m=>{const d=new Date(now.getFullYear(),parseInt(m[1])-1,1);if(d<=now)d.setFullYear(d.getFullYear()+1);return d;}},
+        {re:/来週/,fn:()=>{const d=new Date(now);d.setDate(d.getDate()+7);return d;}},
+        {re:/来月/,fn:()=>new Date(now.getFullYear(),now.getMonth()+1,1)},
+        {re:/今月/,fn:()=>{const d=new Date(now);d.setDate(d.getDate()+3);return d;}},
+        {re:/春/,fn:()=>{const d=new Date(now.getFullYear(),3,1);if(d<=now)d.setFullYear(d.getFullYear()+1);return d;}},
+        {re:/夏/,fn:()=>{const d=new Date(now.getFullYear(),6,1);if(d<=now)d.setFullYear(d.getFullYear()+1);return d;}}
+    ];
+    for(const p of patterns){
+        const m=text.match(p.re);
+        if(m){try{const d=p.fn(m);if(d&&d>now)return (d.getMonth()+1)+'/'+d.getDate()+' 発売予定';}catch(e){}}
+    }
+    return null;
+}
+
+// ── スカウト UI ───────────────────────────────────────────────
+function setScoutLoading(on){
+    const fa=document.getElementById('monitor-search-fa');
+    const sp=document.getElementById('monitor-spinner');
+    const st=document.getElementById('scout-status-text');
+    if(fa)fa.style.display=on?'none':''; if(sp)sp.style.display=on?'block':'none';
+    if(st){st.textContent=on?'偵察ルートを構築中...':'';st.classList.toggle('visible',on);}
+}
+function setInsightLoading(on){
+    const fa=document.getElementById('insight-search-fa');
+    const sp=document.getElementById('insight-spinner');
+    const st=document.getElementById('insight-scout-status');
+    if(fa)fa.style.display=on?'none':''; if(sp)sp.style.display=on?'block':'none';
+    if(st){st.textContent=on?'偵察ルートを構築中...':'';st.classList.toggle('visible',on);}
+}
+function triggerInsightScout(){
+    const word=document.getElementById('insight-search').value.trim();
+    renderTrendItems(word);
+    if(word){updateBannerAdContent(word);hideIntelBadge();intelScoutResults=[];runIntelScout(word);}
+}
+
+// ── 初回起動 ─────────────────────────────────────────────────
+let _frmProfile={gender:'',cloth:'',shoe:'',childGender:'',childCloth:'',childShoe:''};
+function checkFirstRun(){
+    if(!localStorage.getItem('re_eye_setup_v1'))
+        document.getElementById('first-run-modal').style.display='flex';
+}
+function selectFrmChip(field,el){
+    const map={gender:'frm-dial-gender',cloth:'frm-dial-cloth',shoe:'frm-dial-shoe',
+               childGender:'frm-dial-child-gender',childCloth:'frm-dial-child-size',childShoe:'frm-dial-child-shoe'};
+    if(map[field])document.querySelectorAll('#'+map[field]+' .setting-chip').forEach(c=>c.classList.remove('active'));
+    el.classList.add('active'); _frmProfile[field]=el.dataset.val;
+}
+function completeFirstRun(){
+    const err=document.getElementById('frm-error');
+    if(!_frmProfile.gender||!_frmProfile.cloth||!_frmProfile.shoe){
+        if(err){err.style.display='block';err.textContent='性別・服サイズ・靴サイズを選択してください';}return;
+    }
+    userProfile.gender=_frmProfile.gender; userProfile.clothSize=_frmProfile.cloth;
+    userProfile.shoeSize=_frmProfile.shoe; userProfile.hasChildren=!!_frmProfile.childGender;
+    userProfile.childGender=_frmProfile.childGender;
+    userProfile.childClothSize=_frmProfile.childCloth; userProfile.childShoeSize=_frmProfile.childShoe;
+    try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
+    try{localStorage.setItem('re_eye_setup_v1','1');}catch(e){}
+    restoreDialUI(); saveUserSettings();
+    document.getElementById('first-run-modal').style.display='none';
+}
+
+// ── 誰のために？ ──────────────────────────────────────────────
+let _pendingStockKeyword='';
+function showForWhomModal(keyword){
+    _pendingStockKeyword=keyword;
+    const cb=document.getElementById('for-whom-child-btn');
+    if(cb)cb.style.display=userProfile.hasChildren?'':'none';
+    document.getElementById('for-whom-modal')?.classList.add('visible');
+}
+function closeForWhomModal(){
+    document.getElementById('for-whom-modal')?.classList.remove('visible');_pendingStockKeyword='';
+}
+function confirmForWhom(forChild){
+    const kw=_pendingStockKeyword; closeForWhomModal(); if(kw)runStockSearch(kw,forChild);
+}
+
+// ── サイズ考慮キーワード ──────────────────────────────────────
+const SHOE_KW=['スニーカー','シューズ','ブーツ','サンダル','靴','shoe','sneaker'];
+const CLOTH_KW=['ジャケット','コート','ニット','シャツ','パンツ','スカート','服','アウター'];
+function buildSizeAwareKeyword(keyword,forChild){
+    let kw=keyword; const kl=keyword.toLowerCase();
+    const isShoe=SHOE_KW.some(w=>kl.includes(w.toLowerCase()));
+    const isCloth=CLOTH_KW.some(w=>kl.includes(w.toLowerCase()));
+    if(forChild){
+        const cg=userProfile.childGender==='girl'?'女の子':(userProfile.childGender==='boy'?'男の子':'');
+        if(cg)kw+=' '+cg;
+        if(isCloth&&userProfile.childClothSize)kw+=' '+userProfile.childClothSize;
+        if(isShoe&&userProfile.childShoeSize)kw+=' '+userProfile.childShoeSize+'cm';
+    } else {
+        if(isCloth&&userProfile.clothSize)kw+=' '+userProfile.clothSize;
+        if(isShoe&&userProfile.shoeSize)kw+=' '+userProfile.shoeSize+'cm';
+    }
+    return kw.trim();
+}
+
+// ── 懸賞・先取り ──────────────────────────────────────────────
+function selectInsightCampaignChip(word){
+    document.querySelectorAll('.campaign-chip').forEach(c=>c.classList.toggle('selected',c.dataset.word===word));
+    _campaignEditMode=false;_campaignEditSelected.clear();
+    const watched=[..._watchedKeywords].filter(Boolean).slice(0,5);
+    const keywords=watched.length>0?watched.map(k=>k+' '+word):[word];
+    runCampaignScout(keywords);
+}
+async function runCampaignScout(keywords){
+    const c=document.getElementById('campaign-results-container');
+    if(c){c.innerHTML='<p class="trend-intro-11px" style="text-align:center;margin:12px 0;color:rgba(247,231,206,0.5);">索敵中...</p>';c.style.display='block';}
+    try{
+        const res=await fetch(API_BASE + '/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({keywords:Array.isArray(keywords)?keywords:[keywords],mode:'campaign',limit:15})});
+        const data=await res.json();
+        campaignResults=(data.items||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id)));
+        renderCampaignResults();
+    }catch(e){if(c)c.innerHTML='<p class="trend-intro-11px" style="text-align:center;color:rgba(247,231,206,0.4);margin:12px 0;">検索に失敗しました</p>';}
+}
+function renderCampaignResults(){
+    const c=document.getElementById('campaign-results-container');
+    if(!c) return; c.innerHTML='';
+    if(campaignResults.length===0){c.innerHTML='<p class="trend-intro-11px" style="text-align:center;color:rgba(247,231,206,0.35);margin:12px 0;">検索結果が見つかりませんでした</p>';c.style.display='block';return;}
+    c.style.display='block';
+    const l=document.createElement('div'); l.style.cssText='display:flex;flex-direction:column;gap:8px;margin-top:6px;';
+    campaignResults.forEach(item=>{
+        const card=document.createElement('div'); card.className='home-result-card';
+        if(item.url){card.style.cursor='pointer';card.onclick=()=>openSafeUrl(item.url);}
+        const t=document.createElement('div'); t.className='item-title'; t.textContent=item.title||'';
+        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+        db.onclick=(e)=>{e.stopPropagation();_persistDeleteId(String(item.id||item.title));
+            campaignResults=campaignResults.filter(r=>String(r.id)!==String(item.id));renderCampaignResults();};
+        card.appendChild(t); card.appendChild(db); l.appendChild(card);
+    });
+    c.appendChild(l);
+}
+
+// ── バッジ ────────────────────────────────────────────────────
+function showIntelBadge(count){
+    const b=document.getElementById('intel-badge');
+    if(!b)return; b.textContent='● 気配を検知（'+count+'件）— 履歴で確認する'; b.style.display='block';
+}
+function hideIntelBadge(){
+    const b=document.getElementById('intel-badge');
+    if(b){b.style.display='none';b.textContent='';}
+}
+
+// ── scoutAndShow ──────────────────────────────────────────────
+function scoutAndShow(){
+    const input=document.getElementById('monitor-input');
+    const val=input?input.value.trim():'';
+    hideIntelBadge();
+    const st=document.getElementById('scout-status-text');
+    if(st){st.textContent='';st.classList.remove('visible');}
+    const ir=document.getElementById('home-inline-results');
+    if(ir)ir.style.display='none';
+    if(!val) return;
+    lastMonitorKeyword=val;
+    if(_currentMode==='stock') showForWhomModal(val);
+    else runIntelScout(val,false,true);
+}
+
+// ── 在庫検索（デザイン維持・ロジック直結版） ────────────────────────────────
+async function runStockSearch(keyword, forChild) {
+    const sk = buildSizeAwareKeyword(keyword, forChild);
+    const ir = document.getElementById('home-inline-results');
+    const list = document.getElementById('home-inline-list');
+    const hdr = document.getElementById('home-slot-header');
+    const sp = document.getElementById('monitor-spinner');
+    const ic = document.getElementById('monitor-search-fa');
+
+    if (sp) sp.style.display = 'inline-block';
+    if (ic) ic.style.display = 'none';
+    if (hdr) hdr.innerHTML = '';
+    if (list) list.innerHTML = '';
+
+    try {
+        const res = await fetch(API_BASE + '/api/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword: sk, userId: getUserId() })
+        });
+        const data = await res.json();
+
+        if (!data.found || data.items.length === 0) {
+            list.innerHTML = `
+                <div class="stock-not-found">
+                    <p>現在、主要ショップに在庫はありません。</p>
+                    <button class="btn-purple" style="margin-top:10px;" 
+                        onclick="watchStockItem({itemId:'manual_${Date.now()}', sourceId:'manual', title:'${data.normalizedKeyword || sk}'}, '${data.normalizedKeyword || sk}', this)">
+                        この条件で「再入荷」を監視する
+                    </button>
+                </div>`;
+            if (ir) ir.style.display = 'block';
+            return;
+        }
+        renderStockResults(data.items, sk, data.normalizedKeyword || sk, data.errors || []);
+    } catch (e) {
+        list.innerHTML = '<div class="stock-not-found">通信エラーが発生しました。</div>';
+    } finally {
+        if (sp) sp.style.display = 'none';
+        if (ic) ic.style.display = '';
+        if (ir) ir.style.display = 'block';
+    }
+}
+
+function renderStockResults(items, keyword, displayKw, apiErrors) {
+    const wrap = document.getElementById('home-inline-results');
+    const list = document.getElementById('home-inline-list');
+    const hdr = document.getElementById('home-slot-header');
+    if (!wrap || !list) return; 
+    list.innerHTML = '';
+
+    if (hdr) {
+        hdr.innerHTML = `<span class="gold-label" style="font-size:11px;">検索結果 — ${displayKw}</span>`;
+    }
+
+    items.slice(0, 10).forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'home-result-card';
+        
+        const t = document.createElement('div');
+        t.className = 'item-title';
+        t.textContent = item.title || keyword;
+        
+        const m = document.createElement('div');
+        m.className = 'stock-shop-meta';
+        m.textContent = `${item.shopName || ''}${item.price ? '  ¥' + Number(item.price).toLocaleString() : ''}`;
+        
+        card.appendChild(t);
+        card.appendChild(m);
+
+        const actionArea = document.createElement('div');
+        actionArea.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px;';
+
+        if (item.available) {
+            const buyBtn = document.createElement('button');
+            buyBtn.className = 'stock-buy-btn';
+            buyBtn.textContent = '購入ページへ（現在在庫あり）';
+            buyBtn.onclick = (e) => { e.stopPropagation(); openSafeUrl(item.url); };
+            actionArea.appendChild(buyBtn);
+        }
+
+        const watchBtn = document.createElement('button');
+        watchBtn.className = 'home-result-watch-btn';
+        watchBtn.style.cssText = 'width: 100%; padding: 10px; font-size: 11px;';
+        watchBtn.textContent = 'この商品を「零式監視」に追加';
+        watchBtn.onclick = (e) => { e.stopPropagation(); watchStockItem(item, keyword, watchBtn); };
+        actionArea.appendChild(watchBtn);
+
+        card.appendChild(actionArea);
+        list.appendChild(card);
+    });
+    wrap.style.display = 'block';
+}
+function watchKeyword(kw,btn){
+    watchStockItem({itemId:'kw_'+Date.now(),sourceId:'keyword',title:kw,price:0,available:false,url:'',shopName:'監視キーワード'},kw,btn);
+}
+async function watchStockItem(item,keyword,btn){
+    if (btn) {
+        btn.textContent = '登録中...';
+        btn.disabled = true;
+    }
+
+    try {
+        // バックエンドの /api/monitor に登録。AIが品番(ModelNumber)を自動判別する
+        const res = await fetch(API_BASE + '/api/monitor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                keyword: keyword,
+                itemId: item.itemId,
+                sourceId: item.sourceId,
+                userId: getUserId(),
+                url: item.url || '',
+                title: item.title || keyword,
+                price: item.price || 0
+            })
+        });
+
+        if (res.ok) {
+            const json = await res.json();
+            // 品番が確定していればフィードバックを出す
+            if (btn) {
+                if (json.modelNumbers && json.modelNumbers.length > 0) {
+                    btn.textContent = '品番 ' + json.modelNumbers[0] + ' で固定監視中';
                 } else {
-                    // 新着インテル記事を historyItems へ INTEL ステータスでマージ（重複 id は無視）
-                    const existingIds = new Set(historyItems.map(function(i) { return String(i.id); }));
-                    var added = 0;
-                    var mapped = [];
-                    data.items.forEach(function(item) {
-                        // 1. タイトル・本文から未来日付を解析（「4月発売」「来週予約開始」等）
-                        var releaseLabel = parseFutureDate(item.title + ' ' + (item.description || ''));
-                        // 2. 解析できなければ pubDate を「情報更新」として使用
-                        if (!releaseLabel && item.pubDate) {
-                            try {
-                                var pd = new Date(item.pubDate);
-                                releaseLabel = (pd.getMonth()+1) + '/' + pd.getDate() + ' 情報更新';
-                            } catch(e) {}
-                        }
-                        var entry = {
-                            id:           item.id,
-                            title:        item.title,
-                            status:       'INTEL',
-                            keyword:      item.keyword || '',
-                            url:          item.url,
-                            time:         new Date(item.createdAt).toLocaleDateString('ja-JP'),
-                            releaseLabel: releaseLabel || null,
-                            lastCheckedAt: item.createdAt,
-                        };
-                        mapped.push(entry);
-                        if (!existingIds.has(item.id)) {
-                            existingIds.add(item.id);
-                            historyItems.unshift(entry);
-                            added++;
-                        }
-                    });
-                    // 探索画面インライン表示用にキャッシュ
-                    intelScoutResults = mapped;
+                    btn.textContent = '見守りリストに追加しました';
+                }
+                btn.classList.add('watching');
+            }
 
-                    if (added > 0) {
-                        var histScreen = document.getElementById('history');
-                        if (histScreen && histScreen.classList.contains('active')) renderHistory(historyItems);
-                        if (autoNavigate) {
-                            // executeMonitor 経由：履歴タブへ自動遷移 → NOTIFICATION へスクロール
-                            setTimeout(function() {
-                                var histBtn = document.querySelector('.nav-item[onclick*="\'history\'"]');
-                                if (histBtn) show('history', histBtn);
-                                setTimeout(function() {
-                                    var hScr = document.getElementById('history');
-                                    if (!hScr) return;
-                                    var boxes = hScr.querySelectorAll('.history-section-box');
-                                    var last = boxes[boxes.length - 1];
-                                    if (last) last.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                }, 150);
-                            }, 800);
-                        } else {
-                            showIntelBadge(added);
-                        }
-                    }
-                }
+            // 履歴（History）にも即座に反映して「安心感」を出す
+            const entry = {
+                id: item.itemId || Date.now(),
+                title: item.title || keyword,
+                status: 'OFF',
+                shop: item.shopName || '監視中',
+                price: item.price || 0,
+                url: item.url || '',
+                time: formatDateSec(Date.now()),
+                lastCheckedAt: Date.now()
+            };
+            historyItems.unshift(entry);
+            _persistHistory();
 
-                // 探索タブが開いていれば即時レンダリング（件数問わず）
-                var insScreen = document.getElementById('insight');
-                if (insScreen && insScreen.classList.contains('active')) {
-                    renderTrendItems(document.getElementById('insight-search').value);
+            // 1秒後に履歴画面へ飛ばして、登録されたことを確認させる
+            setTimeout(() => {
+                const hb = document.querySelector('.nav-item[onclick*="\'history\'"]');
+                if (hb) show('history', hb);
+            }, 800);
+
+        } else {
+            throw new Error('登録失敗');
+        }
+    } catch (e) {
+        if (btn) {
+            btn.textContent = '登録に失敗しました';
+            btn.disabled = false;
+        }
+    }
+}
+async function syncWatchStatus(){
+    try{
+        const res=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
+        if(!res.ok) return;
+        const data=await res.json();
+        let changed=false;
+        (data.items||[]).forEach(sv=>{
+            const local=historyItems.find(h=>(h.itemId&&String(h.itemId)===String(sv.itemId)&&h.sourceId===sv.sourceId)||(h.keyword===sv.keyword));
+            if(local&&local.status!==sv.status){local.status=sv.status;local.lastCheckedAt=sv.lastCheckedAt;if(sv.url)local.url=sv.url;changed=true;}
+        });
+        if(changed){_persistHistory();renderHistory(historyItems);}
+    }catch(e){}
+}
+function executeMonitor(keyword,mode){
+    const val=keyword||lastMonitorKeyword;
+    if(!val||restrictedKeywords.some(rk=>val.includes(rk))) return;
+    addWatchedKeyword(val); _startMonitorCore(val);
+}
+async function _startMonitorCore(val){
+    try{
+        const res=await fetch(API_BASE + '/api/poll',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({keyword:val,userId:getUserId(),plan:currentPlan})});
+        if(res.ok){const data=await res.json();mergeApiResultsToHistory(data.allItems||[]);}
+    }catch(e){console.warn('[monitor]poll失敗:',e.message);}
+    startPollingTimer(val);
+}
+async function postChat(){
+    const input=document.getElementById('chat-input');
+    const err=document.getElementById('chat-error-msg');
+    const val=input?input.value.trim():'';
+    if(!val){alert('内容を入力してください');return;}
+    if(restrictedKeywords.some(ng=>val.includes(ng))){err.style.display='block';return;}
+    err.style.display='none';
+    try{
+        const res=await fetch(API_BASE + '/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:val})});
+        if(!res.ok)throw new Error('通信エラー');
+        if(input)input.value=''; alert('投稿しました。');
+    }catch(e){err.textContent='送信に失敗しました。';err.style.display='block';}
+}
+function selectPlan(plan,el){
+    currentPlan=plan;
+    el.parentElement.querySelectorAll('.category-item').forEach(p=>p.classList.remove('selected'));
+    el.classList.add('selected'); updateAdVisibility(); updateNightModeStatus();
+    if(document.getElementById('settings')?.classList.contains('active'))renderSettingsTrendWatching();
+    alert(`プランを ${plan} に同期しました。`);
+}
+
+// ── カスタムスクロールバー ────────────────────────────────────
+const sbTrack=document.createElement('div'); sbTrack.className='custom-sb-track';
+const sbThumb=document.createElement('div'); sbThumb.className='custom-sb-thumb';
+sbTrack.appendChild(sbThumb); document.body.appendChild(sbTrack);
+function updateSb(el){
+    if(!el){sbTrack.style.display='none';return;}
+    const sh=el.scrollHeight,ch=el.clientHeight;
+    if(sh<=ch){sbTrack.style.display='none';return;}
+    sbTrack.style.display='block';
+    const th=sbTrack.clientHeight,thumbH=Math.max(24,(ch/sh)*th);
+    const top=(el.scrollTop/(sh-ch))*(th-thumbH);
+    sbThumb.style.height=thumbH+'px'; sbThumb.style.top=top+'px';
+}
+function getActiveScreen(){return document.querySelector('.screen.active');}
+document.querySelectorAll('.screen').forEach(el=>{
+    el.addEventListener('scroll',()=>{if(el.classList.contains('active'))updateSb(el);});
+});
+
+// ── インテル・スカウター ──────────────────────────────────────
+async function runIntelScout(forceKeyword,autoNavigate,homeInline){
+    setScoutLoading(true); setInsightLoading(true);
+    try{
+        const mode=homeInline?(_currentMode||'stock'):'newitem';
+        const res=await fetch(API_BASE + '/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({keywords:[forceKeyword],mode:mode,limit:15,bypassDedup:true})});
+        const data=await res.json();
+        let raw=(data.items||[]).sort((a,b)=>{
+            const da=a.pubDate?new Date(a.pubDate).getTime():(a.lastCheckedAt||0);
+            const db=b.pubDate?new Date(b.pubDate).getTime():(b.lastCheckedAt||0);
+            return db-da;
+        });
+        if(homeInline){
+            renderHomeInlineResults(raw,forceKeyword);
+        } else {
+            // 探索画面：intelScoutResults に格納して renderTrendItems で表示
+            intelScoutResults=(raw||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id)));
+            const word=document.getElementById('insight-search')?.value;
+            renderTrendItems(word);
+            // ステータス表示（CLAUDE.md 誠実な報告ロジック）
+            const st=document.getElementById('insight-scout-status');
+            if(st){
+                const found=data.totalFoundInFeed||0;
+                if(intelScoutResults.length>0){
+                    st.textContent=intelScoutResults.length+'件の情報を捕捉しました';
+                } else if(found>0){
+                    st.textContent='過去60日間の足跡を検知。ハントの参考にしてください';
+                } else {
+                    st.textContent='過去60日間の深層スキャンを完了。予約・新作の有力な予兆は検知されませんでした。24H哨戒を継続します';
                 }
-            } catch (e) {
-                console.error('[intel-scout] スキャンエラー:', e);
-            } finally {
-                setScoutLoading(false);
-                setInsightLoading(false);
-                if (zeroResult) {
-                    var zeroMsg = zeroResult === 'footprint'
-                        ? '広域スキャンにより' + foundCount + '件の気配を捕捉。全情報を開示します'
-                        : '過去60日間の深層スキャンを完了。予約・新作の有力な予兆は検知されませんでした。24H哨戒を継続します';
-                    var st = document.getElementById('scout-status-text');
-                    if (st) { st.textContent = zeroMsg; st.classList.add('visible'); }
-                    var ist = document.getElementById('insight-scout-status');
-                    if (ist) { ist.textContent = zeroMsg; ist.classList.add('visible'); }
-                }
+                st.classList.add('visible');
+                setTimeout(()=>st.classList.remove('visible'),6000);
             }
         }
+    }catch(e){console.error('[intel-scout]:',e);
+        const st=document.getElementById('insight-scout-status');
+        if(st&&!homeInline){st.textContent='スキャンに失敗しました。再試行してください';st.classList.add('visible');setTimeout(()=>st.classList.remove('visible'),4000);}
+    }
+    finally{setScoutLoading(false);setInsightLoading(false);}
+}
 
-        // 保存済みプロフィールをチップUIに反映
-        function restoreDialUI() {
-            function activateChip(rowId, val) {
-                if (!val) return;
-                var chip = document.querySelector('#' + rowId + ' .setting-chip[data-val="' + val + '"]');
-                if (chip) chip.classList.add('active');
-            }
-            activateChip('dial-gender',       userProfile.gender);
-            activateChip('dial-cloth-size',   userProfile.clothSize);
-            activateChip('dial-shoe-size',    userProfile.shoeSize);
-            if (userProfile.childGender && userProfile.childGender !== 'none') {
-                activateChip('dial-child-gender', userProfile.childGender);
-            }
-            activateChip('dial-child-size',   userProfile.childClothSize);
-            activateChip('dial-child-shoe',   userProfile.childShoeSize);
-            // 設定済みならサマリー表示に切り替え
-            if (isUserConfigured()) {
-                var summaryText = buildHomeSettingSummary();
-                var summaryEl = document.getElementById('home-setting-summary-text');
-                var summaryWrap = document.getElementById('home-setting-summary-wrap');
-                var form = document.getElementById('home-setting-form');
-                if (summaryEl) summaryEl.textContent = summaryText;
-                if (summaryWrap) summaryWrap.style.display = 'block';
-                if (form) form.style.display = 'none';
-            }
-            // 設定状態に応じて見守りセクションのロックを制御
-            checkUserSetup();
-        }
+// ── ホームインライン結果 ──────────────────────────────────────
+function renderHomeInlineResults(items,keyword){
+    _homeInlineItems=(items||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id))).slice(0,10);
+    _homeInlineKeyword=keyword; _homeResultsEditMode=false; _homeResultsSelected.clear();
+    _renderHomeInlineList();
+}
+function _renderHomeInlineList(){
+    const list=document.getElementById('home-inline-list');
+    const wrap=document.getElementById('home-inline-results');
+    if(!list||!wrap) return; list.innerHTML='';
+    if(_homeInlineItems.length===0){
+        list.innerHTML='<div class="home-slot-empty">過去60日間の深層スキャンを完了。予兆は検知されませんでした。</div>';
+        wrap.style.display='block'; return;
+    }
+    _homeInlineItems.forEach(item=>{
+        const card=document.createElement('div'); card.className='home-result-card'; card.style.position='relative';
+        let ds='----/--/-- --:--:--';
+        if(item.pubDate){const pd=new Date(item.pubDate);if(!isNaN(pd.getTime()))ds=formatDateSec(pd.getTime());}
+        const me=document.createElement('div'); me.className='result-meta';
+        me.style.cssText='color:var(--amethyst);font-weight:bold;margin-bottom:4px;'; me.textContent=ds;
+        const te=document.createElement('div'); te.className='item-title'; te.style.cssText='padding-right:20px;'; te.textContent=item.title||'';
+        card.appendChild(me); card.appendChild(te);
+        if(item.url){card.style.cursor='pointer';card.onclick=()=>openSafeUrl(item.url);}
+        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
+        db.style.cssText='position:absolute;top:4px;right:4px;';
+        db.onclick=(e)=>{
+            e.stopPropagation();_persistDeleteId(String(item.id||item.title));
+            _homeInlineItems=_homeInlineItems.filter(i=>String(i.id)!==String(item.id));
+            _renderHomeInlineList(); if(_homeInlineItems.length===0)wrap.style.display='none';
+        };
+        card.appendChild(db);
+        const isAv=item.status==='ON'||item.available===true;
+        const btn=document.createElement('button'); btn.className='home-result-watch-btn';
+        btn.textContent=isAv?'購入可能リストに追加':'見守り開始';
+        btn.onclick=(e)=>{
+            e.stopPropagation();
+            const entry={id:item.id||Date.now(),title:item.title,status:isAv?'ON':'OFF',
+                shop:item.shop||'ソース',time:formatDateSec(Date.now()),url:item.url,lastCheckedAt:Date.now()};
+            historyItems.unshift(entry);_persistHistory();
+            const hs=document.getElementById('history');
+            if(hs&&hs.classList.contains('active'))renderHistory(historyItems);
+            _homeInlineItems=_homeInlineItems.filter(i=>String(i.id)!==String(item.id));
+            _renderHomeInlineList(); if(_homeInlineItems.length===0)wrap.style.display='none';
+        };
+        card.appendChild(btn); list.appendChild(card);
+    });
+    wrap.style.display='block';
+}
 
-        // PWA Service Worker 登録（iOS/Android プッシュ通知・オフライン対応）
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').catch(() => {});
+// ── 右クリックコンテキストメニュー ───────────────────────────
+let _ctxSelectedText='';
+document.addEventListener('contextmenu',(e)=>{
+    const sel=window.getSelection?window.getSelection().toString().trim():'';
+    if(!sel||sel.length<2||e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+    e.preventDefault(); _ctxSelectedText=sel;
+    const menu=document.getElementById('ctx-menu');
+    if(!menu) return;
+    const x=Math.min(e.clientX,window.innerWidth-180);
+    const y=Math.min(e.clientY,window.innerHeight-100);
+    menu.style.left=x+'px'; menu.style.top=y+'px'; menu.style.display='block';
+});
+document.addEventListener('click',()=>{
+    const m=document.getElementById('ctx-menu'); if(m)m.style.display='none';
+});
+function ctxAddToWatch(){
+    const m=document.getElementById('ctx-menu'); if(m)m.style.display='none';
+    if(!_ctxSelectedText) return;
+    const inp=document.getElementById('monitor-input');
+    if(inp)inp.value=_ctxSelectedText; lastMonitorKeyword=_ctxSelectedText;
+    onModeChange('stock');
+    const hb=document.querySelector('.nav-item[onclick*="\'home\'"]');
+    if(hb)show('home',hb);
+    setTimeout(()=>scoutAndShow(),300);
+}
+function ctxCopyText(){
+    const m=document.getElementById('ctx-menu'); if(m)m.style.display='none';
+    if(_ctxSelectedText&&navigator.clipboard)navigator.clipboard.writeText(_ctxSelectedText).catch(()=>{});
+}
+
+// ── コーチマーク ──────────────────────────────────────────────
+function showCoachMark(){
+    if(localStorage.getItem('re_eye_coach_done')==='1') return;
+    const m=document.getElementById('coach-mark'); if(m)m.style.display='block';
+}
+function closeCoachMark(permanent){
+    const m=document.getElementById('coach-mark'); if(m)m.style.display='none';
+    if(permanent)localStorage.setItem('re_eye_coach_done','1');
+}
+
+// ── ダイアルUI復元 ────────────────────────────────────────────
+function restoreDialUI(){
+    function act(rowId,val){
+        if(!val)return;
+        const c=document.querySelector('#'+rowId+' .setting-chip[data-val="'+val+'"]');
+        if(c)c.classList.add('active');
+    }
+    act('dial-gender',userProfile.gender); act('dial-cloth-size',userProfile.clothSize);
+    act('dial-shoe-size',userProfile.shoeSize);
+    if(userProfile.childGender)act('dial-child-gender',userProfile.childGender);
+    act('dial-child-size',userProfile.childClothSize); act('dial-child-shoe',userProfile.childShoeSize);
+    if(isUserConfigured()){
+        const st=buildHomeSettingSummary();
+        const se=document.getElementById('home-setting-summary-text');
+        const sw=document.getElementById('home-setting-summary-wrap');
+        const f=document.getElementById('home-setting-form');
+        if(se)se.textContent=st; if(sw)sw.style.display='block'; if(f)f.style.display='none';
+    }
+    checkUserSetup();
+}
+
+// ── Service Worker ────────────────────────────────────────────
+if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'})
+    .then(reg=>{
+        reg.addEventListener('updatefound',()=>{
+            const nw=reg.installing;
+            nw.addEventListener('statechange',()=>{
+                if(nw.state==='installed'&&navigator.serviceWorker.controller)
+                    nw.postMessage({type:'SKIP_WAITING'});
+            });
+        });
+    }).catch(()=>{});
+    let refreshing=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+        if(!refreshing){refreshing=true;window.location.reload();}
+    });
+}
+
+// ════════════════════════════════════════════════
+//  window.onload — 10秒待機完全抹殺版
+//  setTimeout(runIntelScout, 10000) は存在しない
+// ════════════════════════════════════════════════
+window.onload=()=>{
+    // localStorage から historyItems 復元
+    try{
+        const raw=localStorage.getItem('re_eye_history');
+        if(raw)historyItems=JSON.parse(raw).filter(i=>cleanHistoryItem(i));
+    }catch(e){historyItems=[];}
+
+    runStartupAd();
+    updateAdVisibility();
+    updateNightModeStatus();
+    setInterval(updateNightModeStatus,60*1000);
+    updateBannerAdContent();
+    startHistoryObserver();
+    initDials();
+    restoreDialUI();
+    initModeUI();
+
+    // Web Push 初期化（サイレント・ブロッキングなし）
+    PushHybrid.initPush().catch(()=>{});
+
+    // OneSignal: 通知許可後に userId タグを付与（狙い撃ち通知を有効化）
+    if (window.OneSignalDeferred) {
+      OneSignalDeferred.push(async function(OneSignal) {
+        try {
+          await OneSignal.Notifications.requestPermission();
+          const uid = getUserId();
+          OneSignal.User.addTag("userId", uid);
+          console.log("[OneSignal] userId タグ付与（onload）:", uid);
+        } catch(e) { /* サイレント — 通知拒否時はスキップ */ }
+      });
+    }
+
+    // 曖昧→確定日付ウォッチャー（5秒ポーリング・即時起動）
+    PushHybrid.startDateWatcher(()=>historyItems);
+
+    requestAnimationFrame(()=>updateSb(getActiveScreen()));
+
+    // コーチマーク（3秒後・UXブロックしない）
+    setTimeout(showCoachMark, 3000);
+
+    // セッション引き継ぎ復元
+    try{
+        const sess=JSON.parse(sessionStorage.getItem('re_eye_last_search')||'null');
+        if(sess&&sess.keyword&&(Date.now()-sess.ts)<30*60*1000){
+            const mi=document.getElementById('monitor-input');
+            if(mi&&!mi.value.trim()){mi.value=sess.keyword;lastMonitorKeyword=sess.keyword;}
         }
-    </script>
+    }catch(e){}
+
+    // 初回起動チェック
+    checkFirstRun();
+
+    // ── トレンドデータをクラウドから復元（localStorage → Redis 優先） ──
+    loadTrendFromServer();
+
+    // ── 10秒待機（setTimeout(runIntelScout,10000)）は完全抹殺済み ──
+    // スカウトは検索実行時（scoutAndShow/triggerInsightScout）にのみ発火する
+};
+</script>    
 </body>
 </html>
