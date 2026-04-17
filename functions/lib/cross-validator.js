@@ -41,8 +41,6 @@
  *   Google CSE 未設定時は軸1・2のみで動作（後方互換）
  */
 
-import { searchGoogleShopping } from './google-shopping.js';
-
 const YAHOO_API_BASE   = 'https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch';
 const RAKUTEN_API_BASE = 'https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601';
 const APP_ORIGIN       = 'https://re-eye-hub.web.app';
@@ -248,16 +246,71 @@ const RAKUTEN_SCORE = {
   error:                    0,
 };
 
-const GOOGLE_SCORE = {
-  size_confirmed_in_stock:  4,   // スニペットに在庫ありシグナルを確認 → 最高点
-  market_found:             2,   // 公式サイトがページを持つ（スニペット判定不能だが存在確認）
-  not_found:                0,   // Google でも見つからない（ブログのみ）
-  size_confirmed_out:      -3,   // 品切れ確定
-  error:                    0,   // API 未設定 / タイムアウト → 中立
-};
+// ─────────────────────────────────────────────────────────────────────────────
+//  型番なし: キーワード全文で Yahoo + 楽天（Google はコスト削減のため未使用）
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function checkOnYahooKeyword(keyword, sizeInfo) {
+  if (!process.env.YAHOO_APP_ID || !keyword) return 'error';
+  try {
+    const query = keyword.trim();
+    const params = new URLSearchParams({
+      appid: process.env.YAHOO_APP_ID, query, results: '20', condition: 'new', sort: '+price',
+    });
+    const res = await Promise.race([
+      fetch(`${YAHOO_API_BASE}?${params}`, { headers: { Accept: 'application/json' } }),
+      new Promise((_, r) => setTimeout(() => r(new Error('yahoo-timeout')), CROSS_TIMEOUT_MS)),
+    ]);
+    if (!res.ok) return 'error';
+    const json = await res.json();
+    const hits = json.hits || [];
+    if (hits.length === 0) return 'not_found';
+    let pool = hits;
+    if (sizeInfo) {
+      pool = hits.filter(h => hasSizeInTitleUniversal(h.name, sizeInfo));
+      if (pool.length === 0) return 'model_found_no_size';
+    }
+    return pool.some(h => h.inStock === true) ? 'size_confirmed_in_stock' : 'size_confirmed_out';
+  } catch(e) {
+    console.warn(`[cross-v7/yahoo-kw] 例外:`, e.message);
+    return 'error';
+  }
+}
+
+async function checkOnRakutenKeyword(keyword, sizeInfo) {
+  if (!process.env.RAKUTEN_APP_ID || !keyword) return 'error';
+  try {
+    const kw = keyword.trim();
+    const appId = (process.env.RAKUTEN_APP_ID || '').replace(/-/g, '');
+    const params = new URLSearchParams({
+      applicationId: appId, keyword: kw, hits: '20', sort: '-updateTimestamp',
+    });
+    const res = await Promise.race([
+      fetch(`${RAKUTEN_API_BASE}?${params}`, {
+        headers: {
+          Accept: 'application/json', Referer: APP_ORIGIN + '/', Origin: APP_ORIGIN,
+        },
+      }),
+      new Promise((_, r) => setTimeout(() => r(new Error('rakuten-timeout')), CROSS_TIMEOUT_MS)),
+    ]);
+    if (!res.ok) return 'error';
+    const json = await res.json();
+    const items = (json.Items || []).map(({ Item }) => Item);
+    if (items.length === 0) return 'not_found';
+    let pool = items;
+    if (sizeInfo) {
+      pool = items.filter(i => hasSizeInTitleUniversal(i.itemName, sizeInfo));
+      if (pool.length === 0) return 'model_found_no_size';
+    }
+    return pool.some(i => i.availability === 1) ? 'size_confirmed_in_stock' : 'size_confirmed_out';
+  } catch(e) {
+    console.warn(`[cross-v7/rakuten-kw] 例外:`, e.message);
+    return 'error';
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  メイン: 横断在庫バリデーション（v6）
+//  メイン: 横断在庫バリデーション（楽天・Yahoo のみ）
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function crossValidateStock(item, keyword) {
@@ -265,63 +318,50 @@ export async function crossValidateStock(item, keyword) {
   const sizeInfo = extractSizeFromKeyword(keyword);
   const fmt      = v => (v >= 0 ? `+${v}` : `${v}`);
 
-  // ── 型番なし商品パス: Google単独バリデーション ──────────────────────────
-  // 鞄・服・雑貨など型番が検出できないカテゴリでも
-  // Google が公式サイトの在庫シグナルを返せばブロック/通過を判定できる。
-  // 楽天・Yahoo は型番なし検索ではノイズが多く信頼できないため使用しない。
   if (models.length === 0) {
     console.log(
-      `[cross-v7] 型番なし → Google単独チェック:` +
+      `[cross-v7] 型番なし → Yahoo+楽天キーワード検索:` +
       ` keyword="${(keyword||'').slice(0,40)}"` +
       ` size=${sizeInfo ? `${sizeInfo.type}:${sizeInfo.raw}` : 'なし'}`
     );
-    const googleData   = await searchGoogleShopping(keyword, sizeInfo);
-    const googleResult = googleData?.signal ?? googleData ?? 'error'; // { signal, items } 対応
-    const gScore       = GOOGLE_SCORE[googleResult] ?? 0;
-    // 判定: 品切れ確定(-3)のみブロック / 不明(0)・在庫確認(+4)は通過
-    const pass = gScore >= 0;
-    const reason = `[型番なし] Google:${googleResult}(${fmt(gScore)})`;
-    if (pass) {
-      console.log(`[cross-v7] 【PASS(型番なし)】 ${reason}`);
-    } else {
-      console.log(`[cross-v7] 【BLOCK(型番なし)】${reason}`);
-    }
-    return { pass, score: gScore, reason };
+    const [yahooResult, rakutenResult] = await Promise.all([
+      checkOnYahooKeyword(keyword, sizeInfo),
+      checkOnRakutenKeyword(keyword, sizeInfo),
+    ]);
+    const yScore = YAHOO_SCORE[yahooResult] ?? 0;
+    const rScore = RAKUTEN_SCORE[rakutenResult] ?? 0;
+    const score  = yScore + rScore;
+    const reason = `[型番なし] Yahoo:${yahooResult}(${fmt(yScore)}) 楽天:${rakutenResult}(${fmt(rScore)}) 計${fmt(score)}`;
+    const pass = score >= 2;
+    if (pass) console.log(`[cross-v7] 【PASS(型番なし)】 ${reason}`);
+    else console.log(`[cross-v7] 【BLOCK(型番なし)】${reason}`);
+    return { pass, score, reason };
   }
 
-  // ── 型番あり商品パス: Yahoo + 楽天全体 + Google の3軸 ────────────────
   const mainModel = models[0];
   const sizeLabel = sizeInfo ? `${sizeInfo.raw}(${sizeInfo.type})` : 'なし';
   console.log(`[cross-v7] 開始: model="${mainModel}" size="${sizeLabel}"`);
 
-  const [yahooResult, rakutenResult, googleData] = await Promise.all([
+  const [yahooResult, rakutenResult] = await Promise.all([
     checkOnYahoo(mainModel, sizeInfo),
     checkOnRakutenMarket(mainModel, sizeInfo),
-    searchGoogleShopping(mainModel, sizeInfo),
   ]);
-  const googleResult = googleData?.signal ?? googleData ?? 'error'; // { signal, items } 対応
 
   const yScore = YAHOO_SCORE[yahooResult]    ?? 0;
   const rScore = RAKUTEN_SCORE[rakutenResult] ?? 0;
-  const gScore = GOOGLE_SCORE[googleResult]   ?? 0;
-  const score  = yScore + rScore + gScore;
+  const score  = yScore + rScore;
 
   const reason = [
     `[${mainModel}${sizeInfo ? ` ${sizeInfo.raw}` : ''}]`,
     `Yahoo:${yahooResult}(${fmt(yScore)})`,
     `楽天全体:${rakutenResult}(${fmt(rScore)})`,
-    `Google:${googleResult}(${fmt(gScore)})`,
     `スコア${fmt(score)}`,
   ].join(' ');
 
-  // PASS: スコア >= 2（1軸以上がサイズ込み在庫を確認）
-  // BLOCK: スコア <= -2（1軸以上がサイズ品切れを確認）
-  // BLOCK: -1 <= スコア <= 1（判定不能 → 安全側）
   if (score >= 2) {
     console.log(`[cross-v7] 【PASS】 ${reason}`);
     return { pass: true, score, reason };
-  } else {
-    console.log(`[cross-v7] 【BLOCK】${reason}`);
-    return { pass: false, score, reason };
   }
+  console.log(`[cross-v7] 【BLOCK】${reason}`);
+  return { pass: false, score, reason };
 }

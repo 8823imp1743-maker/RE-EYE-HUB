@@ -11,8 +11,6 @@
  * スケジューラー（index.js の scoutScheduler）からも同じロジックを使う。
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getGeminiModel } from '../lib/plan-config.js';
 import { scanAll }             from '../lib/rss-scanner.js';
 import { jitterDelay }         from '../lib/stealth.js';
 import { resolveGoogleNewsToSource } from '../lib/google-news.js';
@@ -231,44 +229,6 @@ const ARTIST_MEMBERS = {
   'King&Prince': ['永瀬廉', '平野紫耀', '岸優太', '高橋海人'],
 };
 
-/**
- * Gemini API で未知キーワードに最適なクエリを推論する（AI 推論拡張）。
- * 3 秒以内に返らない場合は空配列を返してサイレント fallback する。
- *
- * @param {string} keyword
- * @returns {Promise<string[]>}  最大 3 件の追加クエリ
- */
-async function geminiExpandKeyword(keyword) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return [];
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: getGeminiModel(),
-      generationConfig: { maxOutputTokens: 80, temperature: 0.1 },
-    });
-    const prompt =
-      `商品キーワード「${keyword}」に関するGoogleニュース検索に最適な日本語クエリを3つ提案してください。` +
-      `公式発表・予約・入荷情報が拾えるクエリを優先してください。` +
-      `回答はJSON配列のみ。例: ["${keyword} 予約開始", "${keyword} 公式発売", "${keyword} 再販情報"]`;
-
-    const result = await Promise.race([
-      model.generateContent(prompt),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-    ]);
-    const text = result.response.text();
-    const match = text.match(/\[[\s\S]*?\]/);
-    if (!match) return [];
-    const parsed = JSON.parse(match[0]);
-    return Array.isArray(parsed)
-      ? parsed.filter(k => typeof k === 'string' && k.trim()).slice(0, 3)
-      : [];
-  } catch (e) {
-    console.warn('[scout] Gemini 推論スキップ:', e.message);
-    return [];
-  }
-}
-
 // ── 公式ページ・告知ページで多用される語句（モジュールスコープ定数）────────
 const INTEL_SUFFIXES = [
   '新作 限定',
@@ -281,7 +241,7 @@ const INTEL_SUFFIXES = [
 
 /**
  * ブランド名単体（スペースなし）を複数の複合クエリへ展開する。
- * 英語名付加 → 行動語クエリ → 聖地店名 → AI 推論の順で拡張。
+ * 英語名付加 → 行動語クエリ → 聖地店名（ルールベースのみ・Gemini 不使用）
  * Google News RSS で確実に機能する純テキストクエリのみ使用。
  *
  * @param {string[]} seeds
@@ -307,7 +267,6 @@ async function expandKeywords(seeds, mode = '') {
     }
   }
 
-  // 全シードを Promise.all で並列展開（Gemini 呼び出しがある場合の直列ボトルネックを解消）
   const targetSeeds = mode === 'oshi' ? oshiSeeds : seeds;
   const perSeedResults = await Promise.all(targetSeeds.map(async (seed) => {
     const result = [seed];
@@ -322,12 +281,6 @@ async function expandKeywords(seeds, mode = '') {
       // 3. 聖地店名クエリ（登録済み）または汎用 EC フォールバック
       const holy = CATEGORY_DOMAINS[seed] || GENERIC_EC_FALLBACK;
       for (const shop of holy) result.push(seed + ' ' + shop);
-
-      // 4. AI 推論拡張（未知キーワードかつ環境変数で明示的に有効化時のみ）
-      if (!CATEGORY_DOMAINS[seed] && process.env.GEMINI_SCOUT_ENABLED === 'true') {
-        const aiSuggestions = await geminiExpandKeyword(seed);
-        result.push(...aiSuggestions);
-      }
     }
     return result;
   }));

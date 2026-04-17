@@ -66,10 +66,8 @@ export const api = onRequest(
   {
     region:  'asia-northeast1',
     secrets: [
-      'GEMINI_API_KEY',
       'ONESIGNAL_KEY',
       'ONESIGNAL_REST_KEY',
-      'SERPAPI_KEY',
       'RAKUTEN_APP_ID',
       'RAKUTEN_AFFILIATE_ID',
       'YAHOO_APP_ID',
@@ -94,10 +92,8 @@ export const stockWatchScheduler = onSchedule(
     timeZone:    'Asia/Tokyo',
     region:      'asia-northeast1',
     secrets: [
-      'GEMINI_API_KEY',
       'ONESIGNAL_KEY',
       'ONESIGNAL_REST_KEY',
-      'SERPAPI_KEY',
       'RAKUTEN_APP_ID',
       'RAKUTEN_AFFILIATE_ID',
       'YAHOO_APP_ID',
@@ -126,7 +122,6 @@ export const scoutScheduler = onSchedule(
     timeZone:    'Asia/Tokyo',
     region:      'asia-northeast1',
     secrets: [
-      'GEMINI_API_KEY',
       'UPSTASH_REDIS_REST_URL',
       'UPSTASH_REDIS_REST_TOKEN',
     ],
@@ -152,7 +147,6 @@ export const auctionCheckScheduler = onSchedule(
     timeZone:    'Asia/Tokyo',
     region:      'asia-northeast1',
     secrets: [
-      'GEMINI_API_KEY',
       'ONESIGNAL_KEY',
       'ONESIGNAL_REST_KEY',
       'UPSTASH_REDIS_REST_URL',

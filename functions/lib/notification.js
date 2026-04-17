@@ -29,8 +29,8 @@ export async function sendOneSignalNotification({
   const body = {
     app_id: appId,
     ...targeting,
-    headings: { en: title },
-    contents: { en: message },
+    headings: { en: title, ja: title },
+    contents: { en: message, ja: message },
     url: url || undefined,
     data: {
       ...data,

@@ -44,16 +44,25 @@ export class YahooAdapter extends ShopAdapter {
     const hits = json.hits || [];
     console.log(`[Reporting Officer] Yahooで ${hits.length} 件ヒット。`);
 
-    return hits.map(item => ({
-      sourceId:  this.id,
-      itemId:    String(item.code || item.url || item.name),
-      title:     item.name,
-      price:     Number(item.price) || 0,
-      available: item.inStock === true,
-      url:       item.url,
-      imageUrl:  item.image?.medium || '',
-      shopName:  this.name,
-      checkedAt: Date.now(),
-    }));
+    return hits.map(item => {
+      const tags = [];
+      const brandName = typeof item.brand === 'string' ? item.brand : item.brand?.name;
+      if (brandName) tags.push(String(brandName));
+      if (item.genreCategory?.name) tags.push(String(item.genreCategory.name));
+      const colorLabel = item.colorName || item.color || '';
+      return {
+        sourceId:  this.id,
+        itemId:    String(item.code || item.url || item.name),
+        title:     item.name,
+        price:     Number(item.price) || 0,
+        available: item.inStock === true,
+        url:       item.url,
+        imageUrl:  item.image?.medium || '',
+        shopName:  this.name,
+        checkedAt: Date.now(),
+        colorLabel: colorLabel || undefined,
+        tags:      tags.length ? tags : undefined,
+      };
+    });
   }
 }

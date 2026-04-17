@@ -1,4 +1,7 @@
 /**
+ * @deprecated 運用ポリシー: SerpAPI / Google Shopping 呼び出しはコスト削減のため
+ *   本番の search / monitor パスからは外しました。ファイルは後方互換のため残置。
+ *
  * SerpAPI Google Shopping — 第3の目（V11強化版）
  *
  * 「楽天・Yahoo の外側にある在庫を見る」

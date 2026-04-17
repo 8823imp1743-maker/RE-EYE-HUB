@@ -26,7 +26,6 @@
 | UPSTASH_REDIS_REST_TOKEN | Redis認証 |
 | ONESIGNAL_APP_ID | プッシュ通知 |
 | ONESIGNAL_API_KEY | 通知APIキー |
-| GEMINI_API_KEY | AIチャット用 |
 
 ## 4. 避けるべきバグ
 - 通知の重複: `lib/utils.js` のハッシュ生成と Redis チェックを必ず通すこと。

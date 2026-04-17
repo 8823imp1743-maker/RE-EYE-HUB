@@ -165,30 +165,44 @@ export function extractColorKeywords(keyword) {
  *   true  = 色条件を満たす（通過）
  *   false = 色が欠けている（廃棄）
  */
-export function validateColorMatch(itemTitle, keyword) {
-  const colors = extractColorKeywords(keyword);
-  if (colors.length === 0) return true; // 色指定なし → 条件なし → 通過
+/**
+ * タイトル・ショップ色ラベル・タグを結合した検索用文字列
+ * @param {{ title?: string, colorLabel?: string, tags?: string[] }} item
+ */
+export function buildColorMatchBlob(item) {
+  const parts = [
+    item.title,
+    item.colorLabel,
+    ...(Array.isArray(item.tags) ? item.tags : []),
+  ].filter(Boolean);
+  return parts.join(' ').toLowerCase();
+}
 
-  const titleLower = (itemTitle || '').toLowerCase();
+/**
+ * 色指定ありのとき、タイトル／色ラベル／タグのいずれかに色（同義語）が含まれるか
+ */
+export function validateColorMatchForItem(item, keyword) {
+  const colors = extractColorKeywords(keyword);
+  if (colors.length === 0) return true;
+
+  const blob = buildColorMatchBlob(item);
 
   for (const c of colors) {
-    // 同義語リストを構築（自分自身 + 日英対訳）
     const synonyms = [c, ...(COLOR_CROSS_MAP[c] || [])];
-
-    // 1つでもタイトルに含まれれば色条件を満たす
-    const found = synonyms.some(s => titleLower.includes(s.toLowerCase()));
-
+    const found = synonyms.some(s => blob.includes(String(s).toLowerCase()));
     if (!found) {
       console.log(
-        `[color-filter] 色不一致: "${c}"(同義語:${synonyms.slice(1).join('/')})` +
-        ` がタイトルに存在しない → 廃棄`
+        `[color-filter] 色不一致: "${c}" → blob先頭="${blob.slice(0, 80)}..."`
       );
-      console.log(`[color-filter]   keyword="${keyword.slice(0,50)}" title="${(itemTitle||'').slice(0,60)}"`);
       return false;
     }
   }
-
   return true;
+}
+
+/** @deprecated 互換: タイトルのみ */
+export function validateColorMatch(itemTitle, keyword) {
+  return validateColorMatchForItem({ title: itemTitle }, keyword);
 }
 
 /**
@@ -229,13 +243,13 @@ export function expandColorQuery(keyword, maxSynonymsPerColor = 2) {
  */
 export function filterByColor(items, keyword) {
   const colors = extractColorKeywords(keyword);
-  if (colors.length === 0) return items; // 色指定なし → フィルタースキップ
+  if (colors.length === 0) return items;
 
-  console.log(`[color-filter] 色フィルター適用: ${colors.join(', ')}`);
+  console.log(`[color-filter] 色フィルター適用（タイトル+色表示+タグ）: ${colors.join(', ')}`);
   const before = items.length;
-  const result = items.filter(item => validateColorMatch(item.title, keyword));
+  const result = items.filter(item => validateColorMatchForItem(item, keyword));
   if (result.length < before) {
-    console.log(`[color-filter] ${before - result.length}件の色不一致を廃棄 (${before}→${result.length}件)`);
+    console.log(`[color-filter] ${before - result.length}件の色不一致を除外 (${before}→${result.length}件)`);
   }
   return result;
 }

@@ -12,11 +12,11 @@
  *   { newItems, allItems, errors, checkedAt }
  *
  * データフロー:
- *   searchAll() → seenチェック(Redis) → filters.js → OneSignal通知 → Redisキャッシュ保存
+ *   searchAllCached()（楽天・Yahoo） → seenチェック(Redis) → …
  */
 
 import { createHash } from 'crypto';
-import { searchAll }  from '../lib/shop-adapters/index.js';
+import { searchAllCached } from '../lib/shop-search-cache.js';
 import { getRedis, markSeen, isSeen } from '../lib/redis.js';
 import { shouldExclude, getNotificationCategory } from '../lib/filters.js';
 import { sendOneSignalNotification } from '../lib/notification.js';
@@ -57,9 +57,10 @@ export default async function handler(req, res) {
   const maxResults = PLAN_MAX_RESULTS[plan] || 5;
 
   // 1. 全アクティブショップで並列検索
-  const { items: allItems, errors } = await searchAll(keyword, {
+  const { items: allItems, errors } = await searchAllCached(keyword, {
     maxResults,
-    inStockOnly: false, // 在庫なしも取得（変化を検出するため）
+    inStockOnly: false,
+    cacheTtlSec: CACHE_TTL[plan] || 60,
   });
 
   // 2. 各アイテムの seenチェック → 未見のみ抽出

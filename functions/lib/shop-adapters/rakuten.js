@@ -58,8 +58,17 @@ export class RakutenAdapter extends ShopAdapter {
 
     return items.map(({ Item }) => {
       const title = Item.itemName || '';
-      // 型番を抽出してフィールドに保持（横断バリデーターが後続で使用）
       const modelNumbers = extractModelNumbers(title);
+      const tagList = Item.tagList || [];
+      const tags = tagList.map(t => t.tagName || t.name || '').filter(Boolean);
+      let colorLabel = '';
+      if (Item.colorName) colorLabel = String(Item.colorName);
+      else if (tags.length) {
+        const colorish = tags.find(t =>
+          /色|カラー|color|ホワイト|ブラック|ネイビー|レッド|ブルー|白|黒|赤|青/i.test(t)
+        );
+        if (colorish) colorLabel = colorish;
+      }
       return {
         sourceId:     this.id,
         itemId:       String(Item.itemCode || Item.itemUrl || Item.itemName),
@@ -70,7 +79,8 @@ export class RakutenAdapter extends ShopAdapter {
         imageUrl:     Item.mediumImageUrls?.[0]?.imageUrl || '',
         shopName:     this.name,
         checkedAt:    Date.now(),
-        // 型番（CW2288-111等） — 横断バリデーション用
+        colorLabel,
+        tags:         tags.length ? tags : undefined,
         modelNumbers: modelNumbers.length > 0 ? modelNumbers : undefined,
       };
     });

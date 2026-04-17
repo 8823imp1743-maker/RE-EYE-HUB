@@ -1330,6 +1330,7 @@
                         </span>
                     </div>
                     <div class="meta-11px" style="color:rgba(247,231,206,0.55);margin-top:5px;letter-spacing:0.6px;line-height:1.5;">
+                        現在は<strong style="color:var(--champagne-gold);">楽天市場・Yahoo!ショッピング</strong>の入荷・在庫を最優先で監視しています（コスト最適化のため他モール横断検索は行いません）。<br>
                         ※ 色まで指定したい方は品番（ハイフン以降）まで入力してください<br>
                         <span style="color:rgba(155,89,182,0.7);">例：CW2288<strong style="color:var(--amethyst);">-111</strong>（-111 まで入力で白に固定）</span>
                     </div>
@@ -1433,6 +1434,9 @@
                 <div id="settings-watch-list">
                     <div id="settings-plan-status" class="watch-plan-status"></div>
                     <span id="current-interval-text" class="meta-11px" style="color:var(--amethyst);opacity:1;font-weight:bold;white-space:nowrap;display:none;"></span>
+                    <span class="gold-label" style="font-size:11px;margin-top:12px;display:block;">見守りリクエスト（在庫・再入荷）</span>
+                    <p class="meta-11px" style="color:var(--amethyst);opacity:0.85;margin:4px 0 6px;letter-spacing:0.5px;">プランに応じた間隔でサーバが監視します。対象は楽天・Yahoo!ショッピングに限定し、重複検索はキャッシュで抑制しています。性別・サイズはユーザー設定と検索キーワードから表示されます。</p>
+                    <div id="settings-stock-requests" class="settings-stock-requests"></div>
                 </div>
                 <div id="settings-trend-watching" style="display: none; margin-top: var(--gap-11);">
                     <span class="gold-label" style="font-size:11px;margin-bottom:6px;">トレンド探索</span>
@@ -1495,10 +1499,10 @@
         <div class="screen-content">
             <div class="transparent-box">
                 <span class="gold-label">ユーザー交流</span>
-                <textarea id="chat-input" placeholder="最新情報を共有しましょう"></textarea>
-                <button class="btn-purple" onclick="postChat()">情報を投稿する</button>
+                <p class="meta-11px" style="margin:12px 0;line-height:1.6;">
+                    チャット機能は現在メンテナンス中です。再開までお待ちください。
+                </p>
             </div>
-            <div id="chat-error-msg" class="error-text-11px" style="text-align:center;">ガイドラインに沿わない内容が含まれています</div>
         </div>
     </div>
 
@@ -2055,7 +2059,7 @@ function show(id, btn) {
     btn.classList.add('active');
     if (id === 'history')  { renderHistory(historyItems); syncWatchStatus(); }
     if (id === 'insight')  renderTrendItems(document.getElementById('insight-search')?.value);
-    if (id === 'settings') renderSettingsTrendWatching();
+    if (id === 'settings') { renderSettingsTrendWatching(); renderStockMonitorRequests(); syncWatchStatus(); }
     updateAdVisibility();
     requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); });
 }
@@ -2194,6 +2198,10 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
         const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
         db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
         hdr.appendChild(db); card.appendChild(hdr);
+        if(item.watchMeta){
+            const wm=document.createElement('div'); wm.className='item-meta history-meta-row';
+            wm.style.opacity='0.9'; wm.textContent=item.watchMeta; card.appendChild(wm);
+        }
         const meta=document.createElement('div'); meta.className='item-meta history-meta-row';
         meta.textContent=`${item.time} / ${item.shop} ｜ 最終確認：${formatLastChecked(item.lastCheckedAt)}`;
         card.appendChild(meta); return card;
@@ -2212,6 +2220,10 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
         const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
         db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
         hdr.appendChild(db); card.appendChild(hdr);
+        if(item.watchMeta){
+            const wm=document.createElement('div'); wm.className='item-meta history-meta-row';
+            wm.style.opacity='0.9'; wm.textContent=item.watchMeta; card.appendChild(wm);
+        }
         const meta=document.createElement('div'); meta.className='item-meta history-meta-row';
         meta.textContent=`${item.time} / ${item.shop}`; card.appendChild(meta);
         if(item.overListPrice){
@@ -2224,6 +2236,7 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
     if(notifiedItems.length>0){
         container.appendChild(mkSection('NOTIFIED','gold-label','通知済み',notifiedItems,(item)=>{
             const card=document.createElement('div'); card.className='history-card history-card-notified';
+            if(item.url && item.kind==='stock'){ card.style.cursor='pointer'; card.onclick=()=>openSafeUrl(item.url); }
             const hdr=document.createElement('div'); hdr.className='history-card-header';
             const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
             cb.checked=_editSelected.has(String(item.id));
@@ -2236,7 +2249,16 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
             const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
             db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
             hdr.appendChild(db); card.appendChild(hdr);
-            if(item.releaseLabel){
+            if(item.watchMeta){
+                const wm=document.createElement('div'); wm.className='item-meta history-meta-row';
+                wm.style.opacity='0.9'; wm.textContent=item.watchMeta; card.appendChild(wm);
+            }
+            if(item.kind==='stock' && (item.price||item.shop)){
+                const pm=document.createElement('div'); pm.className='item-meta history-meta-row';
+                pm.textContent=(item.price?('¥'+Number(item.price).toLocaleString()+' ｜ '):'')+(item.shop||'');
+                card.appendChild(pm);
+            }
+            if(item.releaseLabel && item.kind!=='stock'){
                 const cb2=document.createElement('button'); cb2.className='intel-cal-btn';
                 cb2.textContent='＋ カレンダーに登録';
                 cb2.onclick=(e)=>{e.stopPropagation();openCalModal(item.title,item.releaseLabel);};
@@ -2474,6 +2496,59 @@ function renderSettingsTrendWatching() {
     else if(currentPlan==='VIP') lbl='常時稼働（Jitter付き）';
     else lbl=night?'60分間隔（夜間）':'15分間隔';
     l.innerHTML=w.map(t=>'<div class="watch-item-row"><span class="watch-item-name">'+t.title+'</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● '+lbl+'</span></div>').join('');
+}
+
+async function renderStockMonitorRequests(){
+    const container=document.getElementById('settings-stock-requests');
+    if(!container) return;
+    container.innerHTML='<p class="meta-11px" style="color:var(--amethyst);opacity:0.75;">読み込み中...</p>';
+    try{
+        const res=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
+        if(!res.ok) throw new Error('HTTP');
+        const data=await res.json();
+        const items=data.items||[];
+        container.innerHTML='';
+        if(items.length===0){
+            const em=document.createElement('p');
+            em.className='trend-intro-11px';
+            em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:8px 0;';
+            em.textContent='在庫の見守りリクエストはまだありません';
+            container.appendChild(em);
+            return;
+        }
+        const night=isNightJP();
+        let planLbl='';
+        if(currentPlan==='FREE') planLbl=night?'夜間スリープ':'60分間隔';
+        else if(currentPlan==='STANDARD') planLbl=night?'夜間60分':'15分間隔';
+        else if(currentPlan==='PRO') planLbl=night?'夜間60分':'5分間隔';
+        else if(currentPlan==='VIP') planLbl='5分間隔・常時';
+        items.forEach(sv=>{
+            const row=document.createElement('div');
+            row.className='watch-item-row';
+            row.style.cssText='display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:8px 0;border-bottom:1px solid rgba(247,231,206,0.08);';
+            const local=historyItems.find(h=>
+                (h.itemId && String(h.itemId)===String(sv.itemId) && h.sourceId===sv.sourceId) ||
+                (h.keyword && h.keyword===sv.keyword)
+            );
+            const meta=local&&local.watchMeta?local.watchMeta:'';
+            const t1=document.createElement('div');
+            t1.className='watch-item-name';
+            t1.textContent=sv.title||sv.keyword||'';
+            const t2=document.createElement('div');
+            t2.className='meta-11px';
+            t2.style.color='var(--amethyst)';
+            t2.style.opacity='0.95';
+            t2.textContent=meta||'(性別・服/靴サイズはユーザー設定とキーワードから反映)';
+            const t3=document.createElement('div');
+            t3.className='meta-11px';
+            const st=sv.status==='ON'?'● 購入可能':'● 売り切れ・監視中';
+            t3.textContent=st+' ｜ '+planLbl+' ｜ 最終確認 '+formatLastChecked(sv.lastCheckedAt);
+            row.appendChild(t1); row.appendChild(t2); row.appendChild(t3);
+            container.appendChild(row);
+        });
+    }catch(e){
+        container.innerHTML='<p class="meta-11px" style="color:rgba(255,120,120,0.85);">一覧を取得できませんでした（ネットワークまたはAPI）</p>';
+    }
 }
 
 // ── 削除操作 ──────────────────────────────────────────────────
@@ -2792,6 +2867,28 @@ function buildSizeAwareKeyword(keyword,forChild){
     return kw.trim();
 }
 
+let _lastStockSearchContext = { keyword: '', forChild: false, displayKw: '' };
+function buildWatchMetaLine(forChild) {
+    const raw = (_lastStockSearchContext.keyword || '').trim();
+    if (!raw) return '';
+    const kl = raw.toLowerCase();
+    const isShoe = SHOE_KW.some(w => kl.includes(w.toLowerCase()));
+    const isCloth = CLOTH_KW.some(w => kl.includes(w.toLowerCase()));
+    const parts = [];
+    if (forChild) {
+        const cg = userProfile.childGender === 'girl' ? '女の子' : (userProfile.childGender === 'boy' ? '男の子' : '');
+        if (cg) parts.push(cg);
+        if (isCloth && userProfile.childClothSize) parts.push('服：' + userProfile.childClothSize);
+        if (isShoe && userProfile.childShoeSize) parts.push('靴：' + userProfile.childShoeSize + 'cm');
+    } else {
+        if (userProfile.gender === 'male') parts.push('男性');
+        else if (userProfile.gender === 'female') parts.push('女性');
+        if (isCloth && userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
+        if (isShoe && userProfile.shoeSize) parts.push('靴：' + userProfile.shoeSize + 'cm');
+    }
+    return parts.length ? parts.join(' / ') : '';
+}
+
 // ── 懸賞・先取り ──────────────────────────────────────────────
 function selectInsightCampaignChip(word){
     document.querySelectorAll('.campaign-chip').forEach(c=>c.classList.toggle('selected',c.dataset.word===word));
@@ -2856,7 +2953,9 @@ function scoutAndShow(){
 
 // ── 在庫検索（デザイン維持・ロジック直結版） ────────────────────────────────
 async function runStockSearch(keyword, forChild) {
+    _lastStockSearchContext = { keyword: keyword, forChild: !!forChild, displayKw: '' };
     const sk = buildSizeAwareKeyword(keyword, forChild);
+    _lastStockSearchContext.displayKw = sk;
     const ir = document.getElementById('home-inline-results');
     const list = document.getElementById('home-inline-list');
     const hdr = document.getElementById('home-slot-header');
@@ -2872,19 +2971,39 @@ async function runStockSearch(keyword, forChild) {
         const res = await fetch(API_BASE + '/api/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keyword: sk, userId: getUserId() })
+            body: JSON.stringify({ keyword: sk, userId: getUserId(), forChild: !!forChild })
         });
         const data = await res.json();
+        if (data.debug) {
+            console.log('[RE-EYE search] 楽天・Yahoo 検索デバッグ', {
+                apiKeywords: data.debug.searchKeywordsTried,
+                color条件: data.debug.colorKeywords,
+                色フィルタ厳格: data.debug.colorFilterStrict,
+                trimmed: data.debug.trimmed
+            });
+        } else {
+            console.log('[RE-EYE search] keyword=', sk, 'normalized=', data.normalizedKeyword);
+        }
 
         if (!data.found || data.items.length === 0) {
-            list.innerHTML = `
-                <div class="stock-not-found">
-                    <p>現在、主要ショップに在庫はありません。</p>
-                    <button class="btn-purple" style="margin-top:10px;" 
-                        onclick="watchStockItem({itemId:'manual_${Date.now()}', sourceId:'manual', title:'${data.normalizedKeyword || sk}'}, '${data.normalizedKeyword || sk}', this)">
-                        この条件で「再入荷」を監視する
-                    </button>
-                </div>`;
+            list.innerHTML = '';
+            const nf = document.createElement('div');
+            nf.className = 'stock-not-found';
+            const p = document.createElement('p');
+            p.textContent = '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。';
+            const btn = document.createElement('button');
+            btn.className = 'btn-purple';
+            btn.style.marginTop = '10px';
+            btn.textContent = 'この条件で「再入荷」を監視する';
+            const manualId = 'manual_' + Date.now();
+            const dispTitle = data.normalizedKeyword || sk;
+            btn.onclick = () => watchStockItem({
+                itemId: manualId, sourceId: 'manual', title: dispTitle,
+                price: 0, available: false, url: '', shopName: 'キーワード監視'
+            }, sk, btn);
+            nf.appendChild(p);
+            nf.appendChild(btn);
+            list.appendChild(nf);
             if (ir) ir.style.display = 'block';
             return;
         }
@@ -2916,13 +3035,29 @@ function renderStockResults(items, keyword, displayKw, apiErrors) {
         const t = document.createElement('div');
         t.className = 'item-title';
         t.textContent = item.title || keyword;
-        
+        const wm = buildWatchMetaLine(_lastStockSearchContext.forChild);
+        if (wm) {
+            const wx = document.createElement('div');
+            wx.className = 'meta-11px';
+            wx.style.cssText = 'color:var(--amethyst);opacity:0.95;margin-top:4px;';
+            wx.textContent = wm;
+            card.appendChild(t);
+            card.appendChild(wx);
+        } else {
+            card.appendChild(t);
+        }
         const m = document.createElement('div');
         m.className = 'stock-shop-meta';
         m.textContent = `${item.shopName || ''}${item.price ? '  ¥' + Number(item.price).toLocaleString() : ''}`;
-        
-        card.appendChild(t);
         card.appendChild(m);
+        const colorBits = [item.colorLabel, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean);
+        if (colorBits.length) {
+            const col = document.createElement('div');
+            col.className = 'meta-11px';
+            col.style.cssText = 'color:rgba(247,231,206,0.82);margin-top:6px;line-height:1.45;';
+            col.textContent = '色・タグ: ' + colorBits.join(' / ');
+            card.appendChild(col);
+        }
 
         const actionArea = document.createElement('div');
         actionArea.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px;';
@@ -2968,7 +3103,8 @@ async function watchStockItem(item,keyword,btn){
                 userId: getUserId(),
                 url: item.url || '',
                 title: item.title || keyword,
-                price: item.price || 0
+                price: item.price || 0,
+                plan: currentPlan
             })
         });
 
@@ -2985,18 +3121,26 @@ async function watchStockItem(item,keyword,btn){
             }
 
             // 履歴（History）にも即座に反映して「安心感」を出す
+            const iid = String(item.itemId || ('k_' + Date.now()));
+            const sid = item.sourceId || 'unknown';
             const entry = {
-                id: item.itemId || Date.now(),
+                id: iid,
+                itemId: item.itemId,
+                sourceId: sid,
+                keyword: keyword,
                 title: item.title || keyword,
                 status: 'OFF',
                 shop: item.shopName || '監視中',
                 price: item.price || 0,
                 url: item.url || '',
                 time: formatDateSec(Date.now()),
-                lastCheckedAt: Date.now()
+                lastCheckedAt: Date.now(),
+                kind: 'stock',
+                watchMeta: buildWatchMetaLine(typeof _lastStockSearchContext.forChild === 'boolean' ? _lastStockSearchContext.forChild : false)
             };
             historyItems.unshift(entry);
             _persistHistory();
+            renderStockMonitorRequests();
 
             // 1秒後に履歴画面へ飛ばして、登録されたことを確認させる
             setTimeout(() => {
@@ -3005,7 +3149,10 @@ async function watchStockItem(item,keyword,btn){
             }, 800);
 
         } else {
-            throw new Error('登録失敗');
+            const errText = await res.text();
+            console.error('[monitor] 登録失敗 HTTP ' + res.status + ':', errText);
+            alert('監視登録エラー (HTTP ' + res.status + ')\n\n' + errText.slice(0, 400));
+            throw new Error('登録失敗 ' + res.status);
         }
     } catch (e) {
         if (btn) {
@@ -3021,10 +3168,58 @@ async function syncWatchStatus(){
         const data=await res.json();
         let changed=false;
         (data.items||[]).forEach(sv=>{
-            const local=historyItems.find(h=>(h.itemId&&String(h.itemId)===String(sv.itemId)&&h.sourceId===sv.sourceId)||(h.keyword===sv.keyword));
-            if(local&&local.status!==sv.status){local.status=sv.status;local.lastCheckedAt=sv.lastCheckedAt;if(sv.url)local.url=sv.url;changed=true;}
+            const local=historyItems.find(h=>
+                (h.itemId && String(h.itemId)===String(sv.itemId) && h.sourceId===sv.sourceId) ||
+                (h.keyword && h.keyword===sv.keyword) ||
+                (String(h.id)===String(sv.itemId) && h.sourceId===sv.sourceId)
+            );
+            if(!local) return;
+            const prev = local.status;
+            if(prev!==sv.status){
+                local.status=sv.status;
+                local.lastCheckedAt=sv.lastCheckedAt||Date.now();
+                if(sv.url) local.url=sv.url;
+                if(sv.price!=null) local.price=sv.price;
+                changed=true;
+                if(local.kind==='stock'||local.keyword){
+                    if(prev==='OFF'&&sv.status==='ON'){
+                        historyItems.unshift({
+                            id:'notif-stock-'+Date.now(),
+                            title:local.title||sv.title||sv.keyword,
+                            status:'NOTIFIED',
+                            releaseLabel:'購入可能（在庫あり）',
+                            kind:'stock',
+                            shop:local.shop||'監視',
+                            time:formatDateSec(Date.now()),
+                            url:sv.url||local.url||'',
+                            price:sv.price||local.price||0,
+                            lastCheckedAt:Date.now(),
+                            watchMeta:local.watchMeta
+                        });
+                        changed=true;
+                        try{PushHybrid.fireNotification('在庫あり：'+(local.title||''),'タップで購入ページを開けます');}catch(e){}
+                    } else if(prev==='ON'&&sv.status==='OFF'){
+                        historyItems.unshift({
+                            id:'notif-sold-'+Date.now(),
+                            title:local.title||sv.title||sv.keyword,
+                            status:'NOTIFIED',
+                            releaseLabel:'売り切れに戻りました',
+                            kind:'stock',
+                            shop:local.shop||'監視',
+                            time:formatDateSec(Date.now()),
+                            url:sv.url||local.url||'',
+                            price:sv.price||local.price||0,
+                            lastCheckedAt:Date.now(),
+                            watchMeta:local.watchMeta
+                        });
+                        changed=true;
+                    }
+                }
+            }
         });
         if(changed){_persistHistory();renderHistory(historyItems);}
+        const ss=document.getElementById('settings');
+        if(ss&&ss.classList.contains('active')) renderStockMonitorRequests();
     }catch(e){}
 }
 function executeMonitor(keyword,mode){
@@ -3041,23 +3236,18 @@ async function _startMonitorCore(val){
     startPollingTimer(val);
 }
 async function postChat(){
-    const input=document.getElementById('chat-input');
-    const err=document.getElementById('chat-error-msg');
-    const val=input?input.value.trim():'';
-    if(!val){alert('内容を入力してください');return;}
-    if(restrictedKeywords.some(ng=>val.includes(ng))){err.style.display='block';return;}
-    err.style.display='none';
-    try{
-        const res=await fetch(API_BASE + '/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:val})});
-        if(!res.ok)throw new Error('通信エラー');
-        if(input)input.value=''; alert('投稿しました。');
-    }catch(e){err.textContent='送信に失敗しました。';err.style.display='block';}
+    alert('ユーザー交流チャットは現在メンテナンス中です。');
 }
 function selectPlan(plan,el){
     currentPlan=plan;
     el.parentElement.querySelectorAll('.category-item').forEach(p=>p.classList.remove('selected'));
     el.classList.add('selected'); updateAdVisibility(); updateNightModeStatus();
     if(document.getElementById('settings')?.classList.contains('active'))renderSettingsTrendWatching();
+    fetch(API_BASE + '/api/monitor',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ syncPlanOnly: true, userId: getUserId(), plan })
+    }).catch(()=>{});
     alert(`プランを ${plan} に同期しました。`);
 }
 
@@ -3307,6 +3497,8 @@ window.onload=()=>{
 
     // ── トレンドデータをクラウドから復元（localStorage → Redis 優先） ──
     loadTrendFromServer();
+
+    setInterval(()=>{ syncWatchStatus(); }, 120000);
 
     // ── 10秒待機（setTimeout(runIntelScout,10000)）は完全抹殺済み ──
     // スカウトは検索実行時（scoutAndShow/triggerInsightScout）にのみ発火する

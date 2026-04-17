@@ -22,31 +22,22 @@ export const STOCK_CONFIG = {
 
 // ── Scout ────────────────────────────────────────────────────
 //   intervalSec: スカウト巡回間隔（秒）
-//   mode       : AIの思考レベル
+//   mode       : 巡回深度（ルールベース・外部 AI 不使用）
 export const SCOUT_CONFIG = {
   FREE:     { intervalSec: 86400, mode: 'summary'  }, // 1日1回
   STANDARD: { intervalSec: 21600, mode: 'rss'      }, // 6時間
-  PRO:      { intervalSec: 21600, mode: 'ai_deep'  }, // 6時間 + AI深掘り
+  PRO:      { intervalSec: 21600, mode: 'rss_deep' }, // 6時間・深めのキーワード展開
   VIP:      { intervalSec:  7200, mode: 'vip_full' }, // 2時間 + 深夜フル
 };
 
 // ── Trend ────────────────────────────────────────────────────
-//   slots : 同時監視枠数
-//   aiMode: AIの推論モード
+//   slots    : 同時監視枠数
+//   heuristic: 表示用ラベル（フロント／将来のヒューリスティック用）
 export const TREND_CONFIG = {
-  FREE:     { slots:  3, aiMode: 'confirmed_only'  }, // 確定予約情報のみ
-  STANDARD: { slots:  5, aiMode: 'flag_priority'   }, // 予約フラグ重点捜査
-  PRO:      { slots:  5, aiMode: 'ambiguous_parse' }, // 「○月発売」曖昧解析
-  VIP:      { slots: 10, aiMode: 'future_predict'  }, // 解禁日の未来予測
-};
-
-// ── Gemini モデル ─────────────────────────────────────────────
-//   VIP は思考速度・精度ともに最上位モデルを使用
-export const GEMINI_MODEL = {
-  FREE:     'gemini-1.5-flash',
-  STANDARD: 'gemini-1.5-flash',
-  PRO:      'gemini-2.0-flash',
-  VIP:      'gemini-2.0-flash',
+  FREE:     { slots:  3, heuristic: 'confirmed_only'  },
+  STANDARD: { slots:  5, heuristic: 'flag_priority'   },
+  PRO:      { slots:  5, heuristic: 'ambiguous_parse' },
+  VIP:      { slots: 10, heuristic: 'future_predict'  },
 };
 
 // ── ヘルパー ──────────────────────────────────────────────────
@@ -93,13 +84,6 @@ export function getStockIntervalForPlan(plan, nowHour = new Date().getHours()) {
     intervalSec: isDay ? cfg.dayInterval : cfg.nightInterval,
     jitterSec:   cfg.jitterSec,
   };
-}
-
-/**
- * 現プランの Gemini モデル名を返す。
- */
-export function getGeminiModel() {
-  return GEMINI_MODEL[CURRENT_PLAN] ?? GEMINI_MODEL.FREE;
 }
 
 /**
