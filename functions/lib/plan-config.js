@@ -10,24 +10,28 @@
 export const CURRENT_PLAN = 'VIP';
 
 // ── Stock Watch ─────────────────────────────────────────────
+//   テスト中: インターバル実質無効（checkAllWatched は elapsed >= 0 で常に対象）
 //   dayInterval  : 昼間（08:00–19:00）の監視間隔（秒）
 //   nightInterval: 夜間の監視間隔（秒）null = スキップ
 //   jitterSec    : ±揺らぎ秒数（0 = 揺らぎなし）
+/** 在庫監視のベース間隔（秒）。0 のときプラン別も 0 扱いで待ちなし。 */
+export const DEFAULT_MONITOR_INTERVAL_SEC = 0;
+
 export const STOCK_CONFIG = {
-  FREE:     { dayInterval: 3600, nightInterval: null, jitterSec: 0  },
-  STANDARD: { dayInterval:  900, nightInterval: 3600, jitterSec: 0  },
-  PRO:      { dayInterval:  300, nightInterval: 3600, jitterSec: 60 },
-  VIP:      { dayInterval:  300, nightInterval:  300, jitterSec: 60 }, // 24h 不眠不休
+  FREE:     { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
+  STANDARD: { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
+  PRO:      { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
+  VIP:      { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
 };
 
 // ── Scout ────────────────────────────────────────────────────
 //   intervalSec: スカウト巡回間隔（秒）
 //   mode       : 巡回深度（ルールベース・外部 AI 不使用）
 export const SCOUT_CONFIG = {
-  FREE:     { intervalSec: 86400, mode: 'summary'  }, // 1日1回
-  STANDARD: { intervalSec: 21600, mode: 'rss'      }, // 6時間
-  PRO:      { intervalSec: 21600, mode: 'rss_deep' }, // 6時間・深めのキーワード展開
-  VIP:      { intervalSec:  7200, mode: 'vip_full' }, // 2時間 + 深夜フル
+  FREE:     { intervalSec: 0, mode: 'summary' },
+  STANDARD: { intervalSec: 0, mode: 'rss' },
+  PRO:      { intervalSec: 0, mode: 'rss_deep' },
+  VIP:      { intervalSec: 0, mode: 'vip_full' },
 };
 
 // ── Trend ────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
  */
 import { ShopAdapter } from './base.js';
 import { withRetry } from '../retry.js';
+import { fetchWithTimeout } from '../http-fetch.js';
 
 const API_BASE = 'https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch';
 
@@ -13,7 +14,7 @@ export class YahooAdapter extends ShopAdapter {
   isConfigured() {
     return !!process.env.YAHOO_APP_ID;
   }
-
+  
   async search(keyword, options = {}) {
     const { maxResults = 20, inStockOnly = false } = options;
 
@@ -35,11 +36,15 @@ export class YahooAdapter extends ShopAdapter {
       ...(inStockOnly ? { in_stock: 'true' } : {}),
     });
 
+    const cli = process.env.RE_EYE_CLI === '1' || process.env.RE_EYE_CLI === 'true';
+    if (cli) {
+      const q = refinedKeyword.slice(0, 80);
+      console.log(`[run-cli] Yahoo!ショッピングの商品を検索中… 「${q}${refinedKeyword.length > 80 ? '…' : ''}」`);
+    }
+
     const json = await withRetry(
-      () => fetch(`${API_BASE}?${params.toString()}`, {
-        headers: { 'Accept': 'application/json' },
-      }),
-      { label: 'Yahoo!API', maxRetries: 3, baseDelayMs: 2000 }
+      () => fetchWithTimeout(`${API_BASE}?${params.toString()}`, {}, 14000),
+      { label: 'Yahoo!API', maxRetries: 2, baseDelayMs: 400 }
     );
     const hits = json.hits || [];
     console.log(`[Reporting Officer] Yahooで ${hits.length} 件ヒット。`);
@@ -50,6 +55,9 @@ export class YahooAdapter extends ShopAdapter {
       if (brandName) tags.push(String(brandName));
       if (item.genreCategory?.name) tags.push(String(item.genreCategory.name));
       const colorLabel = item.colorName || item.color || '';
+      const description =
+        typeof item.description === 'string' ? item.description.slice(0, 4000) : '';
+      const headLine = typeof item.headLine === 'string' ? item.headLine : '';
       return {
         sourceId:  this.id,
         itemId:    String(item.code || item.url || item.name),
@@ -62,6 +70,9 @@ export class YahooAdapter extends ShopAdapter {
         checkedAt: Date.now(),
         colorLabel: colorLabel || undefined,
         tags:      tags.length ? tags : undefined,
+        /** バリエーション表記や型番が商品名以外に載ることが多い */
+        headLine:  headLine || undefined,
+        description: description || undefined,
       };
     });
   }

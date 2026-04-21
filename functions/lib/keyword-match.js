@@ -2,7 +2,7 @@
  * 商品名キーワードマッチ（ルールベース・AI 不使用）
  */
 
-import { extractColorKeywords } from './color-filter.js';
+import { extractColorKeywords, buildColorMatchBlob } from './color-filter.js';
 
 /**
  * キーワードから色語を除いた「商品名コア」文字列を返す（空白正規化）
@@ -34,33 +34,34 @@ export function stripSizeTokens(keyword) {
  * - 色指定は color-filter 側で別処理
  * - コア語のいずれかがタイトルに含まれれば通過、またはタイトルがコア全体を含む
  *
- * @param {{ title?: string }} item
+ * @param {{ title?: string }} item 楽天・Yahoo 正規化アイテム（description 等あればマッチに利用）
  * @param {string} keyword ユーザーキーワード（サイズ・色含み可）
  * @param {string} [normalizedBrand] normalizeBrand の結果
  */
 export function matchesProductKeyword(item, keyword, normalizedBrand) {
-  const title = (item.title || '').toLowerCase();
-  if (!title) return false;
+  const blob = buildColorMatchBlob(item);
+  const text = blob || (item.title || '').toLowerCase();
+  if (!text.trim()) return false;
 
   let core = stripColorWordsFromKeyword(keyword);
   core = stripSizeTokens(core);
   const brandCore = normalizedBrand ? stripColorWordsFromKeyword(normalizedBrand) : '';
 
-  if (core.length >= 2 && title.includes(core.toLowerCase())) return true;
-  if (brandCore.length >= 2 && title.includes(brandCore.toLowerCase())) return true;
+  if (core.length >= 2 && text.includes(core.toLowerCase())) return true;
+  if (brandCore.length >= 2 && text.includes(brandCore.toLowerCase())) return true;
 
   const tokens = core.split(/[\s　]+/).filter(t => t.length >= 2);
   if (tokens.length === 0) {
     const fallback = keyword.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (fallback.length >= 2 && title.includes(fallback)) return true;
+    if (fallback.length >= 2 && text.includes(fallback)) return true;
     return true;
   }
-  const hitCount = tokens.filter(tok => title.includes(tok.toLowerCase())).length;
+  const hitCount = tokens.filter(tok => text.includes(tok.toLowerCase())).length;
   if (hitCount >= 1) return true;
 
   if (normalizedBrand) {
     const btoks = normalizedBrand.split(/[\s　]+/).filter(t => t.length >= 2);
-    if (btoks.some(t => title.includes(t.toLowerCase()))) return true;
+    if (btoks.some(t => text.includes(t.toLowerCase()))) return true;
   }
 
   return false;

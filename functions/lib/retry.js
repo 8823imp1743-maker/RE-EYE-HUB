@@ -24,10 +24,11 @@ export async function withRetry(fetchFn, opts = {}) {
     try {
       res = await fetchFn();
     } catch (e) {
-      // ネットワークエラー → リトライ
+      // ネットワークエラー・Abort（タイムアウト）→ リトライ
+      const msg = e?.name === 'AbortError' ? 'timeout/abort' : e.message;
       if (attempt === maxRetries) throw e;
       const wait = baseDelayMs * 2 ** (attempt - 1);
-      console.warn(`[retry] ${label} ネットワークエラー (試行${attempt}/${maxRetries}) → ${wait}ms 後リトライ: ${e.message}`);
+      console.warn(`[retry] ${label} ネットワークエラー (試行${attempt}/${maxRetries}) → ${wait}ms 後リトライ: ${msg}`);
       await delay(wait);
       continue;
     }

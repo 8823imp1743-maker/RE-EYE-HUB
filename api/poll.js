@@ -1,4 +1,4 @@
-import monitorHandler from '../functions/api/monitor.js';
+import pollHandler from '../functions/api/poll.js';
 import { attachExpressLikeResponse, ensureJsonBody, ensureQuery } from './_compat.js';
 
 function applyCors(res) {
@@ -20,19 +20,19 @@ export default async function handler(req, res) {
   try {
     ensureQuery(req);
     await ensureJsonBody(req);
-    return await monitorHandler(req, res);
+    return await pollHandler(req, res);
   } catch (e) {
-    console.error('[api/monitor]', e);
+    console.error('[api/poll]', e);
     if (res.writableEnded) return;
-    res.statusCode = 503;
+    res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.end(
       JSON.stringify({
-        error:
-          'サーバーが一時的に応答できません（データストア接続）。しばらくしてから再度お試しください。',
-        code: 'WRAPPER_ERROR',
-        detail: e?.message || String(e),
-        items: [],
+        error: e?.message || 'internal error',
+        newItems: [],
+        allItems: [],
+        errors: [e?.message || 'internal error'],
+        debug: { wrapperError: e?.message || String(e) },
       })
     );
   }

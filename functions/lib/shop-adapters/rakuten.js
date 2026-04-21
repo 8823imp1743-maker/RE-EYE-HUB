@@ -3,6 +3,7 @@
  */
 import { ShopAdapter } from './base.js';
 import { withRetry } from '../retry.js';
+import { fetchWithTimeout } from '../http-fetch.js';
 import { RAKUTEN_NG_KEYWORD } from '../noise-filter.js';
 import { extractModelNumbers } from '../cross-validator.js';
 
@@ -14,7 +15,10 @@ export class RakutenAdapter extends ShopAdapter {
   get name() { return '楽天市場'; }
 
   isConfigured() {
-    return !!process.env.RAKUTEN_APP_ID;
+    const appId = (process.env.RAKUTEN_APP_ID || '').trim();
+    const accessKey = (process.env.RAKUTEN_ACCESS_KEY || '').trim();
+    // 楽天開発者ポータル発行の App ID + Access Key（2026 年以降の API は両方必須）
+    return !!(appId && accessKey);
   }
 
   async search(keyword, options = {}) {
@@ -30,28 +34,47 @@ export class RakutenAdapter extends ShopAdapter {
     // 🚩 報告係：実際に何で検索してるかログに出す
     console.log(`[Reporting Officer] 楽天・改善ワード: "${refinedKeyword}" (サイズを除外しました)`);
 
-    const applicationId  = (process.env.RAKUTEN_APP_ID || '').replace(/-/g, '');
-    const affiliateId    = process.env.RAKUTEN_AFFILIATE_ID || '';
+    // applicationId: 環境変数のハイフンは API が受け付ける形式に合わせて除去
+    const applicationId = (process.env.RAKUTEN_APP_ID || '').trim().replace(/-/g, '');
+    const accessKey = (process.env.RAKUTEN_ACCESS_KEY || '').trim();
+    const affiliateId = (process.env.RAKUTEN_AFFILIATE_ID || '').trim();
+
+    if (!applicationId || !accessKey) {
+      throw new Error(
+        '楽天 API: RAKUTEN_APP_ID と RAKUTEN_ACCESS_KEY を .env に設定してください（開発者ポータルのアプリ一覧で確認）'
+      );
+    }
 
     const params = new URLSearchParams({
       applicationId,
+      accessKey,
       keyword: refinedKeyword,
       NGKeyword: RAKUTEN_NG_KEYWORD,
-      hits:      String(Math.min(maxResults, 30)),
-      sort:      '-updateTimestamp',
+      hits: String(Math.min(maxResults, 30)),
+      sort: '-updateTimestamp',
       ...(affiliateId ? { affiliateId } : {}),
       ...(inStockOnly ? { availability: '1' } : {}),
     });
 
+    const cli = process.env.RE_EYE_CLI === '1' || process.env.RE_EYE_CLI === 'true';
+    if (cli) {
+      const q = refinedKeyword.slice(0, 80);
+      console.log(`[run-cli] 楽天の商品を検索中… 「${q}${refinedKeyword.length > 80 ? '…' : ''}」`);
+    }
+
     const json = await withRetry(
-      () => fetch(`${API_BASE}?${params.toString()}`, {
-        headers: {
-          'Accept':  'application/json',
-          'Referer': APP_ORIGIN + '/',
-          'Origin':  APP_ORIGIN,
-        },
-      }),
-      { label: '楽天API', maxRetries: 3, baseDelayMs: 2000 }
+      () =>
+        fetchWithTimeout(
+          `${API_BASE}?${params.toString()}`,
+          {
+            headers: {
+              Referer: APP_ORIGIN + '/',
+              Origin: APP_ORIGIN,
+            },
+          },
+          14000
+        ),
+      { label: '楽天API', maxRetries: 2, baseDelayMs: 400 }
     );
     const items = (json.Items || []);
     console.log(`[Reporting Officer] 楽天で ${items.length} 件ヒット。`);
@@ -69,6 +92,8 @@ export class RakutenAdapter extends ShopAdapter {
         );
         if (colorish) colorLabel = colorish;
       }
+      const catchcopy = Item.catchcopy != null ? String(Item.catchcopy) : '';
+      const itemCaption = Item.itemCaption != null ? String(Item.itemCaption) : '';
       return {
         sourceId:     this.id,
         itemId:       String(Item.itemCode || Item.itemUrl || Item.itemName),
@@ -82,6 +107,8 @@ export class RakutenAdapter extends ShopAdapter {
         colorLabel,
         tags:         tags.length ? tags : undefined,
         modelNumbers: modelNumbers.length > 0 ? modelNumbers : undefined,
+        catchcopy:    catchcopy ? catchcopy.slice(0, 2000) : undefined,
+        itemCaption:  itemCaption ? itemCaption.slice(0, 4000) : undefined,
       };
     });
   }

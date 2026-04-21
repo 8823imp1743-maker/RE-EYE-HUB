@@ -166,16 +166,31 @@ export function extractColorKeywords(keyword) {
  *   false = 色が欠けている（廃棄）
  */
 /**
- * タイトル・ショップ色ラベル・タグを結合した検索用文字列
- * @param {{ title?: string, colorLabel?: string, tags?: string[] }} item
+ * 楽天・Yahoo の正規化アイテムから、マッチング用のプレーンテキストを結合する。
+ * （商品名に無い型番・サイズが説明文・キャッチにだけあるケース向け）
+ *
+ * @param {{ title?: string, colorLabel?: string, tags?: string[], headLine?: string, description?: string, itemCaption?: string, catchcopy?: string, caption?: string }} item
  */
-export function buildColorMatchBlob(item) {
+export function buildSerpPlainTextHaystack(item) {
   const parts = [
     item.title,
     item.colorLabel,
     ...(Array.isArray(item.tags) ? item.tags : []),
+    typeof item.headLine === 'string' ? item.headLine : '',
+    typeof item.description === 'string' ? item.description : '',
+    typeof item.itemCaption === 'string' ? item.itemCaption : '',
+    typeof item.catchcopy === 'string' ? item.catchcopy : '',
+    typeof item.caption === 'string' ? item.caption : '',
   ].filter(Boolean);
-  return parts.join(' ').toLowerCase();
+  return parts.join(' ');
+}
+
+/**
+ * タイトル・色ラベル・タグ・説明系を結合した検索用文字列（小文字）
+ * @param {{ title?: string, colorLabel?: string, tags?: string[] }} item
+ */
+export function buildColorMatchBlob(item) {
+  return buildSerpPlainTextHaystack(item).toLowerCase();
 }
 
 /**

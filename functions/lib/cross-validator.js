@@ -127,7 +127,11 @@ function hasSizeInTitle(title, sizeCmStr) {
  * @param {{ type: string, raw: string }|null} sizeInfo
  * @returns {boolean}
  */
-function hasSizeInTitleUniversal(title, sizeInfo) {
+/**
+ * 靴／服／数値サイズがテキスト（商品名・説明文など）に現れるか。
+ * SERP ではタイトルだけでなく Yahoo の description / 楽天の itemCaption 等も渡す。
+ */
+export function hasSizeInTitleUniversal(title, sizeInfo) {
   if (!sizeInfo) return true; // サイズ指定なし → 条件なし → 通過
 
   if (sizeInfo.type === 'shoe') {
@@ -189,13 +193,18 @@ async function checkOnYahoo(modelNumber, sizeInfo) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function checkOnRakutenMarket(modelNumber, sizeInfo) {
-  if (!process.env.RAKUTEN_APP_ID) return 'error';
+  const accessKey = (process.env.RAKUTEN_ACCESS_KEY || '').trim();
+  if (!process.env.RAKUTEN_APP_ID || !accessKey) return 'error';
   try {
     const sizeStr = sizeInfo?.type === 'shoe' ? sizeInfo.raw : (sizeInfo?.raw ?? null);
     const keyword = sizeStr ? `${modelNumber} ${sizeStr}` : modelNumber;
     const appId   = (process.env.RAKUTEN_APP_ID || '').replace(/-/g, '');
     const params  = new URLSearchParams({
-      applicationId: appId, keyword, hits: '20', sort: '-updateTimestamp',
+      applicationId: appId,
+      accessKey,
+      keyword,
+      hits: '20',
+      sort: '-updateTimestamp',
     });
     const res = await Promise.race([
       fetch(`${RAKUTEN_API_BASE}?${params}`, {
@@ -278,12 +287,17 @@ async function checkOnYahooKeyword(keyword, sizeInfo) {
 }
 
 async function checkOnRakutenKeyword(keyword, sizeInfo) {
-  if (!process.env.RAKUTEN_APP_ID || !keyword) return 'error';
+  const accessKey = (process.env.RAKUTEN_ACCESS_KEY || '').trim();
+  if (!process.env.RAKUTEN_APP_ID || !accessKey || !keyword) return 'error';
   try {
     const kw = keyword.trim();
     const appId = (process.env.RAKUTEN_APP_ID || '').replace(/-/g, '');
     const params = new URLSearchParams({
-      applicationId: appId, keyword: kw, hits: '20', sort: '-updateTimestamp',
+      applicationId: appId,
+      accessKey,
+      keyword: kw,
+      hits: '20',
+      sort: '-updateTimestamp',
     });
     const res = await Promise.race([
       fetch(`${RAKUTEN_API_BASE}?${params}`, {

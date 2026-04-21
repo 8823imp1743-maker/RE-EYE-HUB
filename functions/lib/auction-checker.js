@@ -5,6 +5,8 @@
  * 必要環境変数: YAHOO_APP_ID
  */
 
+import { fetchWithTimeout } from './http-fetch.js';
+
 const API_BASE = 'https://auctions.yahooapis.jp/AuctionWebService/V2/json/search';
 
 /**
@@ -27,9 +29,7 @@ export async function getAuctionMinPrice(keyword) {
   });
 
   try {
-    const res = await fetch(`${API_BASE}?${params}`, {
-      headers: { 'Accept': 'application/json' },
-    });
+    const res = await fetchWithTimeout(`${API_BASE}?${params}`, {}, 12000);
     if (!res.ok) {
       console.warn(`[auction-checker] Yahoo Auctions API ${res.status}: ${keyword}`);
       return null;
