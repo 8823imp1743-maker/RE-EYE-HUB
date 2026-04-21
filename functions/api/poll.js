@@ -10,6 +10,7 @@
  *
  * レスポンス:
  *   { newItems, allItems, errors, checkedAt }
+ *   各 item にはマイサイズ設定がある場合のみ sizeRank: 'A'|'B'|'C' が付く（厳格ルール）
  *
  * データフロー:
  *   searchAllCached()（楽天・Yahoo） → seenチェック(Redis) → …
@@ -17,9 +18,15 @@
 
 import { createHash } from 'crypto';
 import { searchAllCached } from '../lib/shop-search-cache.js';
-import { getRedis, markSeen, isSeen } from '../lib/redis.js';
+import { getRedis, markSeen, isSeen, withRedisRetry } from '../lib/redis.js';
 import { shouldExclude, getNotificationCategory } from '../lib/filters.js';
 import { sendOneSignalNotification } from '../lib/notification.js';
+import {
+  sanitizeUserId,
+  sanitizeStoredUserSettings,
+  userSettingsKey,
+} from '../lib/user-settings.js';
+import { stampPollSizeRankAndSort } from '../lib/serp-item-rule.js';
 
 // プラン別の検索件数上限
 const PLAN_MAX_RESULTS = {
@@ -56,35 +63,58 @@ export default async function handler(req, res) {
 
   const maxResults = PLAN_MAX_RESULTS[plan] || 5;
 
+  let storedUserSettings = null;
+  const safeUserId = sanitizeUserId(userId);
+  if (safeUserId) {
+    try {
+      const r = getRedis();
+      const raw = await withRedisRetry(() => r.get(userSettingsKey(safeUserId)), {
+        label: 'poll:user-settings',
+      });
+      storedUserSettings = sanitizeStoredUserSettings(raw);
+    } catch (e) {
+      console.warn('[poll] user-settings:', e.message);
+    }
+  }
+
   // 1. 全アクティブショップで並列検索
-  const { items: allItems, errors } = await searchAllCached(keyword, {
+  const { items: rawItems, errors } = await searchAllCached(keyword, {
     maxResults,
     inStockOnly: false,
     cacheTtlSec: CACHE_TTL[plan] || 60,
   });
 
+  let allItems = stampPollSizeRankAndSort(rawItems, storedUserSettings);
+
   // 2. 各アイテムの seenチェック → 未見のみ抽出
   const newItems = [];
   await Promise.all(
     allItems.map(async item => {
-      // seenキー: seen:userId:sourceId:sha256(itemId)
-      const hash = createHash('sha256').update(item.itemId).digest('hex');
-      const key  = `seen:${userId}:${item.sourceId}:${hash}`;
-      const seen = await isSeen(key);
-      if (!seen) {
-        newItems.push(item);
-        await markSeen(key); // タイムゼロ・ベースライン：初回見た時点でマーク
+      try {
+        const hash = createHash('sha256').update(item.itemId).digest('hex');
+        const key  = `seen:${userId}:${item.sourceId}:${hash}`;
+        const seen = await isSeen(key);
+        if (!seen) {
+          newItems.push(item);
+          await markSeen(key);
+        }
+      } catch (e) {
+        console.warn('[poll] seen/redis:', e.message);
       }
     })
   );
 
+  const sortedNewItems = stampPollSizeRankAndSort(newItems, storedUserSettings);
+
   // 3. フィルタリング（除外ワード除去・カテゴリ分類）
-  const filteredNew = newItems.filter(item =>
+  const filteredNew = sortedNewItems.filter(item =>
     !shouldExclude(item.title, item.title) // LIVE/チケット等は除外
   );
 
+  const sortedFilteredNew = stampPollSizeRankAndSort(filteredNew, storedUserSettings);
+
   // 4. 在庫ありの新着アイテムがあれば OneSignal でプッシュ通知
-  const inStockNew = filteredNew.filter(i => i.available);
+  const inStockNew = sortedFilteredNew.filter(i => i.available);
   if (inStockNew.length > 0) {
     try {
       const top = inStockNew[0];
@@ -109,7 +139,7 @@ export default async function handler(req, res) {
     const r = getRedis();
     await r.set(cacheKey, JSON.stringify({
       allItems,
-      newItems: filteredNew,
+      newItems: sortedFilteredNew,
       checkedAt: Date.now(),
     }), { ex: ttl });
   } catch (e) {
@@ -117,7 +147,7 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({
-    newItems:  filteredNew,
+    newItems:  sortedFilteredNew,
     allItems,
     errors,
     checkedAt: Date.now(),
