@@ -12,6 +12,8 @@ import { getRedis } from './redis.js';
 const SHOE_KW  = ['スニーカー','シューズ','ブーツ','サンダル','靴','shoe','sneaker','boots'];
 const CLOTH_KW = ['ジャケット','コート','ニット','シャツ','パンツ','スカート','服','アウター',
                   'tシャツ','ワンピース','トップス','デニム','パーカー'];
+/** CW2288-111 / HQ7001-001 のようなスポーツ品番だけの入力でも靴サイズ注入する（品番検索とプロファイルの整合） */
+const SHOE_SKU_HINT_RE = /\b[A-Z]{2,4}\d{3,5}-\d{2,4}\b/i;
 
 /**
  * Redis から userId の設定を取得する。
@@ -43,10 +45,12 @@ export async function getUserSizeKeyword(userId, keyword, forChild = false) {
   if (!settings) return keyword;
 
   const kl = keyword.toLowerCase();
-  const isShoe  = SHOE_KW.some(w  => kl.includes(w.toLowerCase()));
+  const isShoe  =
+    SHOE_KW.some(w => kl.includes(w.toLowerCase())) || SHOE_SKU_HINT_RE.test(keyword);
   const isCloth = CLOTH_KW.some(w => kl.includes(w.toLowerCase()));
 
   let kw = keyword;
+  // 付与する文字列は settings の動的値のみ（shoeSize / clothSize 等）。固定 cm は書かない。
 
   if (forChild) {
     const cg = settings.childGender === 'girl' ? '女の子'

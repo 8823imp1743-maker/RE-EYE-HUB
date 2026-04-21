@@ -1342,6 +1342,11 @@
                         <div id="home-slot-header"></div>
                         <div id="home-inline-list"></div>
                     </div>
+                    <div id="home-watch-history-wrap" style="margin-top:14px;">
+                        <span class="gold-label" style="font-size:11px;margin-bottom:6px;display:block;">監視履歴（サーバ同期）</span>
+                        <p class="meta-11px" style="color:rgba(247,231,206,0.55);margin:0 0 8px;letter-spacing:0.5px;">登録済みの見守りは Redis に保存され、下に一覧表示されます。</p>
+                        <div id="watch-history-list" class="settings-stock-requests"></div>
+                    </div>
                 </div>
                 </div>
             </div>
@@ -1435,7 +1440,7 @@
                     <div id="settings-plan-status" class="watch-plan-status"></div>
                     <span id="current-interval-text" class="meta-11px" style="color:var(--amethyst);opacity:1;font-weight:bold;white-space:nowrap;display:none;"></span>
                     <span class="gold-label" style="font-size:11px;margin-top:12px;display:block;">見守りリクエスト（在庫・再入荷）</span>
-                    <p class="meta-11px" style="color:var(--amethyst);opacity:0.85;margin:4px 0 6px;letter-spacing:0.5px;">プランに応じた間隔でサーバが監視します。対象は楽天・Yahoo!ショッピングに限定し、重複検索はキャッシュで抑制しています。性別・サイズはユーザー設定と検索キーワードから表示されます。</p>
+                    <p class="meta-11px" style="color:var(--amethyst);opacity:0.85;margin:4px 0 6px;letter-spacing:0.5px;">ここが<strong style="color:var(--champagne-gold);">サーバ登録済みの監視一覧</strong>です（Redis）。検索で在庫ゼロでも「再入荷を監視」で追加できます。履歴タブの「購入可能」はあくまで直近の検知ログであり、別の表示です。</p>
                     <div id="settings-stock-requests" class="settings-stock-requests"></div>
                 </div>
                 <div id="settings-trend-watching" style="display: none; margin-top: var(--gap-11);">
@@ -1683,6 +1688,7 @@
 // ── UTC タイムエンジン ────────────────────────────────────────
 const TZ = 'Asia/Tokyo';
 // Firebase Hosting から Vercel API を直叩き（CORSはVercel側で許可）
+// この HTML を更新したら: firebase deploy --only hosting ／ API だけなら: vercel --prod
 const API_BASE = 'https://re-eye-hub.vercel.app';
 function nowJP() {
     return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
@@ -1857,6 +1863,107 @@ let userProfile = {
 // ── historyItems ──────────────────────────────────────────────
 let historyItems = [];
 let historyObserverTimer = null;
+/** 登録直後に GET が空でも一覧・履歴から消さない（サーバに現れるまでメモリ保持） */
+let _pendingMonitors = new Map();
+/** loadWatchHistory 同時実行の最後の結果だけを採用（古い応答で UI を壊さない） */
+let _watchHistoryLoadGen = 0;
+/** 空 GET 時に直前の一覧を一時的に保持（論理削除・競合で消えたように見えるのを防ぐ） */
+let _lastGoodMergedMonitor = null;
+let _lastGoodMergedAt = 0;
+const WATCH_EMPTY_GUARD_MS = 120000;
+/** 疑わしい空 GET 時に追加で GET を繰り返す（一時的な [] を疑う） */
+const EMPTY_VALIDATION_RETRIES = 3;
+const EMPTY_VALIDATION_DELAY_MS = 700;
+/** 同一タブで短時間に複数 loadWatchHistory が走ったときの検証リトライ連打を抑止（登録直後 expectKey 時は除外） */
+let _lastEmptyValidationBurstAt = 0;
+const EMPTY_VALIDATION_DEBOUNCE_MS = 12000;
+/** F12 コンソール検証用: localStorage.setItem('re_eye_debug_monitor','1') で有効 / '0' か削除で無効 */
+function _reEyeDebugMonitor() {
+    try { return localStorage.getItem('re_eye_debug_monitor') === '1'; } catch (e) { return false; }
+}
+function _reEyeDbg() {
+    if (!_reEyeDebugMonitor()) return;
+    console.log.apply(console, ['%c[re-eye monitor]', 'color:#9b59b6;font-weight:bold;'].concat([].slice.call(arguments)));
+}
+/** expectKey とサーバー各行キーの差分（見えない空白・大小文字など） */
+function _explainWatchKeyMismatch(expectKey, lastItems) {
+    const exp = expectKey == null ? '' : String(expectKey);
+    const expInfo = { value: exp, length: exp.length, codeUnits: exp.split('').map(function (c) { return c.charCodeAt(0); }) };
+    const rows = (lastItems || []).map(function (sv) {
+        var k = _watchRowKey(sv);
+        return {
+            key: k,
+            equals: k === exp,
+            rawSourceId: sv.sourceId,
+            rawItemId: sv.itemId,
+            sourceIdLen: String(sv.sourceId || '').length,
+            itemIdLen: String(sv.itemId || '').length,
+            keyCodeUnits: k.split('').map(function (c) { return c.charCodeAt(0); })
+        };
+    });
+    return { expectKey: expInfo, serverRowKeys: rows };
+}
+function normalizeMonitorId(v) {
+    return String(v == null ? '' : v).trim().toLowerCase();
+}
+function normalizeServerItemRow(sv) {
+    if (!sv) return sv;
+    return {
+        ...sv,
+        itemId: normalizeMonitorId(sv.itemId),
+        sourceId: normalizeMonitorId(sv.sourceId),
+    };
+}
+function _countWatchRowsInHistory() {
+    return historyItems.filter(function (h) {
+        return h.watchSource === 'redis' || h.watchSource === 'pending';
+    }).length;
+}
+/** sync 用の merged 行へ… 空 GET で SSOT が空になる直前の最終手段 */
+function _historyWatchRowsToMerged() {
+    return historyItems
+        .filter(function (h) {
+            return h.watchSource === 'redis' || h.watchSource === 'pending';
+        })
+        .map(function (h) {
+            return {
+                keyword: h.keyword || '',
+                itemId: normalizeMonitorId(h.itemId),
+                sourceId: normalizeMonitorId(h.sourceId),
+                title: h.title || h.keyword || '',
+                status: h.status === 'ON' ? 'ON' : 'OFF',
+                price: h.price || 0,
+                url: h.url || '',
+                lastCheckedAt: h.lastCheckedAt || Date.now(),
+                addedAt: Date.now(),
+                _pending: h.watchSource === 'pending',
+                results: Array.isArray(h.results) ? h.results : []
+            };
+        });
+}
+/** レガシー在庫行: watchSource なしの stock／keyword 行（poll・redis・pending は除外） */
+function isLegacyStockRow(h) {
+    const tag = h.watchSource;
+    const stockLike = h.kind === 'stock' || h.keyword;
+    if (!stockLike) return false;
+    if (tag === 'redis' || tag === 'pending' || tag === 'poll') return false;
+    return true;
+}
+function purgeLegacyStockRows() {
+    historyItems = historyItems.filter(h => !isLegacyStockRow(h));
+}
+function mergeServerAndPending(serverList) {
+    const base = _dedupeWatchItems((serverList || []).map(normalizeServerItemRow));
+    const seen = new Set(base.map(sv => _watchRowKey(sv)));
+    const out = [...base];
+    for (const [k, row] of _pendingMonitors) {
+        if (!seen.has(k)) {
+            out.unshift(Object.assign({}, row, { _pending: true }));
+            seen.add(k);
+        }
+    }
+    return out;
+}
 
 // ── 通知クリーナー ────────────────────────────────────────────
 const HISTORY_BLACKLIST = [
@@ -1899,7 +2006,10 @@ function addWatchedKeyword(kw) {
 }
 
 function _persistHistory() {
-    try { localStorage.setItem('re_eye_history', JSON.stringify(historyItems.slice(0,100))); } catch(e) {}
+    try {
+        const persistable=historyItems.filter(h=>h.watchSource!=='redis'&&h.watchSource!=='pending');
+        localStorage.setItem('re_eye_history',JSON.stringify(persistable.slice(0,100)));
+    }catch(e){}
 }
 function cleanHistoryItem(item) {
     if (_deletedIds.has(String(item.id))) return false;
@@ -1933,14 +2043,15 @@ function mergeApiResultsToHistory(apiItems) {
     let added = 0;
     const timeText = formatDateSec(Date.now());
     apiItems.forEach(item => {
-        const key = `${item.sourceId}:${item.itemId}`;
+        const key = _watchRowKey({ sourceId: item.sourceId, itemId: item.itemId });
         if (_deletedIds.has(key)) return;
         const entry = {
             id: key, title: item.title,
             status: item.available ? 'ON' : 'OFF',
             shop: item.shopName, price: item.price,
             time: timeText, url: item.url,
-            lastCheckedAt: item.checkedAt || Date.now()
+            lastCheckedAt: item.checkedAt || Date.now(),
+            watchSource: 'poll'
         };
         if (!cleanHistoryItem(entry)) return;
         if (!existingIds.has(key)) {
@@ -2057,9 +2168,10 @@ function show(id, btn) {
     const target = document.getElementById(id);
     if (target) target.classList.add('active');
     btn.classList.add('active');
+    if (id === 'home')     { loadWatchHistory({ silent: true }); }
     if (id === 'history')  { renderHistory(historyItems); syncWatchStatus(); }
     if (id === 'insight')  renderTrendItems(document.getElementById('insight-search')?.value);
-    if (id === 'settings') { renderSettingsTrendWatching(); renderStockMonitorRequests(); syncWatchStatus(); }
+    if (id === 'settings') { renderSettingsTrendWatching(); loadWatchHistory({ silent: true }); syncWatchStatus(); }
     updateAdVisibility();
     requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); });
 }
@@ -2074,16 +2186,46 @@ function formatLastChecked(ts) {
     if (h < 24) return h + '時間前';
     return Math.floor(h/24) + '日前';
 }
-function getSimulatedCheckLabel() {
-    if (currentPlan==='FREE')    return `● 在庫ありを確認（${45+Math.floor(Math.random()*15)}分前）`;
-    if (currentPlan==='STANDARD')return `● 在庫ありを確認（${5+Math.floor(Math.random()*5)}分前）`;
-    return `● 在庫ありを確認（${Math.random()<0.6?'たった今':'1分前'}）`;
+/** 購入可能カードのヘッダー文言（lastCheckedAt のみ。旧 getSimulatedCheckLabel はプラン別ランダム表示だった） */
+function getStockConfirmLabel(ts) {
+    return `● 在庫ありを確認（${formatLastChecked(ts)}）`;
 }
 const DISCLAIMER_TEXT = '本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。';
 function sortByCaughtTimeDesc(a,b) {
     const ta = a.lastCheckedAt||(a.pubDate?new Date(a.pubDate).getTime():0);
     const tb = b.lastCheckedAt||(b.pubDate?new Date(b.pubDate).getTime():0);
     return tb-ta;
+}
+/** 同一キーワード／同一商品タイトルの監視行が ON/OFF に二重登録されないよう、最新の1件だけ残す */
+function dedupeHistoryOnOffStock(items) {
+    const stockLike = (it) => it.kind === 'stock' || it.keyword;
+    const normTitle = (t) => (t || '').toLowerCase().replace(/\s+/g, ' ').replace(/^■\s*/, '').trim().slice(0, 120);
+    const keyOf = (it) => {
+        if (it.watchSource === 'redis' || it.watchSource === 'pending') {
+            return 'redis:' + _watchRowKey(it);
+        }
+        const kw = (it.keyword || '').trim().toLowerCase();
+        if (kw) return 'kw:' + kw;
+        return 't:' + normTitle(it.title);
+    };
+    const sorted = [...(items || [])].sort((a, b) => sortByCaughtTimeDesc(a, b));
+    const seen = new Set();
+    const out = [];
+    for (const it of sorted) {
+        if (it.status !== 'ON' && it.status !== 'OFF') {
+            out.push(it);
+            continue;
+        }
+        if (!stockLike(it)) {
+            out.push(it);
+            continue;
+        }
+        const k = keyOf(it);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(it);
+    }
+    return out;
 }
 
 // ── カレンダー ────────────────────────────────────────────────
@@ -2138,7 +2280,7 @@ function renderHistory(items) {
     const container = document.getElementById('history-list-container');
     if (!container) return;
     const scrollTop = document.getElementById('history')?.scrollTop || 0;
-    const cleaned = (items||[]).filter(i => cleanHistoryItem(i));
+    const cleaned = dedupeHistoryOnOffStock((items||[]).filter(i => cleanHistoryItem(i)));
     const onItems       = cleaned.filter(i=>i.status==='ON').sort(sortByCaughtTimeDesc);
     const offItems      = cleaned.filter(i=>i.status==='OFF').sort(sortByCaughtTimeDesc);
     const notifiedItems = cleaned.filter(i=>i.status==='NOTIFIED').sort(sortByCaughtTimeDesc);
@@ -2186,10 +2328,9 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
     // ON
     container.appendChild(mkSection('ON','gold-label','購入可能',onItems,(item)=>{
         const card=document.createElement('div'); card.className='history-card history-card-on';
-        if(item.url) card.onclick=()=>openSafeUrl(item.url);
+        if(item.url){ card.style.cursor='pointer'; card.onclick=()=>openSafeUrl(item.url); }
         const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
-        const sEl=document.createElement('span'); sEl.className='history-status-on'; sEl.textContent=getSimulatedCheckLabel();
-        const fake=document.createElement('div'); fake.appendChild(tEl); fake.appendChild(sEl);
+        const sEl=document.createElement('span'); sEl.className='history-status-on'; sEl.textContent=getStockConfirmLabel(item.lastCheckedAt);
         const hdr=document.createElement('div'); hdr.className='history-card-header';
         const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
         cb.checked=_editSelected.has(String(item.id));
@@ -2204,7 +2345,20 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
         }
         const meta=document.createElement('div'); meta.className='item-meta history-meta-row';
         meta.textContent=`${item.time} / ${item.shop} ｜ 最終確認：${formatLastChecked(item.lastCheckedAt)}`;
-        card.appendChild(meta); return card;
+        card.appendChild(meta);
+        if(item.url){
+            const linkRow=document.createElement('div'); linkRow.className='item-meta history-meta-row';
+            linkRow.style.cssText='color:var(--amethyst);margin-top:6px;letter-spacing:0.5px;';
+            linkRow.textContent='購入ページを開く（タップ）';
+            linkRow.onclick=(e)=>{ e.stopPropagation(); openSafeUrl(item.url); };
+            card.appendChild(linkRow);
+        } else {
+            const warn=document.createElement('div'); warn.className='item-meta history-meta-row';
+            warn.style.cssText='color:rgba(231,76,60,0.95);margin-top:6px;';
+            warn.textContent='購入ページのURLはまだありません。監視が商品URLを取得するまでお待ちください。';
+            card.appendChild(warn);
+        }
+        return card;
     }));
     // OFF
     container.appendChild(mkSection('OFF','gray-label','売り切れ',offItems,(item)=>{
@@ -2226,6 +2380,14 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
         }
         const meta=document.createElement('div'); meta.className='item-meta history-meta-row';
         meta.textContent=`${item.time} / ${item.shop}`; card.appendChild(meta);
+        if(item.url){
+            card.style.cursor='pointer';
+            card.onclick=()=>openSafeUrl(item.url);
+            const lr=document.createElement('div'); lr.className='item-meta history-meta-row';
+            lr.style.cssText='color:rgba(247,231,206,0.65);margin-top:6px;';
+            lr.textContent='商品ページを開く（タップ）';
+            card.appendChild(lr);
+        }
         if(item.overListPrice){
             const g=document.createElement('span'); g.className='give-up-badge';
             g.textContent='入手困難 — 中古相場が定価超過。次のターゲットを狙え'; card.appendChild(g);
@@ -2310,26 +2472,12 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
 
 // ── startHistoryObserver ──────────────────────────────────────
 function startHistoryObserver() {
-    if(historyObserverTimer) return;
-    const now=Date.now();
-    historyItems=historyItems.map(i=>({...i, lastCheckedAt:i.lastCheckedAt||now}));
-    historyObserverTimer=setInterval(()=>{
-        const nowTs=Date.now();
-        historyItems=historyItems.map(item=>{
-            const u={...item, lastCheckedAt:nowTs};
-            const r=Math.random();
-            if(item.status==='ON'&&r<0.15){u.status='OFF';u.offSince=nowTs;}
-            if(item.status==='OFF'&&r>=0.85){
-                u.status='ON'; u.offSince=null;
-                PushHybrid.fireNotification('🔔 在庫復活：'+item.title,'購入可能になりました');
-            }
-            if(u.status==='OFF'&&u.offSince&&(nowTs-u.offSince)/86400000>=3) u.overListPrice=true;
-            return u;
-        });
-        _persistHistory();
-        const hs=document.getElementById('history');
-        if(hs&&hs.classList.contains('active')) renderHistory(historyItems);
-    },30000);
+    if (historyObserverTimer) return;
+    const now = Date.now();
+    historyItems = historyItems.map(i => ({ ...i, lastCheckedAt: i.lastCheckedAt || now }));
+    // 旧: 30秒ごとに lastCheckedAt を全件「たった今」にし、ON/OFF を乱数で反転（デモ用）→ 実監視と矛盾するため廃止。
+    // 在庫状態は /api/monitor の syncWatchStatus（2分間隔）および mergeApiResultsToHistory に委ねる。
+    historyObserverTimer = true;
 }
 
 // ── 起動広告 ─────────────────────────────────────────────────
@@ -2498,58 +2646,278 @@ function renderSettingsTrendWatching() {
     l.innerHTML=w.map(t=>'<div class="watch-item-row"><span class="watch-item-name">'+t.title+'</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● '+lbl+'</span></div>').join('');
 }
 
-async function renderStockMonitorRequests(){
-    const container=document.getElementById('settings-stock-requests');
-    if(!container) return;
-    container.innerHTML='<p class="meta-11px" style="color:var(--amethyst);opacity:0.75;">読み込み中...</p>';
+/** SSOT: mergeServerAndPending の結果で履歴内の監視行をまとめて置換（redis / pending） */
+function syncHistoryFromMonitorSnapshot(mergedList){
+    purgeLegacyStockRows();
+    const nonWatch=historyItems.filter(h=>h.watchSource!=='redis'&&h.watchSource!=='pending');
+    const watchRows=(mergedList||[]).map(sv=>{
+        const prev=historyItems.find(h=>
+            (h.watchSource==='redis'||h.watchSource==='pending')&&
+            _watchRowKey(h)===_watchRowKey(sv)
+        );
+        const isPen=!!sv._pending;
+        return{
+            id:'w_'+String(sv.sourceId)+'_'+String(sv.itemId).replace(/[^a-zA-Z0-9_-]/g,'_'),
+            watchSource:isPen?'pending':'redis',
+            itemId:sv.itemId,
+            sourceId:sv.sourceId,
+            keyword:sv.keyword,
+            title:sv.title||sv.keyword||'',
+            status:sv.status==='ON'?'ON':'OFF',
+            shop:'キーワード監視',
+            price:sv.price||0,
+            url:sv.url||'',
+            time:formatDateSec(sv.addedAt||Date.now()),
+            lastCheckedAt:sv.lastCheckedAt||Date.now(),
+            kind:'stock',
+            watchMeta:(prev&&prev.watchMeta)||'',
+            results:Array.isArray(sv.results)?sv.results:[]
+        };
+    });
+    historyItems=[...watchRows,...nonWatch];
+}
+async function deleteWatchMonitorOnServer(sourceId,itemId){
     try{
-        const res=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
-        if(!res.ok) throw new Error('HTTP');
-        const data=await res.json();
-        const items=data.items||[];
-        container.innerHTML='';
-        if(items.length===0){
-            const em=document.createElement('p');
-            em.className='trend-intro-11px';
-            em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:8px 0;';
-            em.textContent='在庫の見守りリクエストはまだありません';
-            container.appendChild(em);
-            return;
-        }
-        const night=isNightJP();
-        let planLbl='';
-        if(currentPlan==='FREE') planLbl=night?'夜間スリープ':'60分間隔';
-        else if(currentPlan==='STANDARD') planLbl=night?'夜間60分':'15分間隔';
-        else if(currentPlan==='PRO') planLbl=night?'夜間60分':'5分間隔';
-        else if(currentPlan==='VIP') planLbl='5分間隔・常時';
-        items.forEach(sv=>{
-            const row=document.createElement('div');
-            row.className='watch-item-row';
-            row.style.cssText='display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:8px 0;border-bottom:1px solid rgba(247,231,206,0.08);';
-            const local=historyItems.find(h=>
-                (h.itemId && String(h.itemId)===String(sv.itemId) && h.sourceId===sv.sourceId) ||
-                (h.keyword && h.keyword===sv.keyword)
-            );
-            const meta=local&&local.watchMeta?local.watchMeta:'';
-            const t1=document.createElement('div');
-            t1.className='watch-item-name';
-            t1.textContent=sv.title||sv.keyword||'';
-            const t2=document.createElement('div');
-            t2.className='meta-11px';
-            t2.style.color='var(--amethyst)';
-            t2.style.opacity='0.95';
-            t2.textContent=meta||'(性別・服/靴サイズはユーザー設定とキーワードから反映)';
-            const t3=document.createElement('div');
-            t3.className='meta-11px';
-            const st=sv.status==='ON'?'● 購入可能':'● 売り切れ・監視中';
-            t3.textContent=st+' ｜ '+planLbl+' ｜ 最終確認 '+formatLastChecked(sv.lastCheckedAt);
-            row.appendChild(t1); row.appendChild(t2); row.appendChild(t3);
-            container.appendChild(row);
+        const ns=normalizeMonitorId(sourceId);
+        const ni=normalizeMonitorId(itemId);
+        const res=await fetch(API_BASE+'/api/monitor',{
+            method:'DELETE',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({userId:getUserId(),sourceId:ns,itemId:ni})
         });
+        if(!res.ok){
+            const tx=await res.text();
+            let msg='HTTP '+res.status;
+            try{const j=JSON.parse(tx);if(j.error)msg=j.error;}catch(e){}
+            alert('見守りの削除に失敗しました：'+msg);
+            return false;
+        }
+        _pendingMonitors.delete(_watchRowKey({ sourceId: ns, itemId: ni }));
+        return true;
     }catch(e){
-        container.innerHTML='<p class="meta-11px" style="color:rgba(255,120,120,0.85);">一覧を取得できませんでした（ネットワークまたはAPI）</p>';
+        alert('見守りの削除に失敗しました（ネットワーク）');
+        return false;
     }
 }
+function renderWatchMonitorInto(container,items){
+    if(!container) return;
+    container.innerHTML='';
+    const list=Array.isArray(items)?items:[];
+    if(list.length===0){
+        const em=document.createElement('p');
+        em.className='trend-intro-11px';
+        em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:8px 0;';
+        em.textContent='在庫の見守りリクエストはまだありません';
+        container.appendChild(em);
+        return;
+    }
+    const night=isNightJP();
+    let planLbl='';
+    if(currentPlan==='FREE') planLbl=night?'夜間スリープ':'60分間隔';
+    else if(currentPlan==='STANDARD') planLbl=night?'夜間60分':'15分間隔';
+    else if(currentPlan==='PRO') planLbl=night?'夜間60分':'5分間隔';
+    else if(currentPlan==='VIP') planLbl='5分間隔・常時';
+    list.forEach(sv=>{
+        const row=document.createElement('div');
+        row.className='watch-item-row';
+        row.style.cssText='display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:8px 0;border-bottom:1px solid rgba(247,231,206,0.08);';
+        const top=document.createElement('div');
+        top.style.cssText='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;width:100%;';
+        const t1=document.createElement('div');
+        t1.className='watch-item-name';
+        t1.style.flex='1';
+        t1.textContent=sv.title||sv.keyword||'';
+        const del=document.createElement('button');
+        del.type='button';
+        del.className='section-manage-btn';
+        del.textContent='削除';
+        del.style.cssText='flex-shrink:0;padding:2px 8px;font-size:10px;';
+        del.onclick=async (e)=>{
+            e.stopPropagation();
+            if(!confirm('この見守りを削除しますか？')) return;
+            if(await deleteWatchMonitorOnServer(sv.sourceId,sv.itemId)) await loadWatchHistory({ silent:true, forceEmpty:true });
+        };
+        top.appendChild(t1); top.appendChild(del); row.appendChild(top);
+        const local=historyItems.find(h=>_watchRowKey(h)===_watchRowKey(sv));
+        const meta=local&&local.watchMeta?local.watchMeta:'';
+        const t2=document.createElement('div');
+        t2.className='meta-11px';
+        t2.style.color='var(--amethyst)';
+        t2.style.opacity='0.95';
+        t2.textContent=meta||'(性別・服/靴サイズはユーザー設定とキーワードから反映)';
+        const t3=document.createElement('div');
+        t3.className='meta-11px';
+        const st=sv.status==='ON'?'● 購入可能':'● 売り切れ・監視中';
+        const pend=sv._pending?' ・ サーバ同期確定待ち':'';
+        t3.textContent=st+' ｜ '+planLbl+' ｜ 最終確認 '+formatLastChecked(sv.lastCheckedAt)+pend;
+        row.appendChild(t2); row.appendChild(t3);
+        container.appendChild(row);
+    });
+}
+function _watchRowKey(sv){
+    return normalizeMonitorId(sv&&sv.sourceId)+':'+normalizeMonitorId(sv&&sv.itemId);
+}
+function _dedupeWatchItems(items){
+    const seen=new Set();
+    const out=[];
+    (items||[]).forEach(sv=>{
+        const k=_watchRowKey(sv);
+        if(!k||k===':'){out.push(sv);return;}
+        if(seen.has(k)) return;
+        seen.add(k); out.push(sv);
+    });
+    return out;
+}
+/**
+ * GET /api/monitor で Redis の監視一覧のみを取得し、履歴タブの在庫行も置き換え。
+ * @param [opts] expectKey / retry / silent（true でローディング全置換を抑止）
+ * @param [opts] showLoading true のときのみ「読み込み中…」でコンテナを置換（初回など）
+ * @param [opts] forceEmpty true のとき空配列を信頼（削除直後など。粘りを無効化）
+ */
+async function loadWatchHistory(opts){
+    opts=opts||{};
+    const gen=++_watchHistoryLoadGen;
+    const expectKey=opts.expectKey;
+    const doRetry=!!opts.retry;
+    const silent=!!opts.silent;
+    const forceEmpty=!!opts.forceEmpty;
+    const showLoading=opts.showLoading===true;
+    _reEyeDbg('loadWatchHistory start', { gen: gen, expectKey: expectKey, retry: doRetry, silent: silent, forceEmpty: forceEmpty, showLoading: showLoading });
+    purgeLegacyStockRows();
+    const prevWatchCount=_countWatchRowsInHistory();
+    const hadWatchRows=prevWatchCount>0;
+    const targets=[
+        document.getElementById('watch-history-list'),
+        document.getElementById('settings-stock-requests')
+    ].filter(Boolean);
+    if(targets.length===0) return;
+    const loading='<p class="meta-11px" style="color:var(--amethyst);opacity:0.75;">読み込み中...</p>';
+    if(showLoading) targets.forEach(c=>{ c.innerHTML=loading; });
+    const maxAttempts=doRetry&&expectKey?12:1;
+    let lastItems=[];
+    let gotJson=false;
+    for(let attempt=0;attempt<maxAttempts;attempt++){
+        try{
+            const res=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
+            if(!res.ok) throw new Error('HTTP');
+            const data=await res.json();
+            lastItems=_dedupeWatchItems((data.items||[]).map(normalizeServerItemRow));
+            gotJson=true;
+            _reEyeDbg('GET 応答', { attempt: attempt, lastItemsCount: lastItems.length, pendingKeys: [].slice.call(_pendingMonitors.keys()) });
+            if (expectKey && !lastItems.some(function (sv) { return _watchRowKey(sv) === expectKey; })) {
+                if (lastItems.length > 0) {
+                    _reEyeDbg('expectKey が今回のバッチに無い → 不一致の内訳', _explainWatchKeyMismatch(expectKey, lastItems));
+                } else {
+                    _reEyeDbg('expectKey ありだがサーバー件数0（まだ追いついていないか別ユーザ／別環境）', { expectKey: expectKey, expectLen: String(expectKey).length, pendingHasKey: _pendingMonitors.has(expectKey) });
+                }
+            }
+            lastItems.forEach(sv=>{ _pendingMonitors.delete(_watchRowKey(sv)); });
+            if(!expectKey||lastItems.some(sv=>_watchRowKey(sv)===expectKey)) break;
+        }catch(e){ /* 再試行 */ }
+        if(attempt<maxAttempts-1) await new Promise(r=>setTimeout(r,400));
+    }
+    var emptyValidationUsed=false;
+    var suspiciousEmpty=!!(gotJson&&lastItems.length===0&&!forceEmpty&&
+        (prevWatchCount>0||(_lastGoodMergedMonitor&&_lastGoodMergedMonitor.length>0)));
+    if(suspiciousEmpty&&gen===_watchHistoryLoadGen){
+        var tNow=Date.now();
+        if(!expectKey&&(tNow-_lastEmptyValidationBurstAt)<EMPTY_VALIDATION_DEBOUNCE_MS){
+            suspiciousEmpty=false;
+            _reEyeDbg('空GET検証スキップ（デバウンス）', { msSince: tNow-_lastEmptyValidationBurstAt, debounceMs: EMPTY_VALIDATION_DEBOUNCE_MS });
+        }else{
+            _lastEmptyValidationBurstAt=tNow;
+        }
+    }
+    if(suspiciousEmpty&&gen===_watchHistoryLoadGen){
+        _reEyeDbg('空GET 検証リトライ開始', { prevWatchCount: prevWatchCount, maxExtra: EMPTY_VALIDATION_RETRIES });
+        emptyValidationUsed=true;
+        for(var vi=0;vi<EMPTY_VALIDATION_RETRIES;vi++){
+            if(gen!==_watchHistoryLoadGen) break;
+            await new Promise(function(r){ setTimeout(r, EMPTY_VALIDATION_DELAY_MS); });
+            try{
+                const resV=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
+                if(!resV.ok) throw new Error('HTTP');
+                const dataV=await resV.json();
+                lastItems=_dedupeWatchItems((dataV.items||[]).map(normalizeServerItemRow));
+                gotJson=true;
+                lastItems.forEach(function(sv){ _pendingMonitors.delete(_watchRowKey(sv)); });
+                _reEyeDbg('空GET 検証リトライ結果', { vi: vi, lastItemsCount: lastItems.length });
+                if(lastItems.length>0) break;
+            }catch(eV){ /* 続行 */ }
+        }
+    }
+    if(gen!==_watchHistoryLoadGen){ _reEyeDbg('abort: 世代が古い（直近の loadWatchHistory に取って代わられた）', { gen: gen, current: _watchHistoryLoadGen }); return; }
+    if(!gotJson){
+        _reEyeDbg('gotJson=false（ネットワーク等）', { pendingKeys: [].slice.call(_pendingMonitors.keys()) });
+        if(_pendingMonitors.size>0){
+            const merged=mergeServerAndPending([]);
+            _reEyeDbg('mergeServerAndPending([]) 後（オフライン系）', { mergedCount: merged.length });
+            syncHistoryFromMonitorSnapshot(merged);
+            _persistHistory();
+            targets.forEach(c=>renderWatchMonitorInto(c,merged));
+            const h2=document.getElementById('history');
+            if(h2&&h2.classList.contains('active')) renderHistory(historyItems);
+        }else if(!silent){
+            const err='<p class="meta-11px" style="color:rgba(255,120,120,0.85);">一覧を取得できませんでした（ネットワークまたはAPI）</p>';
+            targets.forEach(c=>{ c.innerHTML=err; });
+        }
+        return;
+    }
+    _reEyeDbg('mergeServerAndPending の直前', { lastItemsCount: lastItems.length, pendingKeys: [].slice.call(_pendingMonitors.keys()) });
+    let merged=mergeServerAndPending(lastItems);
+    _reEyeDbg('mergeServerAndPending の直後', { mergedCount: merged.length });
+    const emptyServer=gotJson&&lastItems.length===0;
+    var stickyFromPending = false;
+    var stickyFromLastGood = false;
+    var stickyFromHistory = false;
+    if(merged.length===0&&emptyServer&&!forceEmpty){
+        if(expectKey&&_pendingMonitors.has(expectKey)){
+            const pr=_pendingMonitors.get(expectKey);
+            if(pr){ merged=[Object.assign({},pr,{_pending:true})]; stickyFromPending = true; }
+        }
+        if(merged.length===0&&_lastGoodMergedMonitor&&_lastGoodMergedMonitor.length&&
+            (Date.now()-_lastGoodMergedAt)<WATCH_EMPTY_GUARD_MS&&hadWatchRows){
+            merged=_lastGoodMergedMonitor.map(sv=>Object.assign({},sv));
+            stickyFromLastGood = true;
+        }
+    }
+    if(merged.length===0&&!forceEmpty&&prevWatchCount>0){
+        const hm=_historyWatchRowsToMerged();
+        if(hm.length>0){
+            merged=hm;
+            stickyFromHistory=true;
+            _reEyeDbg('フォールバック: historyItems の監視行を merged に復元', { count: merged.length });
+        }
+    }
+    _reEyeDbg('粘り分岐', {
+        emptyServer: emptyServer,
+        forceEmpty: forceEmpty,
+        prevWatchCount: prevWatchCount,
+        hadWatchRows: hadWatchRows,
+        emptyValidationUsed: emptyValidationUsed,
+        suspiciousEmpty: suspiciousEmpty,
+        stickyFromPending: stickyFromPending,
+        stickyFromLastGood: stickyFromLastGood,
+        stickyFromHistory: stickyFromHistory,
+        lastGoodAgeMs: _lastGoodMergedAt ? (Date.now() - _lastGoodMergedAt) : null,
+        guardMs: WATCH_EMPTY_GUARD_MS
+    });
+    if(merged.length>0){
+        _lastGoodMergedMonitor=merged.map(sv=>Object.assign({},sv));
+        _lastGoodMergedAt=Date.now();
+    }else if(forceEmpty){
+        _lastGoodMergedMonitor=null;
+        _lastGoodMergedAt=0;
+    }
+    if(gen!==_watchHistoryLoadGen){ _reEyeDbg('abort: sync 直前で世代不一致', { gen: gen, current: _watchHistoryLoadGen }); return; }
+    _reEyeDbg('syncHistoryFromMonitorSnapshot へ渡す merged', { mergedCount: merged.length });
+    syncHistoryFromMonitorSnapshot(merged);
+    _persistHistory();
+    targets.forEach(c=>renderWatchMonitorInto(c,merged));
+    const hs=document.getElementById('history');
+    if(hs&&hs.classList.contains('active')) renderHistory(historyItems);
+}
+async function renderStockMonitorRequests(){ return loadWatchHistory({ silent: true }); }
 
 // ── 削除操作 ──────────────────────────────────────────────────
 function toggleSectionMenu(status) {
@@ -2602,25 +2970,44 @@ function confirmDelete() {
     if(!_deleteTarget) return;
     const t=_deleteTarget;
     document.getElementById('delete-confirm-modal').style.display='none';
-    if(t.type==='section-selected'){
+        if(t.type==='section-selected'){
         if(_sectionEditMode==='TREND'){
             _editSelected.forEach(id=>{trendWatching.delete(id);delete _trendWatchData[id];});
             scheduleTrendSync();
             renderTrendItems(document.getElementById('insight-search')?.value);
             renderSettingsTrendWatching();
         } else {
-            _persistDeleteIds([..._editSelected]);
-            historyItems=historyItems.filter(i=>!_editSelected.has(String(i.id)));
-            _persistHistory(); renderHistory(historyItems);
+            (async ()=>{
+                for(const id of [..._editSelected]){
+                    const item=historyItems.find(i=>String(i.id)===id);
+                    if(item&&item.watchSource==='redis')
+                        await deleteWatchMonitorOnServer(item.sourceId,item.itemId);
+                }
+                _persistDeleteIds([..._editSelected]);
+                historyItems=historyItems.filter(i=>!_editSelected.has(String(i.id)));
+                _persistHistory();
+                await loadWatchHistory({ silent:true, forceEmpty:true });
+                renderHistory(historyItems);
+                _sectionEditMode=null;_editSelected.clear();_updateFixedDeleteBar();
+            })();
+            _deleteTarget=null;
+            return;
         }
         _sectionEditMode=null;_editSelected.clear();_updateFixedDeleteBar();
     } else {
         t.cardEl.classList.add('fading-out');
-        setTimeout(()=>{
+        setTimeout(async ()=>{
             if(t.type==='history'){
-                _persistDeleteId(String(t.id));
-                historyItems=historyItems.filter(i=>String(i.id)!==String(t.id));
-                _persistHistory(); renderHistory(historyItems);
+                const item=historyItems.find(i=>String(i.id)===String(t.id));
+                if(item&&item.watchSource==='redis'){
+                    if(await deleteWatchMonitorOnServer(item.sourceId,item.itemId))
+                        await loadWatchHistory({ silent:true, forceEmpty:true });
+                }else{
+                    _persistDeleteId(String(t.id));
+                    historyItems=historyItems.filter(i=>String(i.id)!==String(t.id));
+                    _persistHistory();
+                    renderHistory(historyItems);
+                }
             } else if(t.type==='trend'){
                 trendWatching.delete(t.id);
                 delete _trendWatchData[t.id];
@@ -2850,19 +3237,25 @@ function confirmForWhom(forChild){
 
 // ── サイズ考慮キーワード ──────────────────────────────────────
 const SHOE_KW=['スニーカー','シューズ','ブーツ','サンダル','靴','shoe','sneaker'];
+/** キーワードに「靴」が無くても代表的なスニーカー系モデル名ならサイズ行を出す */
+const SNEAKER_MODEL_HINT_RE=/エアマックス|エア\s*マックス|air\s*max|max\s*90|ジョーダン|jordan|ダンク|dunk|フォース|air\s*force|アディダス|adidas|ニューバランス|new\s*balance|ゲル|gel-lyte|アシックス/i;
+/** HQ7001-001 のようなハイフン付き品番のみでも靴プロファイルの cm を付与する */
+const SHOE_SKU_HINT_RE=/\b[A-Z]{2,4}\d{3,5}-\d{2,4}\b/i;
 const CLOTH_KW=['ジャケット','コート','ニット','シャツ','パンツ','スカート','服','アウター'];
 function buildSizeAwareKeyword(keyword,forChild){
     let kw=keyword; const kl=keyword.toLowerCase();
     const isShoe=SHOE_KW.some(w=>kl.includes(w.toLowerCase()));
+    const likelySneaker=SNEAKER_MODEL_HINT_RE.test(keyword);
+    const treatShoe=isShoe||likelySneaker||SHOE_SKU_HINT_RE.test(keyword);
     const isCloth=CLOTH_KW.some(w=>kl.includes(w.toLowerCase()));
     if(forChild){
         const cg=userProfile.childGender==='girl'?'女の子':(userProfile.childGender==='boy'?'男の子':'');
         if(cg)kw+=' '+cg;
         if(isCloth&&userProfile.childClothSize)kw+=' '+userProfile.childClothSize;
-        if(isShoe&&userProfile.childShoeSize)kw+=' '+userProfile.childShoeSize+'cm';
+        if(treatShoe&&userProfile.childShoeSize)kw+=' '+userProfile.childShoeSize+'cm';
     } else {
         if(isCloth&&userProfile.clothSize)kw+=' '+userProfile.clothSize;
-        if(isShoe&&userProfile.shoeSize)kw+=' '+userProfile.shoeSize+'cm';
+        if(treatShoe&&userProfile.shoeSize)kw+=' '+userProfile.shoeSize+'cm';
     }
     return kw.trim();
 }
@@ -2874,17 +3267,19 @@ function buildWatchMetaLine(forChild) {
     const kl = raw.toLowerCase();
     const isShoe = SHOE_KW.some(w => kl.includes(w.toLowerCase()));
     const isCloth = CLOTH_KW.some(w => kl.includes(w.toLowerCase()));
+    const likelySneakerModel = SNEAKER_MODEL_HINT_RE.test(raw);
+    const showShoeSize = isShoe || likelySneakerModel || SHOE_SKU_HINT_RE.test(raw);
     const parts = [];
     if (forChild) {
         const cg = userProfile.childGender === 'girl' ? '女の子' : (userProfile.childGender === 'boy' ? '男の子' : '');
         if (cg) parts.push(cg);
         if (isCloth && userProfile.childClothSize) parts.push('服：' + userProfile.childClothSize);
-        if (isShoe && userProfile.childShoeSize) parts.push('靴：' + userProfile.childShoeSize + 'cm');
+        if (showShoeSize && userProfile.childShoeSize) parts.push('靴：' + userProfile.childShoeSize + 'cm');
     } else {
         if (userProfile.gender === 'male') parts.push('男性');
         else if (userProfile.gender === 'female') parts.push('女性');
         if (isCloth && userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
-        if (isShoe && userProfile.shoeSize) parts.push('靴：' + userProfile.shoeSize + 'cm');
+        if (showShoeSize && userProfile.shoeSize) parts.push('靴：' + userProfile.shoeSize + 'cm');
     }
     return parts.length ? parts.join(' / ') : '';
 }
@@ -2974,6 +3369,17 @@ async function runStockSearch(keyword, forChild) {
             body: JSON.stringify({ keyword: sk, userId: getUserId(), forChild: !!forChild })
         });
         const data = await res.json();
+        if (!res.ok) {
+            list.innerHTML = '<div class="stock-not-found meta-11px">通信エラー (HTTP ' + res.status + '): ' + String(data.error || '').slice(0, 120) + '</div>';
+            if (ir) ir.style.display = 'block';
+            return;
+        }
+        const apiErrs = data.errors && data.errors.length;
+        if (apiErrs && (!data.items || data.items.length === 0) && (data.debug && (data.debug.handlerError || data.debug.wrapperError))) {
+            list.innerHTML = '<div class="stock-not-found meta-11px">検索サービスに一時的に接続できませんでした。しばらくしてから再度お試しください。</div>';
+            if (ir) ir.style.display = 'block';
+            return;
+        }
         if (data.debug) {
             console.log('[RE-EYE search] 楽天・Yahoo 検索デバッグ', {
                 apiKeywords: data.debug.searchKeywordsTried,
@@ -2990,7 +3396,9 @@ async function runStockSearch(keyword, forChild) {
             const nf = document.createElement('div');
             nf.className = 'stock-not-found';
             const p = document.createElement('p');
-            p.textContent = '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。';
+            p.textContent = data.inventoryRuleNoHits
+                ? '条件に合う在庫が見つかりませんでした。'
+                : '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。';
             const btn = document.createElement('button');
             btn.className = 'btn-purple';
             btn.style.marginTop = '10px';
@@ -3027,6 +3435,17 @@ function renderStockResults(items, keyword, displayKw, apiErrors) {
     if (hdr) {
         hdr.innerHTML = `<span class="gold-label" style="font-size:11px;">検索結果 — ${displayKw}</span>`;
     }
+
+    const aiBanner = document.createElement('div');
+    aiBanner.className = 'meta-11px';
+    aiBanner.setAttribute('role', 'status');
+    aiBanner.style.cssText =
+        'margin-bottom:14px;padding:12px 14px;line-height:1.55;letter-spacing:0.4px;' +
+        'color:var(--champagne-gold);font-weight:600;font-size:12px;' +
+        'border:1px solid rgba(155,89,182,0.55);border-radius:2px;' +
+        'background:rgba(155,89,182,0.12);box-shadow:0 0 18px rgba(155,89,182,0.15);';
+    aiBanner.textContent = 'AI判定：在庫の可能性があります。詳細はリンク先で確認してください';
+    list.appendChild(aiBanner);
 
     items.slice(0, 10).forEach(item => {
         const card = document.createElement('div');
@@ -3098,8 +3517,8 @@ async function watchStockItem(item,keyword,btn){
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 keyword: keyword,
-                itemId: item.itemId,
-                sourceId: item.sourceId,
+                itemId: normalizeMonitorId(item.itemId),
+                sourceId: normalizeMonitorId(item.sourceId),
                 userId: getUserId(),
                 url: item.url || '',
                 title: item.title || keyword,
@@ -3120,38 +3539,44 @@ async function watchStockItem(item,keyword,btn){
                 btn.classList.add('watching');
             }
 
-            // 履歴（History）にも即座に反映して「安心感」を出す
-            const iid = String(item.itemId || ('k_' + Date.now()));
-            const sid = item.sourceId || 'unknown';
-            const entry = {
-                id: iid,
-                itemId: item.itemId,
-                sourceId: sid,
-                keyword: keyword,
+            const nsId = normalizeMonitorId(json.sourceId != null ? json.sourceId : item.sourceId);
+            const niId = normalizeMonitorId(json.itemId != null ? json.itemId : item.itemId);
+            const ek = _watchRowKey({ sourceId: nsId, itemId: niId });
+            _pendingMonitors.set(ek, {
+                keyword,
+                itemId: niId,
+                sourceId: nsId,
                 title: item.title || keyword,
                 status: 'OFF',
-                shop: item.shopName || '監視中',
-                price: item.price || 0,
-                url: item.url || '',
-                time: formatDateSec(Date.now()),
                 lastCheckedAt: Date.now(),
-                kind: 'stock',
-                watchMeta: buildWatchMetaLine(typeof _lastStockSearchContext.forChild === 'boolean' ? _lastStockSearchContext.forChild : false)
-            };
-            historyItems.unshift(entry);
-            _persistHistory();
-            renderStockMonitorRequests();
+                addedAt: Date.now(),
+                url: item.url || '',
+                price: item.price || 0,
+                userId: getUserId()
+            });
+            await loadWatchHistory({ expectKey: ek, retry: true, silent: true });
+            const wm=buildWatchMetaLine(typeof _lastStockSearchContext.forChild==='boolean'?_lastStockSearchContext.forChild:false);
+            historyItems.forEach(h=>{
+                if((h.watchSource==='redis'||h.watchSource==='pending')&&_watchRowKey(h)===ek) h.watchMeta=wm;
+            });
+            const hx=document.getElementById('history');
+            if(hx&&hx.classList.contains('active')) renderHistory(historyItems);
 
-            // 1秒後に履歴画面へ飛ばして、登録されたことを確認させる
-            setTimeout(() => {
-                const hb = document.querySelector('.nav-item[onclick*="\'history\'"]');
-                if (hb) show('history', hb);
-            }, 800);
+            // 見守りタブへ：登録一覧（見守りリクエスト）をその場で確認させる
+            setTimeout(()=>{
+                const sb=document.querySelector('.nav-item[onclick*="\'settings\'"]');
+                if(sb) show('settings', sb);
+            },400);
 
         } else {
             const errText = await res.text();
+            let userMsg = errText;
+            try {
+                const j = JSON.parse(errText);
+                if (j.error) userMsg = j.error + (j.detail ? '\n（' + String(j.detail).slice(0, 120) + '）' : '');
+            } catch (_) {}
             console.error('[monitor] 登録失敗 HTTP ' + res.status + ':', errText);
-            alert('監視登録エラー (HTTP ' + res.status + ')\n\n' + errText.slice(0, 400));
+            alert('監視登録できませんでした (HTTP ' + res.status + ')\n\n' + userMsg.slice(0, 500));
             throw new Error('登録失敗 ' + res.status);
         }
     } catch (e) {
@@ -3163,16 +3588,14 @@ async function watchStockItem(item,keyword,btn){
 }
 async function syncWatchStatus(){
     try{
+        purgeLegacyStockRows();
         const res=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
         if(!res.ok) return;
         const data=await res.json();
         let changed=false;
-        (data.items||[]).forEach(sv=>{
-            const local=historyItems.find(h=>
-                (h.itemId && String(h.itemId)===String(sv.itemId) && h.sourceId===sv.sourceId) ||
-                (h.keyword && h.keyword===sv.keyword) ||
-                (String(h.id)===String(sv.itemId) && h.sourceId===sv.sourceId)
-            );
+        (data.items||[]).forEach(raw=>{
+            const sv=normalizeServerItemRow(raw);
+            const local=historyItems.find(h=>_watchRowKey(h)===_watchRowKey(sv));
             if(!local) return;
             const prev = local.status;
             if(prev!==sv.status){
@@ -3218,8 +3641,7 @@ async function syncWatchStatus(){
             }
         });
         if(changed){_persistHistory();renderHistory(historyItems);}
-        const ss=document.getElementById('settings');
-        if(ss&&ss.classList.contains('active')) renderStockMonitorRequests();
+        await loadWatchHistory({ silent:true });
     }catch(e){}
 }
 function executeMonitor(keyword,mode){
@@ -3444,11 +3866,18 @@ if('serviceWorker' in navigator){
 //  setTimeout(runIntelScout, 10000) は存在しない
 // ════════════════════════════════════════════════
 window.onload=()=>{
-    // localStorage から historyItems 復元
+    try{
+        if(!localStorage.getItem('re_eye_redis_only_history_v2')){
+            localStorage.removeItem('re_eye_history');
+            localStorage.setItem('re_eye_redis_only_history_v2','1');
+        }
+    }catch(e){}
     try{
         const raw=localStorage.getItem('re_eye_history');
-        if(raw)historyItems=JSON.parse(raw).filter(i=>cleanHistoryItem(i));
-    }catch(e){historyItems=[];}
+        if(raw) historyItems=JSON.parse(raw).filter(i=>cleanHistoryItem(i)&&i.watchSource!=='redis'&&i.watchSource!=='pending');
+        else historyItems=[];
+    }catch(e){ historyItems=[]; }
+    purgeLegacyStockRows();
 
     runStartupAd();
     updateAdVisibility();
@@ -3498,7 +3927,12 @@ window.onload=()=>{
     // ── トレンドデータをクラウドから復元（localStorage → Redis 優先） ──
     loadTrendFromServer();
 
+    loadWatchHistory({ showLoading: true });
     setInterval(()=>{ syncWatchStatus(); }, 120000);
+    document.addEventListener('visibilitychange', ()=>{
+      if(document.visibilityState!=='visible') return;
+      loadWatchHistory({ silent:true });
+    });
 
     // ── 10秒待機（setTimeout(runIntelScout,10000)）は完全抹殺済み ──
     // スカウトは検索実行時（scoutAndShow/triggerInsightScout）にのみ発火する

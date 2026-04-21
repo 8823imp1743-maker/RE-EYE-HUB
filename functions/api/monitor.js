@@ -6,20 +6,45 @@
  * index.js のスケジューラーから呼び出す。
  */
 
-import { createHash } from 'crypto';
-import { getRedis } from '../lib/redis.js';
+import { getRedis, withRedisRetry } from '../lib/redis.js';
 import { isNoise } from '../lib/noise-filter.js';
 import { extractModelNumbers, extractSizeFromKeyword } from '../lib/cross-validator.js';
-import { validateColorMatchForItem, extractColorKeywords, expandColorQuery } from '../lib/color-filter.js';
-import { matchesProductKeyword } from '../lib/keyword-match.js';
-import { normalizeBrand } from '../lib/brand-normalizer.js';
+import {
+  extractColorKeywords,
+  expandColorQuery,
+  buildSerpPlainTextHaystack,
+} from '../lib/color-filter.js';
+import { serpItemMatchesRule } from '../lib/serp-item-rule.js';
 import { searchAllCached } from '../lib/shop-search-cache.js';
 import { sendOneSignalNotification } from '../lib/notification.js';
 import { getAuctionMinPrice } from '../lib/auction-checker.js';
-import { jitterWait, getStockInterval, getStockIntervalForPlan, CURRENT_PLAN, STOCK_CONFIG } from '../lib/plan-config.js';
+import { getStockInterval, getStockIntervalForPlan, CURRENT_PLAN, STOCK_CONFIG } from '../lib/plan-config.js';
 import { checkStock } from '../lib/stock-checker.js';
+import {
+  MONITOR_SCHEMA_VERSION,
+  WATCH_TTL,
+  GLOBAL_MONITOR_KEYS_SET,
+  GLOBAL_MONITOR_KEYS_SET_TTL_SEC,
+  watchKey,
+  userWatchIndexKey,
+  userPlanKey,
+  itemHashKey,
+  parseMonitorEntriesFromMget,
+  isMonitorEntryRedisKey,
+  monitorEntryKeysGlobPattern,
+  monitorUserEntryKeysPattern,
+} from '../lib/monitor-constants.js';
 
-const WATCH_TTL = 60 * 60 * 24 * 90; // 90日
+/** node run-cli.mjs からのみ詳細進捗ログ（動的 import 前に RE_EYE_CLI=1 をセット） */
+function isRunCli() {
+  return process.env.RE_EYE_CLI === '1' || process.env.RE_EYE_CLI === 'true';
+}
+function cliLog(...args) {
+  if (isRunCli()) console.log(...args);
+}
+
+/** テスト中: 新着 URL だけでなく、今回の検索ヒット全件に serpItemMatchesRule を適用し合格なら通知。本番前に false へ。 */
+const SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST = true;
 
 // ── 公式ドメイン一覧（特権パス対象） ──────────────────────────────────────────
 // 公式サイトが「在庫あり」と言えば他の全フィルターをスキップして即通知する。
@@ -48,21 +73,48 @@ function isOfficialUrl(url) {
 }
 
 /**
- * スキーマバージョン — ここを変更すると全 Redis エントリを「未確認」扱いにリセットする。
- * 新しいフィルター（サイズチェッカー超・冷徹モード等）導入後は必ずバージョンを上げる。
+ * 全監視エントリのキー一覧（SMEMBERS 優先。空なら KEYS 一回で移行してセットを埋める）
  */
-const MONITOR_SCHEMA_VERSION = '2026-04-18-v12'; // ルールベースのみ（Gemini 排除）
+async function fetchAllMonitorEntryKeys(r) {
+  let keys = await withRedisRetry(() => r.smembers(GLOBAL_MONITOR_KEYS_SET), { label: 'watch:global-smembers' }).catch(
+    () => []
+  );
+  if (!Array.isArray(keys)) keys = [];
+  keys = keys.filter(isMonitorEntryRedisKey);
+  if (keys.length > 0) return keys;
 
-/** Redis キー生成 */
-function watchKey(userId, hash) {
-  return `monitor:${userId}:${hash}`;
+  const raw = await withRedisRetry(() => r.keys(monitorEntryKeysGlobPattern()), { label: 'watch:keys-migrate' }).catch(
+    () => []
+  );
+  const filtered = (raw || []).filter(isMonitorEntryRedisKey);
+  if (filtered.length === 0) return [];
+
+  const CHUNK = 80;
+  for (let i = 0; i < filtered.length; i += CHUNK) {
+    const chunk = filtered.slice(i, i + CHUNK);
+    await withRedisRetry(() => r.sadd(GLOBAL_MONITOR_KEYS_SET, ...chunk), { label: 'watch:global-migrate-sadd' });
+  }
+  await withRedisRetry(
+    () => r.expire(GLOBAL_MONITOR_KEYS_SET, GLOBAL_MONITOR_KEYS_SET_TTL_SEC),
+    { label: 'watch:global-expire' }
+  ).catch(() => {});
+  console.log(`[monitor] GLOBAL_MONITOR_KEYS_SET 移行: ${filtered.length} キーを登録`);
+  return filtered;
 }
 
-function itemHashKey(sourceId, itemId) {
-  return createHash('sha256')
-    .update(`${sourceId}:${itemId}`)
-    .digest('hex')
-    .slice(0, 16);
+async function mgetChunked(r, keys, chunkSize = 120) {
+  const out = [];
+  for (let i = 0; i < keys.length; i += chunkSize) {
+    const chunk = keys.slice(i, i + chunkSize);
+    const vals = await withRedisRetry(() => r.mget(...chunk), { label: 'watch:mget-chunk' });
+    if (Array.isArray(vals)) out.push(...vals);
+  }
+  return out;
+}
+
+/** フロントの normalizeMonitorId と同規則（大小・前後空白を揃える） */
+function normalizeWatchId(v) {
+  return String(v ?? '').trim().toLowerCase();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -71,7 +123,8 @@ function itemHashKey(sourceId, itemId) {
 
 export default async function handler(req, res) {
   if (req.method === 'POST') return handleRegister(req, res);
-  if (req.method === 'GET')  return handleStatus(req, res);
+  if (req.method === 'GET') return handleStatus(req, res);
+  if (req.method === 'DELETE') return handleDelete(req, res);
   return res.status(405).json({ error: 'Method Not Allowed' });
 }
 
@@ -81,9 +134,21 @@ async function handlePlanSyncOnly(req, res) {
   if (!userId || !plan || !STOCK_CONFIG[plan]) {
     return res.status(400).json({ error: 'userId and valid plan required' });
   }
-  const r = getRedis();
-  await r.set(`user:plan:${userId}`, plan, { ex: WATCH_TTL });
-  return res.status(200).json({ ok: true, plan });
+  try {
+    const r = getRedis();
+    await withRedisRetry(
+      () => r.set(userPlanKey(userId), plan, { ex: WATCH_TTL }),
+      { label: 'plan:set' }
+    );
+    return res.status(200).json({ ok: true, plan });
+  } catch (e) {
+    console.error('[monitor] plan sync Redis:', e.message);
+    return res.status(503).json({
+      error: 'Redis に接続できませんでした。しばらくしてから再度お試しください。',
+      code:  'REDIS_UNAVAILABLE',
+      detail: e.message,
+    });
+  }
 }
 
 /** 見守りアイテムを Redis に登録 */
@@ -92,19 +157,37 @@ async function handleRegister(req, res) {
   if (body.syncPlanOnly) {
     return handlePlanSyncOnly(req, res);
   }
-  const { keyword, itemId, sourceId, userId, url, title, price, listPrice, plan } = body;
+  const keyword = String(body.keyword || '').trim();
+  const itemId = normalizeWatchId(body.itemId);
+  const sourceId = normalizeWatchId(body.sourceId);
+  const userId = String(body.userId || '').trim();
+  const url = body.url != null ? String(body.url) : '';
+  const title = body.title != null ? String(body.title) : '';
+  const price = Number(body.price) || 0;
+  const plan = body.plan;
   if (!keyword || !itemId || !sourceId || !userId) {
     return res.status(400).json({ error: 'keyword, itemId, sourceId, userId are required' });
   }
 
-  let resolvedListPrice = listPrice || price || 0;
+  const listPriceNum =
+    body.listPrice != null && body.listPrice !== '' ? Number(body.listPrice) : NaN;
+  let resolvedListPrice =
+    !Number.isNaN(listPriceNum) && listPriceNum ? listPriceNum : price || 0;
 
-  const r = getRedis();
-  if (plan && STOCK_CONFIG[plan]) {
-    await r.set(`user:plan:${userId}`, plan, { ex: WATCH_TTL });
+  let r;
+  try {
+    r = getRedis();
+  } catch (e) {
+    console.error('[monitor] Redis init:', e.message);
+    return res.status(503).json({
+      error: 'Redis が未設定です。サーバー環境変数を確認してください。',
+      code:  'REDIS_NOT_CONFIGURED',
+      detail: e.message,
+    });
   }
+
   const hash = itemHashKey(sourceId, itemId);
-  const key  = watchKey(userId, hash);
+  const key = watchKey(userId, hash);
 
   // ── 品番の確定（登録時に一度だけ抽出・固定する）─────────────────────────
   // keyword と title の両方から品番を探す。
@@ -129,10 +212,13 @@ async function handleRegister(req, res) {
   }
 
   const entry = {
-    keyword, itemId, sourceId, userId,
-    url:           url   || '',
+    keyword,
+    itemId,
+    sourceId,
+    userId,
+    url,
     title:         registeredTitle,
-    price:         price || 0,
+    price,
     listPrice:     resolvedListPrice || 0,
     // ── 品番絶対主義の核 ────────────────────────────────────────────────
     // ハイフン以下を含む完全品番（例: ["CW2288-111"]）。
@@ -148,14 +234,52 @@ async function handleRegister(req, res) {
     notifiedAt:    0,
   };
 
-  await r.set(key, JSON.stringify(entry), { ex: WATCH_TTL });
-  return res.status(200).json({
-    registered:    true,
-    hash,
-    listPrice:     resolvedListPrice,
-    modelNumbers:  registeredModels,   // 登録確定品番
-    colorKeywords: registeredColors,   // 登録確定色キーワード
-  });
+  try {
+    if (process.env.RE_EYE_MONITOR_DEBUG === '1') {
+      console.log(
+        '[monitor][debug] Redis SET 直前',
+        JSON.stringify({ itemId, sourceId, key, hash, userId })
+      );
+    }
+    if (plan && STOCK_CONFIG[plan]) {
+      await withRedisRetry(
+        () => r.set(userPlanKey(userId), plan, { ex: WATCH_TTL }),
+        { label: 'register:plan' }
+      );
+    }
+    await withRedisRetry(
+      () => r.set(key, JSON.stringify(entry), { ex: WATCH_TTL }),
+      { label: 'register:entry' }
+    );
+    await withRedisRetry(
+      () => r.sadd(userWatchIndexKey(userId), hash),
+      { label: 'register:index' }
+    );
+    await withRedisRetry(
+      () => r.expire(userWatchIndexKey(userId), WATCH_TTL),
+      { label: 'register:index-ttl' }
+    );
+    await withRedisRetry(() => r.sadd(GLOBAL_MONITOR_KEYS_SET, key), { label: 'register:global-key' });
+    await withRedisRetry(() => r.expire(GLOBAL_MONITOR_KEYS_SET, GLOBAL_MONITOR_KEYS_SET_TTL_SEC), { label: 'register:global-ttl' }).catch(
+      () => {}
+    );
+    return res.status(200).json({
+      registered: true,
+      hash,
+      itemId,
+      sourceId,
+      listPrice: resolvedListPrice,
+      modelNumbers: registeredModels,
+      colorKeywords: registeredColors,
+    });
+  } catch (e) {
+    console.error('[monitor] register Redis:', e.message);
+    return res.status(503).json({
+      error: 'Redis に接続できませんでした。しばらくしてから再度お試しください。',
+      code:  'REDIS_UNAVAILABLE',
+      detail: e.message,
+    });
+  }
 }
 
 /** ユーザーの全見守りアイテムを取得 */
@@ -166,8 +290,51 @@ async function handleStatus(req, res) {
   try {
     const items = await getUserWatchItems(userId);
     return res.status(200).json({ items });
-  } catch(e) {
-    return res.status(500).json({ items: [], error: e.message });
+  } catch (e) {
+    console.error('[monitor] GET status:', e.message);
+    return res.status(503).json({
+      items: [],
+      error: 'Redis に接続できませんでした。しばらくしてから再度お試しください。',
+      code:  'REDIS_UNAVAILABLE',
+      detail: e.message,
+    });
+  }
+}
+
+/** 見守り 1 件を Redis から削除（エントリ + ユーザーインデックス） */
+async function handleDelete(req, res) {
+  const body = req.body || {};
+  const userId = String(body.userId || '').trim();
+  const itemId = normalizeWatchId(body.itemId);
+  const sourceId = normalizeWatchId(body.sourceId);
+  if (!userId || !itemId || !sourceId) {
+    return res.status(400).json({ error: 'userId, itemId, sourceId are required' });
+  }
+  let r;
+  try {
+    r = getRedis();
+  } catch (e) {
+    console.error('[monitor] Redis init (DELETE):', e.message);
+    return res.status(503).json({
+      error: 'Redis が未設定です。',
+      code: 'REDIS_NOT_CONFIGURED',
+      detail: e.message,
+    });
+  }
+  const hash = itemHashKey(sourceId, itemId);
+  const key = watchKey(userId, hash);
+  try {
+    await withRedisRetry(() => r.del(key), { label: 'delete:entry' });
+    await withRedisRetry(() => r.srem(userWatchIndexKey(userId), hash), { label: 'delete:index' });
+    await withRedisRetry(() => r.srem(GLOBAL_MONITOR_KEYS_SET, key), { label: 'delete:global-key' }).catch(() => {});
+    return res.status(200).json({ ok: true, deleted: true, hash });
+  } catch (e) {
+    console.error('[monitor] DELETE:', e.message);
+    return res.status(503).json({
+      error: 'Redis に接続できませんでした。',
+      code: 'REDIS_UNAVAILABLE',
+      detail: e.message,
+    });
   }
 }
 
@@ -181,12 +348,12 @@ async function handleStatus(req, res) {
 
 /**
  * Redis からユーザーのプランを取得する。
- * キー: user:plan:{userId}  値: 'FREE'|'STANDARD'|'PRO'|'VIP'
+ * キー: userPlanKey(userId)（= user:plan:{userId}） 値: 'FREE'|'STANDARD'|'PRO'|'VIP'
  * 未設定の場合は CURRENT_PLAN を返す。
  */
 async function getUserPlanBatch(r, userIds) {
   if (userIds.length === 0) return {};
-  const planKeys = userIds.map(uid => `user:plan:${uid}`);
+  const planKeys = userIds.map(uid => userPlanKey(uid));
   const planVals = await r.mget(...planKeys);
   const map = {};
   userIds.forEach((uid, i) => {
@@ -198,37 +365,60 @@ async function getUserPlanBatch(r, userIds) {
 
 /**
  * 全ユーザーの見守りアイテムをチェックし、在庫変化があれば通知する
- * index.js の Cron から呼び出す
+ * CLI（run-cli.mjs）または外部スケジューラから呼び出す。人工待機（sleep/jitter）は入れない。
  */
 export async function checkAllWatched() {
-  // ── VIP Jitter: 実行タイミングをランダムにずらして bot 検知を回避 ──────
-  const { intervalSec, jitterSec } = getStockInterval();
+  cliLog('[run-cli] Upstash（Redis）に接続して監視エントリを読み込みます');
+
+  const { intervalSec } = getStockInterval();
   if (intervalSec === null) {
     console.log('[monitor][VIP] 夜間スリープ期間 — スキップ');
+    cliLog('[run-cli] 夜間スリープのため在庫監視はスキップされました');
     return;
-  }
-  if (jitterSec > 0) {
-    const waitSec = 30 + Math.floor(Math.random() * 31); // 30–60秒のランダム待機
-    console.log(`[monitor][VIP] Jitter 待機: ${waitSec}秒`);
-    await jitterWait(waitSec, 0);
   }
 
   const r = getRedis();
   let keys = [];
   try {
-    keys = await r.keys('monitor:*');
-  } catch(e) {
-    console.error('[monitor] KEYS エラー:', e.message);
+    keys = await fetchAllMonitorEntryKeys(r);
+  } catch (e) {
+    console.error('[monitor] 監視キー列挙エラー:', e.message);
+    cliLog('[run-cli] 監視キーの列挙に失敗しました:', e.message);
     return;
   }
 
-  if (keys.length === 0) return;
+  cliLog(`[run-cli] Upstash から読み込んだ監視キー数: ${keys.length} 件`);
 
-  const values = await r.mget(...keys);
-  const allEntries = values
-    .filter(Boolean)
-    .map(v => { try { return JSON.parse(v); } catch { return null; } })
-    .filter(Boolean);
+  if (keys.length === 0) {
+    cliLog('[run-cli] 監視対象が空っぽです');
+    return;
+  }
+
+  const values = await mgetChunked(r, keys);
+  const { entries: allEntries, issues: loadIssues } = parseMonitorEntriesFromMget(
+    keys,
+    values,
+    MONITOR_SCHEMA_VERSION
+  );
+
+  for (const iss of loadIssues) {
+    const head = `[monitor] 監視エントリ読み込み [${iss.type}] ${iss.key}`;
+    if (iss.preview) {
+      console.warn(head, '—', iss.message, '\n  preview:', iss.preview);
+    } else {
+      console.warn(head, '—', iss.message);
+    }
+    if (isRunCli()) {
+      cliLog(`[run-cli] ${head} — ${iss.message}${iss.preview ? ` …${iss.preview.slice(0, 100)}` : ''}`);
+    }
+  }
+
+  cliLog(`[run-cli] 有効な監視エントリ（オブジェクトとして復元できた件数）: ${allEntries.length} 件`);
+
+  if (keys.length > 0 && allEntries.length === 0) {
+    cliLog('[run-cli] 監視キーはありますが有効データが 0 件です。直前の [monitor] 警告に原因が出ています。');
+    return;
+  }
 
   // ── プラン別インターバルフィルター ──────────────────────────────────────
   // ユーザーごとのプランを一括取得し、「まだ監視する時間ではない」アイテムをスキップ。
@@ -251,15 +441,34 @@ export async function checkAllWatched() {
     console.log(`[monitor] プラン別フィルター: ${entries.length}/${allEntries.length}件を対象（残りはインターバル未達）`);
   }
 
-  // アイテムごとに現在の在庫を確認（並列数 5 に制限 — API Rate Limit 対策）
+  cliLog(`[run-cli] 今回チェックする監視対象: ${entries.length} 件（プラン・インターバル適用後）`);
+
+  if (entries.length === 0) {
+    cliLog('[run-cli] 全件がインターバル待ちのため、今回は API を呼びません');
+    return;
+  }
+
+  // アイテムごとに現在の在庫を確認（並列数 5 — API Rate Limit 対策。バッチ間の人工待機は入れない）
   const CONCURRENCY = 5;
+  const totalBatches = Math.ceil(entries.length / CONCURRENCY);
   for (let i = 0; i < entries.length; i += CONCURRENCY) {
     const batch = entries.slice(i, i + CONCURRENCY);
-    await Promise.allSettled(batch.map(entry => checkAndNotify(r, entry)));
-    // バッチ間に 1 秒のインターバルを挟んで連続リクエストを緩和
-    if (i + CONCURRENCY < entries.length) {
-      await new Promise(res => setTimeout(res, 1000));
-    }
+    const batchNo = Math.floor(i / CONCURRENCY) + 1;
+    cliLog(`[run-cli] バッチ ${batchNo}/${totalBatches}（${batch.length} 件）を処理中…`);
+    const settled = await Promise.allSettled(batch.map(entry => checkAndNotify(r, entry)));
+    settled.forEach((res, j) => {
+      const entry = batch[j];
+      const name = (entry.title || entry.keyword || entry.itemId || '?').slice(0, 56);
+      if (res.status === 'rejected') {
+        cliLog(`[run-cli] 監視: 「${name}」→ エラー: ${res.reason?.message || res.reason}`);
+        return;
+      }
+      const v = res.value;
+      if (v && typeof v === 'object' && v.outcome) {
+        const extra = v.detail ? ` (${v.detail})` : '';
+        cliLog(`[run-cli] 監視: 「${v.label || name}」→ ${v.outcome}${extra}`);
+      }
+    });
   }
 }
 
@@ -316,29 +525,21 @@ async function runCascadeSearch(keyword, officialTitle) {
 // ─────────────────────────────────────────────────────────
 
 /**
- * 新着商品が監視キーワード・色・品番と整合するか（プログラム判定）
+ * Yahoo は親 SKU で inStock=false でも、説明にサイズ選択・在庫表記があることがある。
  */
-function serpItemMatchesRule(entry, item) {
-  const keyword = entry.keyword || '';
-  const normalized = normalizeBrand(keyword);
-  if (!validateColorMatchForItem(item, keyword)) {
-    console.log(`[SERP] 色不一致スキップ: "${(item.title || '').slice(0, 45)}"`);
-    return false;
+function yahooSelectableStockHeuristic(item) {
+  if (item.sourceId !== 'yahoo' || item.available !== false) return false;
+  const hay = buildSerpPlainTextHaystack(item);
+  const d = hay.toLowerCase();
+  if (/売り切れ|在庫なし|完売|販売終了|取扱終了|取り扱い終了|品切れ/.test(d)) return false;
+  if (
+    /在庫あり|△|〇|ご購入いただけ|カートに入れ|バリエーション|サイズ.*選択|選択.*サイズ|選べるサイズ|オプションで|カラー.*サイズ|サイズ・カラー/.test(
+      d
+    )
+  ) {
+    return true;
   }
-  const models = entry.modelNumbers || [];
-  if (models.length > 0) {
-    const t = (item.title || '').toUpperCase();
-    const ok = models.some(m => t.includes(String(m).toUpperCase()));
-    if (!ok) {
-      console.log(`[SERP] 品番不一致スキップ: need [${models.join(',')}]`);
-      return false;
-    }
-  }
-  if (!matchesProductKeyword(item, keyword, normalized)) {
-    console.log(`[SERP] 商品名キーワード不一致: "${(item.title || '').slice(0, 45)}"`);
-    return false;
-  }
-  return true;
+  return false;
 }
 
 /**
@@ -346,6 +547,7 @@ function serpItemMatchesRule(entry, item) {
  */
 async function checkAndNotifySerp(r, entry) {
   const { keyword, userId, itemId, sourceId, title, listPrice } = entry;
+  const label = (title || keyword || itemId || '?').slice(0, 56);
 
   // ── Step 1–2: 色展開クエリで楽天・Yahoo のみ検索（Google / SerpAPI は未使用）────
   const expandedKeyword = expandColorQuery(keyword);
@@ -362,6 +564,12 @@ async function checkAndNotifySerp(r, entry) {
     inStockOnly: false,
     cacheTtlSec: 120,
   });
+  const searchErrs = marketResult.errors || [];
+  if (isRunCli() && searchErrs.length) {
+    for (const err of searchErrs) {
+      cliLog(`[run-cli] ショップ検索 API: ${err}`);
+    }
+  }
   const marketItems = marketResult.items || [];
 
   const seenUrls = new Set();
@@ -388,16 +596,22 @@ async function checkAndNotifySerp(r, entry) {
       lastCheckedAt: Date.now(),
       schemaVersion: MONITOR_SCHEMA_VERSION,
     }), { ex: WATCH_TTL });
-    return;
+    const errHint = searchErrs.length ? ` ※APIエラーあり: ${searchErrs.length}件` : '';
+    return {
+      label,
+      outcome: searchErrs.length && currentUrls.length === 0 ? 'エラー（検索結果0件）' : 'ベースライン確立',
+      detail:  `${currentUrls.length}件ヒット${errHint}`.trim(),
+    };
   }
 
   const newItems = allItems.filter(i => i.url && !prevUrls.includes(i.url));
 
   console.log(
-    `[SERP] 現在${currentUrls.length}件 前回${prevUrls.length}件 新着${newItems.length}件`
+    `[SERP] 現在${currentUrls.length}件 前回${prevUrls.length}件 新着${newItems.length}件` +
+    (SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST ? ' [テスト: 全ヒットを判定・通知候補]' : '')
   );
 
-  if (newItems.length === 0) {
+  if (!SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST && newItems.length === 0) {
     // 変化なし → タイムスタンプ更新のみ
     const hash = itemHashKey(sourceId, itemId);
     await r.set(watchKey(userId, hash), JSON.stringify({
@@ -406,12 +620,19 @@ async function checkAndNotifySerp(r, entry) {
       lastCheckedAt: Date.now(),
       schemaVersion: MONITOR_SCHEMA_VERSION,
     }), { ex: WATCH_TTL });
-    return;
+    return {
+      label,
+      outcome: searchErrs.length ? '新着なし（検索APIにエラーあり）' : '新着なし',
+      detail:  searchErrs.length ? searchErrs.join('; ') : undefined,
+    };
   }
+
+  /** 通常は新着のみ。テスト時は検索に載っている全商品をサイズ・品番判定する。 */
+  const itemsToEvaluate = SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST ? allItems : newItems;
 
   const confirmed = [];
 
-  for (const item of newItems.slice(0, 5)) {
+  for (const item of itemsToEvaluate.slice(0, 30)) {
     if (isNoise(item)) {
       console.log(`[SERP] ノイズ: "${item.title?.slice(0, 40)}"`);
       continue;
@@ -429,6 +650,10 @@ async function checkAndNotifySerp(r, entry) {
     if (!serpItemMatchesRule(entry, item)) continue;
 
     let stockConfirmed = item.available !== false;
+    if (!stockConfirmed && yahooSelectableStockHeuristic(item)) {
+      stockConfirmed = true;
+      console.log('[SERP] Yahoo: inStock=false でも説明・キャッチに購入/バリエーション表記あり → 在庫ありとみなす');
+    }
     if (isOfficialUrl(item.url)) {
       const sr = await checkStock(item.url, keyword);
       stockConfirmed = sr.status === 'in_stock';
@@ -474,15 +699,59 @@ async function checkAndNotifySerp(r, entry) {
     }
   }
 
-  // ── Step 6: 状態を更新 ──────────────────────────────────────────────────────
+  // ── Step 6: 状態を更新（GET /api/monitor・フロントが参照する status / url / price / results）────
   const hash = itemHashKey(sourceId, itemId);
-  await r.set(watchKey(userId, hash), JSON.stringify({
-    ...entry,
-    serpUrls:      currentUrls.slice(0, 100),
-    lastCheckedAt: Date.now(),
-    ...(confirmed.length > 0 ? { notifiedAt: Date.now(), status: 'ON' } : {}),
-    schemaVersion: MONITOR_SCHEMA_VERSION,
-  }), { ex: WATCH_TTL });
+  const resultsPayload =
+    confirmed.length > 0
+      ? confirmed.map(({ item: it }) => ({
+          title:     it.title || '',
+          url:       it.url || '',
+          price:     Number(it.price) || 0,
+          sourceId:  it.sourceId || '',
+          itemId:    String(it.itemId || ''),
+          shopName:  it.shopName || '',
+          available: it.available !== false,
+          matchedAt: Date.now(),
+        }))
+      : undefined;
+  const primary = confirmed[0]?.item;
+
+  await r.set(
+    watchKey(userId, hash),
+    JSON.stringify({
+      ...entry,
+      serpUrls:      currentUrls.slice(0, 100),
+      lastCheckedAt: Date.now(),
+      schemaVersion: MONITOR_SCHEMA_VERSION,
+      ...(confirmed.length > 0
+        ? {
+            notifiedAt: Date.now(),
+            status:     'ON',
+            results:    resultsPayload,
+            // 監視行の代表リンク（シードのプレースホルダ URL を実ヒットで上書き）
+            url:   primary?.url || entry.url,
+            price: Number(primary?.price) || entry.price || 0,
+          }
+        : {}),
+    }),
+    { ex: WATCH_TTL }
+  );
+
+  let outcome;
+  if (searchErrs.length) {
+    outcome = confirmed.length > 0
+      ? `通知あり（${confirmed.length}件）※検索APIエラーあり`
+      : '在庫なし・通知なし ※検索APIエラーあり';
+  } else if (confirmed.length > 0) {
+    outcome = `通知あり（${confirmed.length}件）`;
+  } else {
+    outcome = '在庫なし（新着はノイズ・不一致・在庫なしで除外）';
+  }
+  return {
+    label,
+    outcome,
+    detail: searchErrs.length ? searchErrs.join('; ') : undefined,
+  };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -503,6 +772,7 @@ async function checkAndNotifySerp(r, entry) {
  */
 async function checkOfficialAndNotify(r, entry, lastStatus) {
   const { url, keyword, title, price, listPrice, userId, itemId, sourceId } = entry;
+  const label = (title || keyword || '?').slice(0, 56);
 
   console.log(`[monitor][公式特権] "${title?.slice(0, 40)}" → 直接フェッチ: ${url.slice(0, 60)}`);
   const stockResult = await checkStock(url, keyword || '');
@@ -514,7 +784,7 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
     await r.set(watchKey(userId, hash), JSON.stringify({
       ...entry, lastCheckedAt: Date.now(), schemaVersion: MONITOR_SCHEMA_VERSION,
     }), { ex: WATCH_TTL });
-    return;
+    return { label, outcome: 'エラー', detail: `公式在庫判定: ${stockResult.status}` };
   }
 
   const newStatus    = stockResult.status === 'in_stock' ? 'ON' : 'OFF';
@@ -540,7 +810,16 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
       marketStatus:  newMarketStatus,
       schemaVersion: MONITOR_SCHEMA_VERSION,
     }), { ex: WATCH_TTL });
-    return;
+    let outcomeNoChange;
+    if (newStatus === 'ON') outcomeNoChange = '変化なし（公式在庫あり）';
+    else if (newMarketStatus === 'FOUND') outcomeNoChange = '変化なし（公式品切れ・市場在庫あり）';
+    else outcomeNoChange = '変化なし（在庫なし）';
+
+    return {
+      label,
+      outcome: outcomeNoChange,
+      detail:  `公式=${newStatus} 市場=${newMarketStatus}`,
+    };
   }
 
   let notifTitle, notifMessage, notifUrl;
@@ -597,6 +876,12 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
     `[monitor][公式] 通知: "${notifTitle.slice(0, 60)}"` +
     ` official=${newStatus} market=${newMarketStatus}`
   );
+
+  return {
+    label,
+    outcome: '通知送信',
+    detail:  `公式=${newStatus} 市場=${newMarketStatus}`,
+  };
 }
 
 /**
@@ -609,7 +894,9 @@ async function checkAndNotify(r, entry) {
   const schemaOk = entry.schemaVersion === MONITOR_SCHEMA_VERSION;
   const lastStatus = schemaOk ? entry.status : 'OFF';
   if (!schemaOk) {
-    console.log(`[monitor] スキーマバージョン不一致 → lastStatus を 'OFF' にリセット (entry="${title?.slice(0,40)}")`);
+    console.log(
+      `[monitor] スキーマバージョン不一致 → lastStatus を 'OFF' にリセット: 期待="${MONITOR_SCHEMA_VERSION}" 実際="${entry.schemaVersion ?? '(フィールドなし)'}" entry="${title?.slice(0, 40)}"`
+    );
   }
 
   // ── 公式URL特権パス ────────────────────────────────────────────────────────
@@ -631,12 +918,31 @@ async function checkAndNotify(r, entry) {
 
 async function getUserWatchItems(userId) {
   const r = getRedis();
-  const keys = await r.keys(`monitor:${userId}:*`);
+  const indexKey = userWatchIndexKey(userId);
+  let keys = [];
+  const hashes = await withRedisRetry(() => r.smembers(indexKey), { label: 'watch:smembers' }).catch(() => []);
+  if (Array.isArray(hashes) && hashes.length > 0) {
+    keys = hashes.map((h) => watchKey(userId, h));
+  } else {
+    keys = await withRedisRetry(() => r.keys(monitorUserEntryKeysPattern(userId)), { label: 'watch:keys' });
+  }
   if (keys.length === 0) return [];
-  const values = await r.mget(...keys);
+  const values = await withRedisRetry(() => r.mget(...keys), { label: 'watch:mget' });
   return values
     .filter(Boolean)
-    .map(v => { try { return JSON.parse(v); } catch { return null; } })
+    .map(v => {
+      try {
+        const o = JSON.parse(v);
+        if (!o || typeof o !== 'object') return null;
+        return {
+          ...o,
+          itemId: normalizeWatchId(o.itemId),
+          sourceId: normalizeWatchId(o.sourceId),
+        };
+      } catch {
+        return null;
+      }
+    })
     .filter(Boolean);
 }
 
@@ -652,27 +958,36 @@ export async function checkAuctionPrices() {
   const r = getRedis();
   let keys = [];
   try {
-    keys = await r.keys('monitor:*');
-  } catch(e) {
-    console.error('[auction] KEYS エラー:', e.message);
+    keys = await fetchAllMonitorEntryKeys(r);
+  } catch (e) {
+    console.error('[auction] 監視キー列挙エラー:', e.message);
     return;
   }
   if (keys.length === 0) return;
 
-  const values = await r.mget(...keys);
-  const entries = values
-    .filter(Boolean)
-    .map(v => { try { return JSON.parse(v); } catch { return null; } })
-    .filter(Boolean);
+  const values = await mgetChunked(r, keys);
+  const { entries: parsedEntries, issues: auctionLoadIssues } = parseMonitorEntriesFromMget(
+    keys,
+    values,
+    MONITOR_SCHEMA_VERSION
+  );
+  for (const iss of auctionLoadIssues) {
+    const head = `[auction] 監視エントリ読み込み [${iss.type}] ${iss.key}`;
+    if (iss.preview) {
+      console.warn(head, '—', iss.message, '\n  preview:', iss.preview);
+    } else {
+      console.warn(head, '—', iss.message);
+    }
+  }
 
   // 定価が登録されているアイテムのみ対象
-  const targets = entries.filter(e => e.price && e.price > 0);
+  const targets = parsedEntries.filter(e => e.price && e.price > 0);
   console.log(`[auction] 対象アイテム ${targets.length} 件`);
 
-  // 連続リクエストを避けるため直列処理（1秒インターバル）
-  for (const entry of targets) {
-    await checkAuctionAndNotify(r, entry);
-    await new Promise(res => setTimeout(res, 1000));
+  const AUCTION_CONCURRENCY = 3;
+  for (let i = 0; i < targets.length; i += AUCTION_CONCURRENCY) {
+    const batch = targets.slice(i, i + AUCTION_CONCURRENCY);
+    await Promise.allSettled(batch.map((entry) => checkAuctionAndNotify(r, entry)));
   }
 }
 
