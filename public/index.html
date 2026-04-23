@@ -2030,8 +2030,7 @@ function getMonitoringIntervalMs() {
 // ── ユーザープロフィール ──────────────────────────────────────
 let userProfile = {
     gender:'', height:'', clothSize:'', shoeSize:'', prefecture:'',
-    glovesSml:'',
-    hasChildren:false, childGender:'', childClothSize:'', childShoeSize:'', childGlovesSml:'',
+    hasChildren:false, childGender:'', childClothSize:'', childShoeSize:'',
     interests:[], timezone: TZ
 };
 /** 索敵 /api/search・/api/scout の forChild。見守り枠のトグルで更新・localStorage 永続化 */
@@ -2112,8 +2111,6 @@ function revealFirstRunChildSettings() {
     try {
         const s = localStorage.getItem('re_eye_profile');
         if (s) userProfile = Object.assign(userProfile, JSON.parse(s));
-        userProfile.glovesSml = '';
-        userProfile.childGlovesSml = '';
     } catch (e) {}
 })();
 
@@ -3388,6 +3385,7 @@ function openUserSettingsBottomSheet() {
     try {
         restoreDialUI(userProfile);
     } catch (e) {}
+    applyChildRevealedStateFromProfile();
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
 }
 function closeUserSettingsBottomSheet() {
@@ -3538,24 +3536,27 @@ function act(rowId, val) {
     if (c) c.classList.add('active');
 }
 function readProfileFromDials() {
-    const sel = (id) => {
-        const e = document.querySelector('#' + id + ' .size-chip.active, #' + id + ' .setting-chip.active');
-        if (!e) return '';
-        if (e.dataset && e.dataset.val != null && e.dataset.val !== '') return e.dataset.val;
-        return (e.textContent || '').trim();
-    };
-    userProfile.gender = sel('dial-adult-gender');
-    userProfile.clothSize = sel('dial-adult-cloth');
-    userProfile.shoeSize = sel('dial-adult-shoe');
-    userProfile.glovesSml = '';
-    const pr = document.getElementById('dial-prefecture');
-    userProfile.prefecture = pr ? (pr.value || '') : (userProfile.prefecture || '');
-    const cgv = sel('dial-child-gender') || '';
-    userProfile.hasChildren = cgv !== '';
-    userProfile.childGender = cgv;
-    userProfile.childClothSize = sel('dial-child-cloth');
-    userProfile.childShoeSize = sel('dial-child-shoe');
-    userProfile.childGlovesSml = '';
+    try {
+        const sel = (id) => {
+            try {
+                const e = document.querySelector('#' + id + ' .size-chip.active, #' + id + ' .setting-chip.active');
+                if (!e) return '';
+                if (e.dataset && e.dataset.val != null && e.dataset.val !== '') return e.dataset.val;
+                return (e.textContent || '').trim();
+            } catch (e) { return ''; }
+        };
+        userProfile.gender = sel('dial-adult-gender');
+        userProfile.clothSize = sel('dial-adult-cloth');
+        userProfile.shoeSize = sel('dial-adult-shoe');
+        const pr = document.getElementById('dial-prefecture');
+        if (pr) userProfile.prefecture = pr.value || '';
+        else if (userProfile.prefecture == null) userProfile.prefecture = '';
+        const cgv = sel('dial-child-gender') || '';
+        userProfile.hasChildren = cgv !== '';
+        userProfile.childGender = cgv;
+        userProfile.childClothSize = sel('dial-child-cloth');
+        userProfile.childShoeSize = sel('dial-child-shoe');
+    } catch (e) {}
 }
 function actDialPrefecture() {
     const pr = document.getElementById('dial-prefecture');
@@ -3596,8 +3597,6 @@ function setChipRowFromSnapshotValue(rowId, val) {
 /** 明示保存失敗・通信失敗時の巻き戻し（snapP / snapPr を唯一の正とする。大人〜子） */
 function applyUserSettingsSnapshot(snapP, snapPr) {
     userProfile = JSON.parse(JSON.stringify(snapP));
-    userProfile.glovesSml = '';
-    userProfile.childGlovesSml = '';
     if (userProfile.childGender !== 'boy' && userProfile.childGender !== 'girl') {
         try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
     }
@@ -3623,8 +3622,6 @@ async function postUserSettingsToRedis() {
     body.childGender = (userProfile.childGender === 'boy' || userProfile.childGender === 'girl') ? userProfile.childGender : '';
     body.childClothSize = userProfile.childClothSize != null && userProfile.childClothSize !== '' ? String(userProfile.childClothSize) : '';
     body.childShoeSize = userProfile.childShoeSize != null && userProfile.childShoeSize !== '' ? String(userProfile.childShoeSize) : '';
-    body.glovesSml = '';
-    body.childGlovesSml = '';
     const res = await fetchApi('/api/user-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3646,8 +3643,6 @@ async function postUserSettingsToRedis() {
     }
     userProfile.childClothSize = (data.settings.childClothSize != null && data.settings.childClothSize !== '') ? String(data.settings.childClothSize) : '';
     userProfile.childShoeSize = (data.settings.childShoeSize != null && data.settings.childShoeSize !== '') ? String(data.settings.childShoeSize) : '';
-    userProfile.glovesSml = '';
-    userProfile.childGlovesSml = '';
     userProfile.hasChildren = !!userProfile.childGender;
     if (userProfile.childGender !== 'boy' && userProfile.childGender !== 'girl') {
         try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
@@ -3673,8 +3668,6 @@ async function loadUserSettingsFromServerAndApply() {
         }
         userProfile.childClothSize = (st.childClothSize != null && st.childClothSize !== '') ? String(st.childClothSize) : '';
         userProfile.childShoeSize = (st.childShoeSize != null && st.childShoeSize !== '') ? String(st.childShoeSize) : '';
-        userProfile.glovesSml = '';
-        userProfile.childGlovesSml = '';
         userProfile.hasChildren = !!userProfile.childGender;
         try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
         restoreDialUI(userProfile);
@@ -3858,7 +3851,7 @@ function triggerInsightScout(){
 }
 
 // ── 初回起動 ─────────────────────────────────────────────────
-let _frmProfile={gender:'',cloth:'',shoe:'',glovesSml:'',childGender:'',childCloth:'',childShoe:'',childGlovesSml:''};
+let _frmProfile={gender:'',cloth:'',shoe:'',childGender:'',childCloth:'',childShoe:''};
 function checkFirstRun(){
     if(!localStorage.getItem('re_eye_setup_v1'))
         document.getElementById('first-run-modal').style.display='flex';
@@ -3875,11 +3868,10 @@ function completeFirstRun(){
         if(err){err.style.display='block';err.textContent='性別・服サイズ・靴サイズを選択してください';}return;
     }
     userProfile.gender=_frmProfile.gender; userProfile.clothSize=_frmProfile.cloth;
-    userProfile.shoeSize=_frmProfile.shoe; userProfile.glovesSml='';
+    userProfile.shoeSize=_frmProfile.shoe;
     userProfile.hasChildren=!!_frmProfile.childGender;
     userProfile.childGender=_frmProfile.childGender;
     userProfile.childClothSize=_frmProfile.childCloth; userProfile.childShoeSize=_frmProfile.childShoe;
-    userProfile.childGlovesSml='';
     if (userProfile.childGender !== 'boy' && userProfile.childGender !== 'girl') {
         try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
     }
@@ -3911,7 +3903,7 @@ const SNEAKER_MODEL_HINT_RE=/エアマックス|エア\s*マックス|air\s*max|
 /** HQ7001-001 のようなハイフン付き品番のみでも靴プロファイルの cm を付与する */
 const SHOE_SKU_HINT_RE=/\b[A-Z]{2,4}\d{3,5}-\d{2,4}\b/i;
 const CLOTH_KW=['ジャケット','コート','ニット','シャツ','パンツ','スカート','服','アウター'];
-/** サーバ user-size.js GLOVE_ACCESSORY_KW と同型（手袋検索では服ではなく小物SML） */
+/** サーバ user-size.js GLOVE_ACCESSORY_KW と同型（手袋は服サイズ（clothing）で寄せる） */
 const GLOVE_ACCESSORY_KW=['手袋','グローブ','革手袋','ミトン','軍手','指なし','glove','gloves','mitten','mittens'];
 function _kwHasGloveAccessory(kl){
     return GLOVE_ACCESSORY_KW.some(w=>kl.includes(String(w).toLowerCase()));
@@ -3926,18 +3918,10 @@ function buildSizeAwareKeyword(keyword,forChild){
     if(forChild){
         const cg=userProfile.childGender==='girl'?'女の子':(userProfile.childGender==='boy'?'男の子':'');
         if(cg)kw+=' '+cg;
-        if(isAcc){
-            if(userProfile.childGlovesSml)kw+=' '+userProfile.childGlovesSml;
-        } else {
-            if(isCloth&&userProfile.childClothSize)kw+=' '+userProfile.childClothSize;
-        }
+        if((isCloth||isAcc)&&userProfile.childClothSize)kw+=' '+userProfile.childClothSize;
         if(treatShoe&&userProfile.childShoeSize)kw+=' '+userProfile.childShoeSize+'cm';
     } else {
-        if(isAcc){
-            if(userProfile.glovesSml)kw+=' '+userProfile.glovesSml;
-        } else {
-            if(isCloth&&userProfile.clothSize)kw+=' '+userProfile.clothSize;
-        }
+        if((isCloth||isAcc)&&userProfile.clothSize)kw+=' '+userProfile.clothSize;
         if(treatShoe&&userProfile.shoeSize)kw+=' '+userProfile.shoeSize+'cm';
     }
     return kw.trim();
@@ -3950,8 +3934,8 @@ let _stockPageState = { seenKeys: new Set(), seenSm: new Set(), cursor: null, is
 let _stockSearchGen = 0;
 /** /api/search 最新応答の userSettings（都道府県目安の表示用） */
 let _lastSearchUserSettings = {
-    shoeCm: null, clothing: null, prefecture: null, glovesSml: null,
-    childGender: null, childClothSize: null, childShoeSize: null, childGlovesSml: null,
+    shoeCm: null, clothing: null, prefecture: null,
+    childGender: null, childClothSize: null, childShoeSize: null,
 };
 function buildWatchMetaLine(forChild) {
     const raw = (_lastStockSearchContext.keyword || '').trim();
@@ -3966,14 +3950,12 @@ function buildWatchMetaLine(forChild) {
     if (forChild) {
         const cg = userProfile.childGender === 'girl' ? '女の子' : (userProfile.childGender === 'boy' ? '男の子' : '');
         if (cg) parts.push(cg);
-        if (isAcc && userProfile.childGlovesSml) parts.push('小物(手袋)：' + userProfile.childGlovesSml);
-        else if (isCloth && userProfile.childClothSize) parts.push('服：' + userProfile.childClothSize);
+        if ((isCloth || isAcc) && userProfile.childClothSize) parts.push('服：' + userProfile.childClothSize);
         if (showShoeSize && userProfile.childShoeSize) parts.push('靴：' + userProfile.childShoeSize + 'cm');
     } else {
         if (userProfile.gender === 'male') parts.push('男性');
         else if (userProfile.gender === 'female') parts.push('女性');
-        if (isAcc && userProfile.glovesSml) parts.push('小物(手袋)：' + userProfile.glovesSml);
-        else if (isCloth && userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
+        if ((isCloth || isAcc) && userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
         if (showShoeSize && userProfile.shoeSize) parts.push('靴：' + userProfile.shoeSize + 'cm');
     }
     return parts.length ? parts.join(' / ') : '';
@@ -4130,11 +4112,9 @@ async function runStockSearch(keyword, forChild, loadMore) {
                     shoeCm: us.shoeCm != null ? us.shoeCm : null,
                     clothing: us.clothing != null ? us.clothing : null,
                     prefecture: us.prefecture != null ? us.prefecture : null,
-                    glovesSml: us.glovesSml != null ? us.glovesSml : null,
                     childGender: us.childGender != null ? us.childGender : null,
                     childClothSize: us.childClothSize != null ? us.childClothSize : null,
                     childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
-                    childGlovesSml: us.childGlovesSml != null ? us.childGlovesSml : null,
                 };
             }
             if (!res.ok) {
@@ -4709,57 +4689,64 @@ function closeCoachMark(permanent){
     if(permanent)localStorage.setItem('re_eye_coach_done','1');
 }
 
-// ── ダイアルUI復元（size-chip / data-val 優先。ID 欠損は無視） ───
+// ── ダイアルUI復元（要素欠損・例外でボトムシート全体を止めない） ───
 function restoreDialUI(profile) {
-    if (!profile) profile = userProfile;
-    const setSafe = (id, val) => {
-        const container = document.getElementById(id);
-        if (!container) return;
-        if (val == null || val === '') {
-            container.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
-            return;
+    try {
+        if (!profile) profile = userProfile;
+        const setSafe = (id, val) => {
+            try {
+                const container = document.getElementById(id);
+                if (!container) return;
+                if (val == null || val === '') {
+                    container.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
+                    return;
+                }
+                const str = String(val);
+                const wantNum = parseFloat(String(val).replace(/cm$/i, '').trim());
+                const wantFinite = Number.isFinite(wantNum);
+                const chips = container.querySelectorAll('.size-chip, .setting-chip');
+                let hit = false;
+                chips.forEach((c) => {
+                    const d = c.dataset && c.dataset.val != null && c.dataset.val !== '' ? String(c.dataset.val) : null;
+                    const chipNum = d != null ? parseFloat(String(d).replace(/cm$/i, '').trim()) : NaN;
+                    const on = d != null
+                        && (d === str || (wantFinite && Number.isFinite(chipNum) && Math.abs(chipNum - wantNum) < 1e-6));
+                    c.classList.toggle('active', !!on);
+                    if (on) hit = true;
+                });
+                if (!hit) {
+                    chips.forEach((c) => c.classList.toggle('active', (c.textContent || '').trim() === str));
+                }
+            } catch (e) {}
+        };
+        setSafe('dial-adult-gender', profile.gender);
+        setSafe('dial-adult-shoe', profile.shoeSize);
+        setSafe('dial-adult-cloth', profile.clothSize);
+        setSafe('dial-child-gender', profile.childGender);
+        setSafe('dial-child-shoe', profile.childShoeSize);
+        setSafe('dial-child-cloth', profile.childClothSize);
+        const prefSelect = document.getElementById('dial-prefecture');
+        if (prefSelect) prefSelect.value = profile.prefecture || '';
+    } catch (e) {}
+    try {
+        const cta = document.getElementById('home-setting-unconfigured-cta');
+        if (isUserConfigured()) {
+            const st = buildHomeSettingSummary();
+            const se = document.getElementById('home-setting-summary-text');
+            const sw = document.getElementById('home-setting-summary-wrap');
+            if (se) se.textContent = st;
+            if (sw) sw.style.display = 'block';
+            if (cta) cta.style.display = 'none';
+        } else {
+            if (cta) cta.style.display = 'block';
+            const sw0 = document.getElementById('home-setting-summary-wrap');
+            if (sw0) sw0.style.display = 'none';
         }
-        const str = String(val);
-        const wantNum = parseFloat(String(val).replace(/cm$/i, '').trim());
-        const wantFinite = Number.isFinite(wantNum);
-        const chips = container.querySelectorAll('.size-chip, .setting-chip');
-        let hit = false;
-        chips.forEach((c) => {
-            const d = c.dataset && c.dataset.val != null && c.dataset.val !== '' ? String(c.dataset.val) : null;
-            const chipNum = d != null ? parseFloat(String(d).replace(/cm$/i, '').trim()) : NaN;
-            const on = d != null
-                && (d === str || (wantFinite && Number.isFinite(chipNum) && Math.abs(chipNum - wantNum) < 1e-6));
-            c.classList.toggle('active', !!on);
-            if (on) hit = true;
-        });
-        if (!hit) {
-            chips.forEach((c) => c.classList.toggle('active', (c.textContent || '').trim() === str));
-        }
-    };
-    setSafe('dial-adult-gender', profile.gender);
-    setSafe('dial-adult-shoe', profile.shoeSize);
-    setSafe('dial-adult-cloth', profile.clothSize);
-    setSafe('dial-child-gender', profile.childGender);
-    setSafe('dial-child-shoe', profile.childShoeSize);
-    setSafe('dial-child-cloth', profile.childClothSize);
-    const prefSelect = document.getElementById('dial-prefecture');
-    if (prefSelect) prefSelect.value = profile.prefecture || '';
-    const cta = document.getElementById('home-setting-unconfigured-cta');
-    if(isUserConfigured()){
-        const st=buildHomeSettingSummary();
-        const se=document.getElementById('home-setting-summary-text');
-        const sw=document.getElementById('home-setting-summary-wrap');
-        if(se)se.textContent=st; if(sw)sw.style.display='block';
-        if (cta) cta.style.display = 'none';
-    } else {
-        if (cta) cta.style.display = 'block';
-        const sw0 = document.getElementById('home-setting-summary-wrap');
-        if (sw0) sw0.style.display = 'none';
-    }
-    syncScoutTargetToggleUI();
-    syncMonitorScoutCockpitChrome();
-    checkUserSetup();
-    applyChildRevealedStateFromProfile();
+    } catch (e) {}
+    try { syncScoutTargetToggleUI(); } catch (e) {}
+    try { syncMonitorScoutCockpitChrome(); } catch (e) {}
+    try { checkUserSetup(); } catch (e) {}
+    try { applyChildRevealedStateFromProfile(); } catch (e) {}
 }
 
 // ── Service Worker ────────────────────────────────────────────

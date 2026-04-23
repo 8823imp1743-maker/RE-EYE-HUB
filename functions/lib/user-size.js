@@ -13,7 +13,7 @@ import { sanitizeStoredUserSettings, userSettingsKey, sanitizeUserId } from './u
 const SHOE_KW  = ['スニーカー','シューズ','ブーツ','サンダル','靴','shoe','sneaker','boots'];
 const CLOTH_KW = ['ジャケット','コート','ニット','シャツ','パンツ','スカート','服','アウター',
                   'tシャツ','ワンピース','トップス','デニム','パーカー'];
-/** 手袋・小物系：キーワード一致時は服の SML ではなく glovesSml / childGlovesSml を注入 */
+/** 手袋系キーワード：小物 SML は廃止。服サイズ（clothing / childClothSize）を注入する分岐に寄せる */
 const GLOVE_ACCESSORY_KW = [
   '手袋', 'グローブ', '革手袋', 'ミトン', '軍手', '指なし', 'glove', 'gloves', 'mitten', 'mittens',
 ];
@@ -61,24 +61,6 @@ function pickAdultClothSizeForInject(settings) {
 }
 
 /**
- * 手袋・小物用 S/M/L（服の clothing とは別キー）
- * @param {object} settings
- * @param {boolean} forChild
- * @returns {string|null}
- */
-function pickGlovesSmlForInject(settings, forChild) {
-  if (!settings) return null;
-  if (forChild) {
-    if (settings.childGlovesSml == null || settings.childGlovesSml === '') return null;
-    const t = String(settings.childGlovesSml).trim().toUpperCase();
-    return t === 'S' || t === 'M' || t === 'L' ? t : null;
-  }
-  if (settings.glovesSml == null || settings.glovesSml === '') return null;
-  const t = String(settings.glovesSml).trim().toUpperCase();
-  return t === 'S' || t === 'M' || t === 'L' ? t : null;
-}
-
-/**
  * Redis から userId の設定を取得する（**1 userId ＝ 1 キー**。他利用者の箱と合流しない; 子フィールドも同じ箱の中だけ）。
  * 大人向け必須キーは `sanitizeStoredUserSettings` 済み。子ども用・UI 専用のレガシー（shoeSize 文字列等）は **生オブジェクトを併合**し落とさない。
  */
@@ -101,11 +83,9 @@ async function getUserSettings(userId) {
       clothing: safe.clothing,
       numeric: safe.numeric,
       prefecture: safe.prefecture,
-      glovesSml: safe.glovesSml,
       childGender: safe.childGender,
       childClothSize: safe.childClothSize,
       childShoeSize: safe.childShoeSize,
-      childGlovesSml: safe.childGlovesSml,
     };
   } catch (e) {
     console.warn('[user-size] Redis 取得失敗:', e.message);
@@ -179,14 +159,9 @@ export function applyUserSizesToKeywordFromSettings(settings, keyword, forChild 
     const cg = settings.childGender === 'girl' ? '女の子'
              : settings.childGender === 'boy'  ? '男の子' : '';
     if (cg) kw = `${kw} ${cg}`.trim();
-    if (isAccessoryGlove) {
-      const g = pickGlovesSmlForInject(settings, true);
-      if (g && !keywordAlreadyHasClothingToken(kw, g)) kw = `${kw} ${g}`.trim();
-    } else {
-      if (isCloth && settings.childClothSize) {
-        const c = String(settings.childClothSize).trim();
-        if (c && !keywordAlreadyHasClothingToken(kw, c)) kw = `${kw} ${c}`.trim();
-      }
+    if ((isCloth || isAccessoryGlove) && settings.childClothSize) {
+      const c = String(settings.childClothSize).trim();
+      if (c && !keywordAlreadyHasClothingToken(kw, c)) kw = `${kw} ${c}`.trim();
     }
     if (isShoe && settings.childShoeSize != null && settings.childShoeSize !== '') {
       const cs = String(settings.childShoeSize).trim();
@@ -196,12 +171,9 @@ export function applyUserSizesToKeywordFromSettings(settings, keyword, forChild 
     return kw.trim();
   }
 
-  if (isAccessoryGlove) {
-    const g = pickGlovesSmlForInject(settings, false);
-    if (g && !keywordAlreadyHasClothingToken(kw, g)) kw = `${kw} ${g}`.trim();
-  } else {
+  {
     const cloth = pickAdultClothSizeForInject(settings);
-    if (isCloth && cloth && !keywordAlreadyHasClothingToken(kw, cloth)) {
+    if ((isCloth || isAccessoryGlove) && cloth && !keywordAlreadyHasClothingToken(kw, cloth)) {
       kw = `${kw} ${cloth}`.trim();
     }
   }
@@ -332,10 +304,7 @@ export function getUserMallPreserveTokens(settings, keyword, forChild = false) {
   const tokens = [];
 
   if (forChild) {
-    if (isAccessoryGlove) {
-      const g = pickGlovesSmlForInject(settings, true);
-      if (g) tokens.push(g);
-    } else if (isCloth && settings.childClothSize) {
+    if ((isCloth || isAccessoryGlove) && settings.childClothSize) {
       const c = String(settings.childClothSize).trim();
       if (c) tokens.push(c);
     }
@@ -346,12 +315,9 @@ export function getUserMallPreserveTokens(settings, keyword, forChild = false) {
     return [...new Set(tokens.filter(Boolean))];
   }
 
-  if (isAccessoryGlove) {
-    const g = pickGlovesSmlForInject(settings, false);
-    if (g) tokens.push(g);
-  } else {
+  {
     const cloth = pickAdultClothSizeForInject(settings);
-    if (isCloth && cloth) tokens.push(cloth);
+    if ((isCloth || isAccessoryGlove) && cloth) tokens.push(cloth);
   }
 
   if (isShoe) {

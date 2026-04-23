@@ -19,7 +19,7 @@
  *   `POST` 失敗・`fetch` 例外のいずれでも `applyUserSettingsSnapshot(snapP, snapPr)` へ集約。大人3行＋子3行
  *   は `setChipRowFromSnapshotValue` で、空の選択も含め `snap` 通りに復元（index.html）。
  *
- * スキーマ（1 利用者=1 キー内の 1 JSON）: shoeCm, clothing, numeric, prefecture, glovesSml, childGender, childClothSize, childShoeSize, childGlovesSml。
+ * スキーマ（1 利用者=1 キー内の 1 JSON）: shoeCm, clothing, numeric, prefecture, childGender, childClothSize, childShoeSize。
  * いずれも**当該 userId 専用**。**特定個人名や特定地域・cm のデフォルト固定値はコードに存在しない**（値は全て利用者入力／Redis 由来）。
  */
  
@@ -47,9 +47,6 @@ const CLOTHING_ALLOWED = new Set([
   'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL',
 ]);
 
-/** 手袋・小物（大人・子ども共通で S / M / L のみ。服の SML とは別キー） */
-const GLOVES_SML_ALLOWED = new Set(['S', 'M', 'L']);
-
 /** 子ども服（index.html チップと一致） */
 const CHILD_CLOTH_ALLOWED = new Set([
   '80', '90', '100', '110', '120', '130', '140', '150', '160',
@@ -74,31 +71,6 @@ const JP_PREFECTURE_FORMAL = new Set([
 function round1(n) {
   return Math.round(n * 10) / 10;
 }
- 
-/**
- * 入力（POST body）から設定を正規化する。
- *
- * @param {any} body
- * @returns {{
- *   schemaVersion: number,
- *   shoeCm: number|null,
- *   clothing: string|null,
- *   numeric: number|null,
- *   prefecture: string|null,
- *   childGender: string|null,
- *   childClothSize: string|null,
- *   childShoeSize: string|null,
- *   glovesSml: string|null,
- *   childGlovesSml: string|null,
- *   updatedAt: number
- * }}
- */
-function normalizeGlovesSml(raw) {
-  if (raw == null || raw === '') return null;
-  const c = String(raw).trim().toUpperCase();
-  if (GLOVES_SML_ALLOWED.has(c)) return c;
-  return null;
-}
 
 function normalizeChildShoeString(raw) {
   if (raw == null || raw === '') return null;
@@ -109,6 +81,11 @@ function normalizeChildShoeString(raw) {
   return r.toFixed(1);
 }
 
+/**
+ * 入力（POST body）から設定を正規化する。
+ *
+ * @param {any} body
+ */
 export function normalizeUserSettings(body) {
   const src = (body && typeof body === 'object') ? body : {};
  
@@ -159,20 +136,16 @@ export function normalizeUserSettings(body) {
   }
 
   const childShoeSize = normalizeChildShoeString(src.childShoeSize);
-  const glovesSml = normalizeGlovesSml(src.glovesSml);
-  const childGlovesSml = normalizeGlovesSml(src.childGlovesSml);
- 
+
   return {
     schemaVersion: USER_SETTINGS_SCHEMA_VERSION,
     shoeCm,
     clothing,
     numeric,
     prefecture,
-    glovesSml,
     childGender,
     childClothSize,
     childShoeSize,
-    childGlovesSml,
     updatedAt: Date.now(),
   };
 }
@@ -224,21 +197,16 @@ export function sanitizeStoredUserSettings(raw) {
   }
 
   const childShoeSize = normalizeChildShoeString(obj.childShoeSize);
- 
-  const glovesSml = normalizeGlovesSml(obj.glovesSml);
-  const childGlovesSml = normalizeGlovesSml(obj.childGlovesSml);
- 
+
   return {
     schemaVersion: USER_SETTINGS_SCHEMA_VERSION,
     shoeCm,
     clothing,
     numeric,
     prefecture,
-    glovesSml,
     childGender,
     childClothSize,
     childShoeSize,
-    childGlovesSml,
     updatedAt,
   };
 }

@@ -3,7 +3,7 @@
  * POST /api/user-settings              — ユーザー設定保存（**body に含まれるキーだけ**既存にマージ。未送信の adult キーを null 潰ししない）
  *
  * レスポンスの `settings` は常に `sanitizeStoredUserSettings` 後の正規形
- * （都道府県・大人の靴 cm / 服 / glovesSml、子の child* / childGlovesSml 等）。
+ * （都道府県・大人の靴 cm / 服、子の child* 等）。
  *
  * **隔離**: GET/POST はいずれも `sanitizeUserId` 通過後の ID の**その人専用キー**のみread/write。子を含め他 userId の箱を越えない（キー衝突なしの設計）。
  *
@@ -50,7 +50,7 @@ async function handleGet(req, res) {
   }
 }
  
-/** POST /api/user-settings  Body: { userId, shoeCm?, clothing?, numeric?, prefecture?, glovesSml?, childGender?, childClothSize?, childShoeSize?, childGlovesSml? } */
+/** POST /api/user-settings  Body: { userId, shoeCm?, clothing?, numeric?, prefecture?, childGender?, childClothSize?, childShoeSize? } */
 async function handlePost(req, res) {
   const body = req.body || {};
   const userId = sanitizeUserId(body.userId);
@@ -80,8 +80,8 @@ async function handlePost(req, res) {
     if (has('childGender')) base.childGender = n.childGender;
     if (has('childClothSize')) base.childClothSize = n.childClothSize;
     if (has('childShoeSize')) base.childShoeSize = n.childShoeSize;
-    if (has('glovesSml')) base.glovesSml = n.glovesSml;
-    if (has('childGlovesSml')) base.childGlovesSml = n.childGlovesSml;
+    delete base.glovesSml;
+    delete base.childGlovesSml;
     const settings = base;
 
     await withRedisRetry(

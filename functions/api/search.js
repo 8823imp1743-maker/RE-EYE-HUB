@@ -68,11 +68,9 @@ function userSettingsForResponse(settings) {
       shoeCm: null,
       clothing: null,
       prefecture: null,
-      glovesSml: null,
       childGender: null,
       childClothSize: null,
       childShoeSize: null,
-      childGlovesSml: null,
     };
   }
   const shoeCm =
@@ -81,21 +79,13 @@ function userSettingsForResponse(settings) {
       : null;
   const clothing = settings.clothing != null && settings.clothing !== '' ? String(settings.clothing) : null;
   const prefecture = settings.prefecture != null && settings.prefecture !== '' ? String(settings.prefecture) : null;
-  const glovesSml =
-    settings.glovesSml === 'S' || settings.glovesSml === 'M' || settings.glovesSml === 'L'
-      ? settings.glovesSml
-      : null;
   const childGender =
     settings.childGender === 'boy' || settings.childGender === 'girl' ? settings.childGender : null;
   const childClothSize =
     settings.childClothSize != null && settings.childClothSize !== '' ? String(settings.childClothSize) : null;
   const childShoeSize =
     settings.childShoeSize != null && settings.childShoeSize !== '' ? String(settings.childShoeSize) : null;
-  const childGlovesSml =
-    settings.childGlovesSml === 'S' || settings.childGlovesSml === 'M' || settings.childGlovesSml === 'L'
-      ? settings.childGlovesSml
-      : null;
-  return { shoeCm, clothing, prefecture, glovesSml, childGender, childClothSize, childShoeSize, childGlovesSml };
+  return { shoeCm, clothing, prefecture, childGender, childClothSize, childShoeSize };
 }
 
 function itemHaystackHasModel(item, modelNumbers) {
