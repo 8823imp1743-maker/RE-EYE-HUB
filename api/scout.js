@@ -22,7 +22,11 @@ export default async function handler(req, res) {
     await ensureJsonBody(req);
     return await scoutHandler(req, res);
   } catch (e) {
-    console.error('[api/scout]', e);
+    console.error('[api/scout] phase=wrapper', {
+      message: e?.message || String(e),
+      name: e?.name,
+      stack: e?.stack ? String(e.stack).slice(0, 1500) : undefined,
+    });
     if (res.writableEnded) return;
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');

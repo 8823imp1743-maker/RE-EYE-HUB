@@ -2,11 +2,14 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RE-EYE-HUB</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Lucide Icons（ISC）— 商用可 / stroke は CSS で 1.5px 相当に統一 -->
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js" crossorigin="anonymous"></script>
     
     <!-- OneSignal Web SDK v16 — userId タグ付け用 -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
@@ -130,6 +133,8 @@
         .screen-content { position: relative; z-index: 1; padding-top: calc(var(--header-height) + var(--gap-11)); display: flex; flex-direction: column; gap: var(--gap-11); padding-left: 15px; padding-right: 15px; padding-bottom: 80px; }
         .screen-content > * { margin-left: 0; margin-right: 0; }
         .transparent-box { background: var(--dark-glass); border: 1px solid var(--border-purple); border-radius: 2px; backdrop-filter: blur(20px); box-sizing: border-box; margin: 0; padding: 18px 20px; box-shadow: 0 0 14px rgba(155,89,182,0.25); }
+        /* サーバ保存中：チーム・都道府県セレクトの誤操作を防ぐ */
+        #home-user-settings-box.settings-ui-locked { pointer-events: none; opacity: 0.75; }
         .history-list-box { display: flex; flex-direction: column; gap: var(--gap-11); margin: 0; padding: 0; }
         .history-card {
             position: relative;
@@ -257,7 +262,7 @@
         }
         #reward-video-banner:active { box-shadow: 0 0 28px rgba(155,89,182,0.45); }
         .reward-inner { display: flex; align-items: center; gap: 13px; }
-        .reward-icon { font-size: 20px; color: var(--amethyst); flex-shrink: 0; filter: drop-shadow(0 0 6px rgba(155,89,182,0.7)); }
+        .reward-icon { display: flex; color: var(--amethyst); flex-shrink: 0; filter: drop-shadow(0 0 6px rgba(155,89,182,0.7)); }
         .reward-text-block { display: flex; flex-direction: column; gap: 3px; }
         .reward-main-text { font-size: 11px; font-weight: bold; letter-spacing: 1.2px; color: var(--champagne-gold); line-height: 1.4; }
         .reward-sub-text { font-size: 11px; color: var(--amethyst); opacity: 0.85; letter-spacing: 0.5px; }
@@ -282,7 +287,6 @@
             gap: 11px;
         }
         .home-banner-icon {
-            font-size: 18px;
             color: var(--champagne-gold);
             flex-shrink: 0;
             filter: drop-shadow(0 0 6px rgba(247,231,206,0.9));
@@ -311,7 +315,7 @@
         }
         .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; height: 85px; background: rgba(14,4,22,0.88); backdrop-filter: blur(12px); display: flex; justify-content: space-around; align-items: center; border-top: 1px solid rgba(155, 89, 182, 0.35); z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
         .nav-item { display: flex; flex-direction: column; align-items: center; color: rgba(255,255,255,0.3); background: none; border: none; width: 16%; cursor: pointer; }
-        .nav-item i { font-size: 22px; margin-bottom: 8px; }
+        .nav-item [data-lucide], .nav-item svg { width: 22px; height: 22px; margin-bottom: 8px; }
         /* 11pxルール：ナビラベルも補助情報として11pxに統一 */
         .nav-item span { font-size: 11px; font-weight: bold; }
         .nav-item.active { color: var(--amethyst); text-shadow: 0 0 12px var(--amethyst); }
@@ -447,6 +451,9 @@
         #mode-kw-chips .kw-chip-label {
             font-size: 11px; color: var(--amethyst); letter-spacing: 0.8px;
             display: block; margin-bottom: 5px;
+        }
+        #mode-kw-chips .kw-chip-label.lucide-inline-wrap {
+            display: flex; align-items: center; gap: 5px;
         }
         .kw-chip {
             padding: 5px 11px; font-size: 11px; letter-spacing: 0.8px;
@@ -735,8 +742,9 @@
             cursor: pointer;
         }
         .monitor-search-icon {
-            color: var(--amethyst); font-size: 18px; transition: opacity 0.2s;
+            color: var(--amethyst); display: flex; width: 18px; height: 18px; align-items: center; justify-content: center;
         }
+        .monitor-search-icon svg { width: 18px; height: 18px; }
         /* アメジスト色ローディング円（11px精度） */
         @keyframes spinRing { to { transform: rotate(360deg); } }
         #monitor-spinner {
@@ -845,6 +853,115 @@
         .home-setting-change-btn:hover { border-color: var(--amethyst); box-shadow: 0 0 8px rgba(155,89,182,0.4); }
         /* 設定未完了時：見守りセクションをロック */
         .monitor-locked { opacity: 0.3; pointer-events: none; user-select: none; }
+
+        /* ── マイサイズ：ボトムシート + カテゴリ切替 ── */
+        .user-settings-bottom-sheet {
+            position: fixed; inset: 0; z-index: 9980; display: none; align-items: flex-end; justify-content: center;
+        }
+        .user-settings-bottom-sheet[aria-hidden="true"] { pointer-events: none; }
+        .user-settings-bs-backdrop {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.65);
+        }
+        .user-settings-bs-panel {
+            position: relative; width: 100%; max-width: 480px; max-height: 90vh; overflow: hidden;
+            display: flex; flex-direction: column;
+            background: #08040c;
+            border-top: 1px solid var(--amethyst);
+            border-radius: 4px 4px 0 0;
+            box-shadow: 0 -8px 40px rgba(155,89,182,0.25);
+        }
+        .user-settings-bs-header {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 14px 16px 8px; flex-shrink: 0;
+        }
+        .user-settings-bs-header .gold-label { margin: 0; }
+        .user-settings-bs-close {
+            background: none; border: 1px solid rgba(155,89,182,0.4); color: var(--amethyst);
+            font-size: 11px; letter-spacing: 0.5px; padding: 6px 12px; border-radius: 2px; cursor: pointer;
+        }
+        .user-settings-bs-body { overflow-y: auto; padding: 0 16px 24px; -webkit-overflow-scrolling: touch; }
+        .settings-cat-seg {
+            display: flex; gap: 6px; margin: 12px 0 14px; flex-wrap: nowrap;
+        }
+        .settings-cat-seg-btn {
+            flex: 1; padding: 10px 6px; font-size: 11px; font-weight: bold; letter-spacing: 1.5px;
+            background: rgba(155,89,182,0.08); border: 1px solid rgba(155,89,182,0.3);
+            color: rgba(247,231,206,0.6); border-radius: 2px; cursor: pointer; transition: 0.2s;
+        }
+        .settings-cat-seg-btn.active {
+            color: var(--amethyst); border-color: var(--amethyst);
+            background: rgba(155,89,182,0.2); box-shadow: 0 0 10px rgba(155,89,182,0.3);
+        }
+        .settings-cat-head {
+            font-size: 10px; color: rgba(247,231,206,0.5); display: block; margin: 6px 0 4px; letter-spacing: 0.5px;
+        }
+        .settings-section-divider { margin: 10px 0; padding-top: 8px; border-top: 1px solid rgba(155,89,182,0.2); }
+        .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-close { opacity: 0.5; pointer-events: none; }
+        .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-backdrop { pointer-events: none; }
+        /* カテゴリパネル：display の打ち消し合いを防ぎ、タブで即時切替 */
+        .settings-category-panels-slot {
+            min-height: 200px;
+            position: relative;
+        }
+        .settings-cat-panel {
+            display: none !important;
+        }
+        .settings-cat-panel.is-active {
+            display: block !important;
+        }
+        .cockpit-block {
+            border: 1px solid rgba(155,89,182,0.22);
+            border-radius: 4px;
+            padding: 10px 10px 12px;
+            margin-bottom: 10px;
+            background: rgba(155,89,182,0.04);
+        }
+        .cockpit-block-title {
+            font-size: 11px; font-weight: bold; letter-spacing: 2px;
+            color: var(--champagne-gold); margin: 0 0 8px;
+        }
+        /* スカウト：検索ターゲット（forChild） */
+        .monitor-scout-target-bar {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+            margin-bottom: 10px; padding: 10px 10px;
+            border: 1px solid rgba(155,89,182,0.35);
+            border-radius: 4px;
+            background: rgba(155,89,182,0.07);
+        }
+        .scout-target-toggle { display: flex; gap: 0; border-radius: 2px; overflow: hidden; border: 1px solid rgba(155,89,182,0.45); }
+        .scout-target-btn {
+            padding: 8px 16px; font-size: 11px; font-weight: bold; letter-spacing: 1px;
+            border: none; cursor: pointer; background: rgba(0,0,0,0.2);
+            color: rgba(247,231,206,0.55);
+        }
+        .scout-target-btn.active {
+            background: rgba(155,89,182,0.35);
+            color: var(--champagne-gold);
+            box-shadow: inset 0 0 12px rgba(155,89,182,0.3);
+        }
+        .scout-target-btn:disabled { cursor: not-allowed; }
+        .monitor-cockpit-hint {
+            font-size: 10px; color: rgba(247,231,206,0.5); margin: 0 0 10px; line-height: 1.5; letter-spacing: 0.3px;
+        }
+        .lucide, [data-lucide] svg, .lucide svg, .monitor-search-icon-wrap svg, .reward-inner svg, .home-banner-inner svg, .lucide-warn-inline svg {
+            stroke-width: 1.5; stroke: currentColor; fill: none;
+        }
+        .lucide-inline, .lucide-inline-wrap svg, .lucide-inline + svg { width: 15px; height: 15px; vertical-align: -3px; }
+        .lucide-warn-inline { display: inline-flex; align-items: center; vertical-align: middle; margin-right: 4px; }
+        .lucide-warn-inline svg { width: 14px; height: 14px; vertical-align: -2px; color: var(--champagne-gold); }
+        .btn-reveal-child {
+            display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+            margin: 10px 0 0; padding: 10px 12px; font-size: 11px; letter-spacing: 0.6px;
+            background: rgba(155,89,182,0.1); border: 1px dashed rgba(155,89,182,0.5); border-radius: 4px;
+            color: var(--amethyst); cursor: pointer; transition: 0.2s;
+        }
+        .btn-reveal-child:hover { background: rgba(155,89,182,0.2); border-style: solid; }
+        [data-child-revealed="1"] .btn-reveal-child { display: none; }
+        [data-child-revealed="0"] .user-settings-child-cockpit { display: none !important; }
+        .monitor-target-head { display: inline-flex; align-items: center; gap: 6px; }
+        .monitor-target-head [data-lucide], .monitor-target-head svg { width: 14px; height: 14px; }
+        .reward-icon svg, .home-banner-icon svg { width: 20px; height: 20px; }
+        .home-banner-icon { display: flex; font-size: 0; }
 
         /* ── 初回起動：ユーザー設定モーダル ── */
         #first-run-modal {
@@ -1214,79 +1331,133 @@
                         <button class="home-setting-change-btn" onclick="toggleHomeSettings()">変更する</button>
                     </div>
                 </div>
-                <div id="home-setting-form">
-                    <span class="gold-label">ユーザー設定</span>
-                    <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別</span>
-                    <div class="chip-row" id="dial-gender">
-                        <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
-                        <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
+                <div id="home-setting-unconfigured-cta">
+                    <span class="gold-label">ユーザーサイズ（家族分含む）</span>
+                    <span class="meta-11px" style="display:block;margin-top:8px;margin-bottom:10px;line-height:1.7;">在庫・索敵のサイズ合わせ用。靴・服・小物を自分／お子様に分けて登録します。</span>
+                    <button type="button" class="sync-hub-btn" onclick="openUserSettingsBottomSheet()">設定を開く</button>
+                </div>
+            </div>
+
+            <!-- マイサイズ編集：ボトムシート（id=home-setting-form は保存ロック・成否で参照） -->
+            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet" style="display:none" aria-hidden="true">
+                <div class="user-settings-bs-backdrop" onclick="if(!isSettingsSaveLocked())closeUserSettingsBottomSheet()"></div>
+                <div class="user-settings-bs-panel" role="dialog" aria-label="マイサイズ">
+                    <div class="user-settings-bs-header">
+                        <span class="gold-label" style="margin:0;">ユーザーサイズ設定（家族分含む）</span>
+                        <button type="button" class="user-settings-bs-close" onclick="closeUserSettingsBottomSheet()">閉じる</button>
                     </div>
-                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
-                    <div class="chip-row" id="dial-cloth-size">
-                        <div class="setting-chip" data-val="S" onclick="selectChip('cloth',this)">S</div>
-                        <div class="setting-chip" data-val="M" onclick="selectChip('cloth',this)">M</div>
-                        <div class="setting-chip" data-val="L" onclick="selectChip('cloth',this)">L</div>
+                    <div class="user-settings-bs-body" id="home-setting-form" data-child-revealed="0">
+                        <p class="meta-11px" style="margin:0 0 10px;line-height:1.65;opacity:0.92">検索・在庫に使う足長・服・小物を登録します。下の「誰のサイズで検索」は見守り枠のすぐ上で切り替えます。</p>
+                        <span class="meta-11px" style="display:block;margin-bottom:6px;">性別（自分）</span>
+                        <div class="chip-row" id="dial-gender">
+                            <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
+                            <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
+                        </div>
+                        <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お届け先（都道府県）※価格・送料の目安用</span>
+                        <select id="dial-prefecture" class="dial-pref-select" onchange="onPrefectureDialChange();" style="max-width:100%;margin:6px 0 10px;padding:8px 10px;border-radius:4px;background:rgba(0,0,0,0.25);color:var(--champagne-gold);border:1px solid rgba(155,89,182,0.4);">
+                            <option value="">（未設定）</option>
+                            <option value="北海道">北海道</option>
+                            <option value="青森県">青森</option>
+                            <option value="岩手県">岩手</option>
+                            <option value="宮城県">宮城</option>
+                            <option value="秋田県">秋田</option>
+                            <option value="山形県">山形</option>
+                            <option value="福島県">福島</option>
+                            <option value="茨城県">茨城</option>
+                            <option value="栃木県">栃木</option>
+                            <option value="群馬県">群馬</option>
+                            <option value="埼玉県">埼玉</option>
+                            <option value="千葉県">千葉</option>
+                            <option value="東京都">東京</option>
+                            <option value="神奈川県">神奈川</option>
+                            <option value="新潟県">新潟</option>
+                            <option value="富山県">富山</option>
+                            <option value="石川県">石川</option>
+                            <option value="福井県">福井</option>
+                            <option value="山梨県">山梨</option>
+                            <option value="長野県">長野</option>
+                            <option value="岐阜県">岐阜</option>
+                            <option value="静岡県">静岡</option>
+                            <option value="愛知県">愛知</option>
+                            <option value="三重県">三重</option>
+                            <option value="滋賀県">滋賀</option>
+                            <option value="京都府">京都</option>
+                            <option value="大阪府">大阪</option>
+                            <option value="兵庫県">兵庫</option>
+                            <option value="奈良県">奈良</option>
+                            <option value="和歌山県">和歌山</option>
+                            <option value="鳥取県">鳥取</option>
+                            <option value="島根県">島根</option>
+                            <option value="岡山県">岡山</option>
+                            <option value="広島県">広島</option>
+                            <option value="山口県">山口</option>
+                            <option value="徳島県">徳島</option>
+                            <option value="香川県">香川</option>
+                            <option value="愛媛県">愛媛</option>
+                            <option value="高知県">高知</option>
+                            <option value="福岡県">福岡</option>
+                            <option value="佐賀県">佐賀</option>
+                            <option value="長崎県">長崎</option>
+                            <option value="熊本県">熊本</option>
+                            <option value="大分県">大分</option>
+                            <option value="宮崎県">宮崎</option>
+                            <option value="鹿児島県">鹿児島</option>
+                            <option value="沖縄県">沖縄</option>
+                        </select>
+                        <div class="settings-section-divider" style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(155,89,182,0.3);">
+                            <span class="meta-11px" style="display:block;margin-bottom:8px;letter-spacing:0.5px;">種類（<strong style="color:var(--champagne-gold)">靴</strong> / <strong style="color:var(--champagne-gold)">服</strong> / <strong style="color:var(--champagne-gold)">小物</strong>）— タップで中身が切り替わります</span>
+                        </div>
+                        <div class="settings-cat-seg" role="tablist" aria-label="サイズの種類">
+                            <button type="button" class="settings-cat-seg-btn active" data-cat="shoe" id="settings-cat-btn-shoe" onclick="setUserSettingsCategory('shoe')">靴</button>
+                            <button type="button" class="settings-cat-seg-btn" data-cat="cloth" id="settings-cat-btn-cloth" onclick="setUserSettingsCategory('cloth')">服</button>
+                            <button type="button" class="settings-cat-seg-btn" data-cat="accessory" id="settings-cat-btn-accessory" onclick="setUserSettingsCategory('accessory')">小物</button>
+                        </div>
+                        <button type="button" class="btn-reveal-child" onclick="revealChildSizeSettings()" aria-expanded="false"><i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>子ども用サイズを登録する</span></button>
+                        <div class="settings-category-panels-slot">
+                        <div id="settings-panel-shoe" class="settings-cat-panel is-active" role="tabpanel">
+                            <div class="cockpit-block">
+                                <div class="cockpit-block-title">自分</div>
+                                <span class="settings-cat-head">靴（0.5cm 刻み）</span>
+                                <div class="chip-row" id="dial-shoe-size"></div>
+                            </div>
+                            <div class="cockpit-block user-settings-child-cockpit">
+                                <div class="cockpit-block-title">お子様</div>
+                                <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
+                                <div class="chip-row" id="dial-child-gender">
+                                    <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
+                                    <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
+                                </div>
+                                <span class="settings-cat-head" style="margin-top:10px;">靴（0.5cm 刻み）</span>
+                                <div class="chip-row" id="dial-child-shoe"></div>
+                            </div>
+                        </div>
+                        <div id="settings-panel-cloth" class="settings-cat-panel" role="tabpanel">
+                            <div class="cockpit-block">
+                                <div class="cockpit-block-title">自分</div>
+                                <span class="settings-cat-head">服 S / M / L</span>
+                                <div class="chip-row" id="dial-cloth-size"></div>
+                            </div>
+                            <div class="cockpit-block user-settings-child-cockpit">
+                                <div class="cockpit-block-title">お子様</div>
+                                <span class="settings-cat-head">子ども服（80〜160・10 刻み）</span>
+                                <div class="chip-row" id="dial-child-size"></div>
+                            </div>
+                        </div>
+                        <div id="settings-panel-accessory" class="settings-cat-panel" role="tabpanel">
+                            <div class="cockpit-block">
+                                <div class="cockpit-block-title">自分</div>
+                                <span class="settings-cat-head">手袋・小物（服の SML とは別）</span>
+                                <div class="chip-row" id="dial-gloves-sml"></div>
+                            </div>
+                            <div class="cockpit-block user-settings-child-cockpit">
+                                <div class="cockpit-block-title">お子様</div>
+                                <span class="settings-cat-head">手袋・小物 S / M / L</span>
+                                <div class="chip-row" id="dial-child-gloves-sml"></div>
+                            </div>
+                        </div>
+                        </div>
+                        <button type="button" id="btn-save-user-settings" class="sync-hub-btn" onclick="saveUserSettings(true)">設定を保存する</button>
                     </div>
-                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
-                    <div class="chip-row" id="dial-shoe-size">
-                        <div class="setting-chip" data-val="22.5" onclick="selectChip('shoe',this)">22.5</div>
-                        <div class="setting-chip" data-val="23.0" onclick="selectChip('shoe',this)">23.0</div>
-                        <div class="setting-chip" data-val="23.5" onclick="selectChip('shoe',this)">23.5</div>
-                        <div class="setting-chip" data-val="24.0" onclick="selectChip('shoe',this)">24.0</div>
-                        <div class="setting-chip" data-val="24.5" onclick="selectChip('shoe',this)">24.5</div>
-                        <div class="setting-chip" data-val="25.0" onclick="selectChip('shoe',this)">25.0</div>
-                        <div class="setting-chip" data-val="25.5" onclick="selectChip('shoe',this)">25.5</div>
-                        <div class="setting-chip" data-val="26.0" onclick="selectChip('shoe',this)">26.0</div>
-                        <div class="setting-chip" data-val="26.5" onclick="selectChip('shoe',this)">26.5</div>
-                        <div class="setting-chip" data-val="27.0" onclick="selectChip('shoe',this)">27.0</div>
-                        <div class="setting-chip" data-val="27.5" onclick="selectChip('shoe',this)">27.5</div>
-                        <div class="setting-chip" data-val="28.0" onclick="selectChip('shoe',this)">28.0</div>
-                    </div>
-                    <div style="margin-top:18px;margin-bottom:8px;padding-top:12px;border-top:1px solid rgba(155,89,182,0.2);">
-                        <span style="font-size:11px;color:rgba(255,255,255,1);display:block;margin-bottom:4px;letter-spacing:0.5px;">（任意）</span>
-                        <span class="gold-label" style="font-size:11px;letter-spacing:2px;">お子様設定</span>
-                    </div>
-                    <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
-                    <div class="chip-row" id="dial-child-gender">
-                        <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
-                        <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
-                    </div>
-                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
-                    <div class="chip-row" id="dial-child-size">
-                        <div class="setting-chip" data-val="80" onclick="selectChip('childCloth',this)">80</div>
-                        <div class="setting-chip" data-val="90" onclick="selectChip('childCloth',this)">90</div>
-                        <div class="setting-chip" data-val="100" onclick="selectChip('childCloth',this)">100</div>
-                        <div class="setting-chip" data-val="110" onclick="selectChip('childCloth',this)">110</div>
-                        <div class="setting-chip" data-val="120" onclick="selectChip('childCloth',this)">120</div>
-                        <div class="setting-chip" data-val="130" onclick="selectChip('childCloth',this)">130</div>
-                        <div class="setting-chip" data-val="140" onclick="selectChip('childCloth',this)">140</div>
-                        <div class="setting-chip" data-val="150" onclick="selectChip('childCloth',this)">150</div>
-                        <div class="setting-chip" data-val="160" onclick="selectChip('childCloth',this)">160</div>
-                    </div>
-                    <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
-                    <div class="chip-row" id="dial-child-shoe">
-                        <div class="setting-chip" data-val="12.0" onclick="selectChip('childShoe',this)">12.0</div>
-                        <div class="setting-chip" data-val="12.5" onclick="selectChip('childShoe',this)">12.5</div>
-                        <div class="setting-chip" data-val="13.0" onclick="selectChip('childShoe',this)">13.0</div>
-                        <div class="setting-chip" data-val="13.5" onclick="selectChip('childShoe',this)">13.5</div>
-                        <div class="setting-chip" data-val="14.0" onclick="selectChip('childShoe',this)">14.0</div>
-                        <div class="setting-chip" data-val="14.5" onclick="selectChip('childShoe',this)">14.5</div>
-                        <div class="setting-chip" data-val="15.0" onclick="selectChip('childShoe',this)">15.0</div>
-                        <div class="setting-chip" data-val="15.5" onclick="selectChip('childShoe',this)">15.5</div>
-                        <div class="setting-chip" data-val="16.0" onclick="selectChip('childShoe',this)">16.0</div>
-                        <div class="setting-chip" data-val="16.5" onclick="selectChip('childShoe',this)">16.5</div>
-                        <div class="setting-chip" data-val="17.0" onclick="selectChip('childShoe',this)">17.0</div>
-                        <div class="setting-chip" data-val="17.5" onclick="selectChip('childShoe',this)">17.5</div>
-                        <div class="setting-chip" data-val="18.0" onclick="selectChip('childShoe',this)">18.0</div>
-                        <div class="setting-chip" data-val="18.5" onclick="selectChip('childShoe',this)">18.5</div>
-                        <div class="setting-chip" data-val="19.0" onclick="selectChip('childShoe',this)">19.0</div>
-                        <div class="setting-chip" data-val="19.5" onclick="selectChip('childShoe',this)">19.5</div>
-                        <div class="setting-chip" data-val="20.0" onclick="selectChip('childShoe',this)">20.0</div>
-                        <div class="setting-chip" data-val="20.5" onclick="selectChip('childShoe',this)">20.5</div>
-                        <div class="setting-chip" data-val="21.0" onclick="selectChip('childShoe',this)">21.0</div>
-                        <div class="setting-chip" data-val="21.5" onclick="selectChip('childShoe',this)">21.5</div>
-                    </div>
-                    <button class="sync-hub-btn" onclick="saveUserSettings(true)">設定を保存する</button>
                 </div>
             </div>
 
@@ -1309,23 +1480,32 @@
                 </div>
                 <!-- 入力ガイドチップ（キャンペーン / 推し活のみ表示） -->
                 <div id="mode-kw-chips">
-                    <span class="kw-chip-label">+ キーワードを追加</span>
+                    <span class="kw-chip-label lucide-inline-wrap"><i data-lucide="plus" class="lucide-inline" aria-hidden="true"></i> キーワードを追加</span>
                     <div class="chip-row" id="kw-chip-row"></div>
                 </div>
                 <div id="monitor-mode-hint" class="meta-11px" style="color:var(--amethyst);opacity:1;margin:8px 0 4px;display:none;"></div>
                 <div id="monitor-access-warn" class="meta-11px" style="color:var(--amethyst);opacity:1;margin-top:4px;display:none;letter-spacing:0.8px;">見守りモードを選択してください</div>
                 <!-- 未設定ユーザー警告 -->
                 <div id="user-setup-warning">
-                    <span class="meta-11px" style="display:block;margin:0;color:var(--champagne-gold);">⚠️ システム未校正：ユーザー設定を完了させてください</span>
+                    <span class="meta-11px" style="display:block;margin:0;color:var(--champagne-gold);"><span class="lucide-warn-inline" aria-hidden="true"><i data-lucide="alert-triangle"></i></span>システム未校正：ユーザー設定を完了させてください</span>
                     <button class="btn-purple" style="margin-top:8px;" onclick="goToUserSettings()">設定画面へ</button>
                 </div>
                 <!-- 検索入力ラッパー（モード選択後・設定済みユーザーのみ表示） -->
                 <div id="monitor-search-wrap">
+                    <p id="monitor-cockpit-hint" class="monitor-cockpit-hint" style="display:none;">1. 下の <strong style="color:var(--champagne-gold)">ターゲット</strong>（自分 / お子様）を選ぶ → 2. キーワードを入れて検索 → 3. 在庫は価格の安い候補から順に提示されます（API 設定に準拠）。</p>
+                    <div id="monitor-scout-target-bar" class="monitor-scout-target-bar" style="display:none;">
+                        <span class="meta-11px monitor-target-head" style="color:var(--champagne-gold);"><i data-lucide="crosshair" aria-hidden="true"></i> 誰のサイズで検索？</span>
+                        <div class="scout-target-toggle" role="group" aria-label="検索に使うサイズの対象">
+                            <button type="button" id="scout-target-self" class="scout-target-btn active" onclick="setScoutTargetForChild(false)">自分</button>
+                            <button type="button" id="scout-target-child" class="scout-target-btn" onclick="setScoutTargetForChild(true)">お子様</button>
+                        </div>
+                        <span id="scout-target-child-blocked-hint" class="meta-11px" style="display:none;width:100%;color:var(--amethyst);">お子様の性別をユーザーサイズ設定で選ぶと、ここが使えます。</span>
+                    </div>
                     <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
                     <div id="monitor-input-wrap" style="position:relative;">
                         <input type="text" id="monitor-input" placeholder="例：商品名・品番を入力" onkeydown="if(event.key==='Enter')scoutAndShow()">
                         <span class="monitor-search-icon-wrap" onclick="scoutAndShow()">
-                            <i id="monitor-search-fa" class="fas fa-search monitor-search-icon"></i>
+                            <i id="monitor-search-fa" data-lucide="search" class="lucide monitor-search-icon" aria-hidden="true"></i>
                             <span id="monitor-spinner"></span>
                         </span>
                     </div>
@@ -1354,7 +1534,7 @@
             <!-- ── AD BANNERS (FREE plan only, existing logic) ── -->
             <div id="reward-video-banner" onclick="watchRewardVideo()">
               <div class="reward-inner">
-                <i class="fas fa-video reward-icon"></i>
+                <i data-lucide="video" class="lucide reward-icon" aria-hidden="true"></i>
                 <div class="reward-text-block">
                   <span class="reward-main-text">広告動画を視聴して、見守り枠を +1 追加</span>
                   <span class="reward-sub-text">FREE/STANDARD限定 / 1視聴につき、トレンド探索枠を1つ追加（月最大：FREE 3枠・STANDARD 5枠）</span>
@@ -1365,7 +1545,7 @@
             </div>
             <div id="home-banner-ad">
               <div class="home-banner-inner">
-                <i class="fas fa-bullseye home-banner-icon"></i>
+                <i data-lucide="target" class="lucide home-banner-icon" aria-hidden="true"></i>
                 <div>
                   <div id="home-banner-main" class="home-banner-text-main">楽天市場で見守り中のキーワードに連動した安全な広告を表示中</div>
                   <div id="home-banner-sub" class="home-banner-text-sub">ウォッチしているブランドやカテゴリに合わせて最適化（ダミー挙動）</div>
@@ -1375,7 +1555,7 @@
             </div>
             <div id="home-banner-ad-2">
               <div class="home-banner-inner">
-                <i class="fas fa-shopping-cart home-banner-icon"></i>
+                <i data-lucide="shopping-cart" class="lucide home-banner-icon" aria-hidden="true"></i>
                 <div>
                   <div class="home-banner-text-main">Amazon・Yahooで見守り中のキーワードに連動した広告を表示中</div>
                   <div class="home-banner-text-sub">複数ショップの再入荷・値下げ情報をシミュレーション表示（ダミー）</div>
@@ -1401,13 +1581,13 @@
                 <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
                     <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み" onkeydown="if(event.key==='Enter')triggerInsightScout()">
                     <span class="monitor-search-icon-wrap" onclick="triggerInsightScout()">
-                        <i id="insight-search-fa" class="fas fa-search monitor-search-icon"></i>
+                        <i id="insight-search-fa" data-lucide="search" class="lucide monitor-search-icon" aria-hidden="true"></i>
                         <span id="insight-spinner"></span>
                     </span>
                 </div>
                 <div id="insight-scout-status"></div>
                 <p class="meta-11px" style="margin-top:6px;color:var(--amethyst);opacity:0.7;letter-spacing:1px;">SYSTEM: 2026-04-09.FINAL / SHIELD ACTIVE</p>
-                <p class="trend-intro-11px" style="margin-top: var(--gap-11);">60日前までの情報を探し出し、発売日が決まった瞬間に通知します</p>
+                <p class="trend-intro-11px" style="margin-top: var(--gap-11);">最新（48h）のニュースへ索敵し、発売日が決まった瞬間に通知します</p>
                 <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで発売通知が届く。</p>
             </div>
             <div class="transparent-box">
@@ -1459,7 +1639,7 @@
                 <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
                     <div class="category-item" onclick="selectPlan('FREE', this)">
                         <span>FREE / ¥0</span>
-                        <small>08:00–19:00 / 60分間隔 | 夜間 🌙 スリープ<br>トレンド探索 3枠</small>
+                        <small>08:00–19:00 / 60分間隔 | 夜間スリープ<br>トレンド探索 3枠</small>
                         <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 6 アイテムを監視可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('STANDARD', this)">
@@ -1532,20 +1712,12 @@
                     <div class="setting-chip" data-val="XXL" onclick="selectFrmChip('cloth',this)">XXL</div>
                 </div>
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm) <span style="color:var(--amethyst);">＊必須</span></span>
-                <div class="chip-row" id="frm-dial-shoe" style="flex-wrap:wrap;">
-                    <div class="setting-chip" data-val="22.5" onclick="selectFrmChip('shoe',this)">22.5</div>
-                    <div class="setting-chip" data-val="23.0" onclick="selectFrmChip('shoe',this)">23.0</div>
-                    <div class="setting-chip" data-val="23.5" onclick="selectFrmChip('shoe',this)">23.5</div>
-                    <div class="setting-chip" data-val="24.0" onclick="selectFrmChip('shoe',this)">24.0</div>
-                    <div class="setting-chip" data-val="24.5" onclick="selectFrmChip('shoe',this)">24.5</div>
-                    <div class="setting-chip" data-val="25.0" onclick="selectFrmChip('shoe',this)">25.0</div>
-                    <div class="setting-chip" data-val="25.5" onclick="selectFrmChip('shoe',this)">25.5</div>
-                    <div class="setting-chip" data-val="26.0" onclick="selectFrmChip('shoe',this)">26.0</div>
-                    <div class="setting-chip" data-val="26.5" onclick="selectFrmChip('shoe',this)">26.5</div>
-                    <div class="setting-chip" data-val="27.0" onclick="selectFrmChip('shoe',this)">27.0</div>
-                    <div class="setting-chip" data-val="27.5" onclick="selectFrmChip('shoe',this)">27.5</div>
-                    <div class="setting-chip" data-val="28.0" onclick="selectFrmChip('shoe',this)">28.0</div>
-                </div>
+                <div class="chip-row" id="frm-dial-shoe" style="flex-wrap:wrap;"></div>
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">手袋・小物（任意・S/M/L）</span>
+                <div class="chip-row" id="frm-dial-gloves-sml"></div>
+                <div id="first-run-child-wrap" data-child-revealed="0">
+                <button type="button" class="btn-reveal-child" onclick="revealFirstRunChildSettings()"><i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>子ども用サイズを登録する</span></button>
+                <div class="user-settings-child-cockpit">
                 <div style="margin-top:18px;padding-top:12px;border-top:1px solid rgba(155,89,182,0.2);">
                     <span style="font-size:11px;color:rgba(255,255,255,0.5);display:block;margin-bottom:4px;">（任意）</span>
                     <span class="gold-label" style="font-size:11px;">お子様設定</span>
@@ -1556,29 +1728,12 @@
                     <div class="setting-chip" data-val="boy" onclick="selectFrmChip('childGender',this)">男の子</div>
                 </div>
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
-                <div class="chip-row" id="frm-dial-child-size" style="flex-wrap:wrap;">
-                    <div class="setting-chip" data-val="80" onclick="selectFrmChip('childCloth',this)">80</div>
-                    <div class="setting-chip" data-val="90" onclick="selectFrmChip('childCloth',this)">90</div>
-                    <div class="setting-chip" data-val="100" onclick="selectFrmChip('childCloth',this)">100</div>
-                    <div class="setting-chip" data-val="110" onclick="selectFrmChip('childCloth',this)">110</div>
-                    <div class="setting-chip" data-val="120" onclick="selectFrmChip('childCloth',this)">120</div>
-                    <div class="setting-chip" data-val="130" onclick="selectFrmChip('childCloth',this)">130</div>
-                    <div class="setting-chip" data-val="140" onclick="selectFrmChip('childCloth',this)">140</div>
-                    <div class="setting-chip" data-val="150" onclick="selectFrmChip('childCloth',this)">150</div>
-                    <div class="setting-chip" data-val="160" onclick="selectFrmChip('childCloth',this)">160</div>
-                </div>
+                <div class="chip-row" id="frm-dial-child-size" style="flex-wrap:wrap;"></div>
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
-                <div class="chip-row" id="frm-dial-child-shoe" style="flex-wrap:wrap;">
-                    <div class="setting-chip" data-val="12.0" onclick="selectFrmChip('childShoe',this)">12.0</div>
-                    <div class="setting-chip" data-val="13.0" onclick="selectFrmChip('childShoe',this)">13.0</div>
-                    <div class="setting-chip" data-val="14.0" onclick="selectFrmChip('childShoe',this)">14.0</div>
-                    <div class="setting-chip" data-val="15.0" onclick="selectFrmChip('childShoe',this)">15.0</div>
-                    <div class="setting-chip" data-val="16.0" onclick="selectFrmChip('childShoe',this)">16.0</div>
-                    <div class="setting-chip" data-val="17.0" onclick="selectFrmChip('childShoe',this)">17.0</div>
-                    <div class="setting-chip" data-val="18.0" onclick="selectFrmChip('childShoe',this)">18.0</div>
-                    <div class="setting-chip" data-val="19.0" onclick="selectFrmChip('childShoe',this)">19.0</div>
-                    <div class="setting-chip" data-val="20.0" onclick="selectFrmChip('childShoe',this)">20.0</div>
-                    <div class="setting-chip" data-val="21.0" onclick="selectFrmChip('childShoe',this)">21.0</div>
+                <div class="chip-row" id="frm-dial-child-shoe" style="flex-wrap:wrap;"></div>
+                <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">手袋・小物（任意）</span>
+                <div class="chip-row" id="frm-dial-child-gloves-sml"></div>
+                </div>
                 </div>
             </div>
             <div id="frm-error" class="error-text-11px" style="text-align:center;display:none;">性別・服サイズ・靴サイズを選択してください</div>
@@ -1670,12 +1825,12 @@
 
     <div class="screen-fade-overlay" aria-hidden="true"></div>
     <div class="nav-bar">
-        <button class="nav-item active" onclick="show('home', this)"><i class="fas fa-home"></i><span>ホーム</span></button>
-        <button class="nav-item" onclick="show('history', this)"><i class="fas fa-bell"></i><span>履歴</span></button>
-        <button class="nav-item" onclick="show('insight', this)"><i class="fas fa-search"></i><span>探索</span></button>
-        <button class="nav-item" onclick="show('settings', this)"><i class="fas fa-crosshairs"></i><span>見守り</span></button>
-        <button class="nav-item" onclick="show('link', this)"><i class="fas fa-gem"></i><span>プラン</span></button>
-        <button class="nav-item" onclick="show('chat', this)"><i class="fas fa-comments"></i><span>交流</span></button>
+        <button class="nav-item active" onclick="show('home', this)"><i data-lucide="home" class="lucide" aria-hidden="true"></i><span>ホーム</span></button>
+        <button class="nav-item" onclick="show('history', this)"><i data-lucide="bell" class="lucide" aria-hidden="true"></i><span>履歴</span></button>
+        <button class="nav-item" onclick="show('insight', this)"><i data-lucide="search" class="lucide" aria-hidden="true"></i><span>探索</span></button>
+        <button class="nav-item" onclick="show('settings', this)"><i data-lucide="crosshair" class="lucide" aria-hidden="true"></i><span>見守り</span></button>
+        <button class="nav-item" onclick="show('link', this)"><i data-lucide="gem" class="lucide" aria-hidden="true"></i><span>プラン</span></button>
+        <button class="nav-item" onclick="show('chat', this)"><i data-lucide="message-circle" class="lucide" aria-hidden="true"></i><span>交流</span></button>
     </div>
 
     <script>
@@ -1690,6 +1845,11 @@ const TZ = 'Asia/Tokyo';
 // Firebase Hosting から Vercel API を直叩き（CORSはVercel側で許可）
 // この HTML を更新したら: firebase deploy --only hosting ／ API だけなら: vercel --prod
 const API_BASE = 'https://re-eye-hub.vercel.app';
+/** 304 防止: URL を毎回ユニークにし、fetch は no-store */
+function fetchApi(path, init) {
+    const bust = (String(path).indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+    return fetch(API_BASE + path + bust, Object.assign({}, init, { cache: 'no-store' }));
+}
 function nowJP() {
     return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
 }
@@ -1773,10 +1933,10 @@ const PushHybrid = (() => {
                     body, icon: '/icon-192.png', tag: title, renotify: false
                 });
             }).catch(() => {
-                if (document.visibilityState === 'visible') alert(`📣 ${title}\n${body}`);
+                if (document.visibilityState === 'visible') alert(`[通知] ${title}\n${body}`);
             });
         } else {
-            if (document.visibilityState === 'visible') alert(`📣 ${title}\n${body}`);
+            if (document.visibilityState === 'visible') alert(`[通知] ${title}\n${body}`);
         }
     }
 
@@ -1849,10 +2009,50 @@ function getMonitoringIntervalMs() {
 
 // ── ユーザープロフィール ──────────────────────────────────────
 let userProfile = {
-    gender:'', height:'', clothSize:'', shoeSize:'',
-    hasChildren:false, childGender:'', childClothSize:'', childShoeSize:'',
+    gender:'', height:'', clothSize:'', shoeSize:'', prefecture:'',
+    glovesSml:'',
+    hasChildren:false, childGender:'', childClothSize:'', childShoeSize:'', childGlovesSml:'',
     interests:[], timezone: TZ
 };
+/** 索敵 /api/search・/api/scout の forChild。見守り枠のトグルで更新・localStorage 永続化 */
+const RE_EYE_SCOUT_FOR_CHILD = 're_eye_scout_for_child';
+let _scoutTargetForChild = false;
+(function loadScoutTargetFlag() {
+    try {
+        if (localStorage.getItem(RE_EYE_SCOUT_FOR_CHILD) === '1') _scoutTargetForChild = true;
+    } catch (e) {}
+})();
+/** 子ども枠：プロフィールに性別がない間は畳み、本人が「登録」で開示（localStorage 併用） */
+const RE_EYE_CHILD_SETTINGS_EXPANDED = 're_eye_child_settings_expanded';
+function refreshLucideIcons() {
+    try {
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons({ attrs: { 'stroke-width': 1.5, stroke: 'currentColor' } });
+        }
+    } catch (e) {}
+}
+function isChildSizeUiExpanded() {
+    if (userProfile.childGender === 'boy' || userProfile.childGender === 'girl') return true;
+    try { return localStorage.getItem(RE_EYE_CHILD_SETTINGS_EXPANDED) === '1'; } catch (e) { return false; }
+}
+function applyChildRevealedStateFromProfile() {
+    const show = isChildSizeUiExpanded();
+    const sheet = document.getElementById('home-setting-form');
+    if (sheet) sheet.setAttribute('data-child-revealed', show ? '1' : '0');
+    const fr = document.getElementById('first-run-child-wrap');
+    if (fr) fr.setAttribute('data-child-revealed', show ? '1' : '0');
+    try {
+        document.querySelectorAll('.btn-reveal-child').forEach((b) => b.setAttribute('aria-expanded', show ? 'true' : 'false'));
+    } catch (e) {}
+    refreshLucideIcons();
+}
+function revealChildSizeSettings() {
+    try { localStorage.setItem(RE_EYE_CHILD_SETTINGS_EXPANDED, '1'); } catch (e) {}
+    applyChildRevealedStateFromProfile();
+}
+function revealFirstRunChildSettings() {
+    revealChildSizeSettings();
+}
 (function loadSavedProfile() {
     try {
         const s = localStorage.getItem('re_eye_profile');
@@ -2029,7 +2229,7 @@ function stopPollingTimer(keyword) {
 }
 async function callPollApi(keyword) {
     try {
-        const res = await fetch(API_BASE + '/api/poll', {
+        const res = await fetchApi('/api/poll', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ keyword, userId: getUserId(), plan: currentPlan })
         });
@@ -2087,7 +2287,7 @@ async function _doTrendSync() {
     const uid = getUserId();
     const items = [...trendWatching].map(id => _trendWatchData[id]).filter(Boolean);
     try {
-        await fetch(API_BASE + '/api/trend', {
+        await fetchApi('/api/trend', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ userId: uid, items })
@@ -2099,7 +2299,7 @@ async function _doTrendSync() {
 async function loadTrendFromServer() {
     const uid = getUserId();
     try {
-        const res = await fetch(API_BASE + '/api/trend?userId=' + encodeURIComponent(uid));
+        const res = await fetchApi('/api/trend?userId=' + encodeURIComponent(uid));
         if (!res.ok) return;
         const data = await res.json();
         const items = data.items || [];
@@ -2173,7 +2373,7 @@ function show(id, btn) {
     if (id === 'insight')  renderTrendItems(document.getElementById('insight-search')?.value);
     if (id === 'settings') { renderSettingsTrendWatching(); loadWatchHistory({ silent: true }); syncWatchStatus(); }
     updateAdVisibility();
-    requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); });
+    requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); refreshLucideIcons(); });
 }
 
 // ── フォーマット系 ────────────────────────────────────────────
@@ -2197,6 +2397,24 @@ function sortByCaughtTimeDesc(a,b) {
     return tb-ta;
 }
 /** 同一キーワード／同一商品タイトルの監視行が ON/OFF に二重登録されないよう、最新の1件だけ残す */
+/** トレンド/INTEL: 同一記事（タイトル末尾の媒体名差のみ等）を1件に畳む */
+function dedupeByNormalizedTitle(items) {
+    const seen = new Set();
+    const out = [];
+    for (const it of items || []) {
+        const raw = (it.title || '').trim();
+        if (!raw) continue;
+        const k = raw
+            .replace(/\s*[-|｜：:]\s*[^-|｜：:]{1,50}\s*$/i, '')
+            .replace(/\s+/g, ' ')
+            .toLowerCase();
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(it);
+    }
+    return out;
+}
+
 function dedupeHistoryOnOffStock(items) {
     const stockLike = (it) => it.kind === 'stock' || it.keyword;
     const normTitle = (t) => (t || '').toLowerCase().replace(/\s+/g, ' ').replace(/^■\s*/, '').trim().slice(0, 120);
@@ -2544,7 +2762,7 @@ function renderTrendItems(filterKeyword) {
     });
     // インテルスカウト結果も追記
     if(intelScoutResults.length>0){
-        const filtered=intelScoutResults.filter(i=>!kw||i.title.toLowerCase().includes(kw));
+        const filtered=dedupeByNormalizedTitle(intelScoutResults.filter(i=>!kw||i.title.toLowerCase().includes(kw)));
         if(filtered.length>0){
             const sect=document.createElement('div');
             sect.style.cssText='margin-top:14px;border-top:1px solid rgba(155,89,182,0.2);padding-top:11px;';
@@ -2640,7 +2858,7 @@ function renderSettingsTrendWatching() {
     b.style.display='block';
     const night=isNightJP();
     let lbl;
-    if(currentPlan==='FREE') lbl=night?'🌙 スリープ中':'トレンド探索中';
+    if(currentPlan==='FREE') lbl=night?'夜間スリープ中':'トレンド探索中';
     else if(currentPlan==='VIP') lbl='常時稼働（Jitter付き）';
     else lbl=night?'60分間隔（夜間）':'15分間隔';
     l.innerHTML=w.map(t=>'<div class="watch-item-row"><span class="watch-item-name">'+t.title+'</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● '+lbl+'</span></div>').join('');
@@ -2680,7 +2898,7 @@ async function deleteWatchMonitorOnServer(sourceId,itemId){
     try{
         const ns=normalizeMonitorId(sourceId);
         const ni=normalizeMonitorId(itemId);
-        const res=await fetch(API_BASE+'/api/monitor',{
+        const res=await fetchApi('/api/monitor',{
             method:'DELETE',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({userId:getUserId(),sourceId:ns,itemId:ni})
@@ -2798,7 +3016,7 @@ async function loadWatchHistory(opts){
     let gotJson=false;
     for(let attempt=0;attempt<maxAttempts;attempt++){
         try{
-            const res=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
+            const res=await fetchApi('/api/monitor?userId='+encodeURIComponent(getUserId()));
             if(!res.ok) throw new Error('HTTP');
             const data=await res.json();
             lastItems=_dedupeWatchItems((data.items||[]).map(normalizeServerItemRow));
@@ -2835,7 +3053,7 @@ async function loadWatchHistory(opts){
             if(gen!==_watchHistoryLoadGen) break;
             await new Promise(function(r){ setTimeout(r, EMPTY_VALIDATION_DELAY_MS); });
             try{
-                const resV=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
+                const resV=await fetchApi('/api/monitor?userId='+encodeURIComponent(getUserId()));
                 if(!resV.ok) throw new Error('HTTP');
                 const dataV=await resV.json();
                 lastItems=_dedupeWatchItems((dataV.items||[]).map(normalizeServerItemRow));
@@ -3029,7 +3247,7 @@ function updateNightModeStatus() {
     const bn=document.getElementById('settings-plan-status');
     const night=isNightJP();
     let it,bt;
-    if(currentPlan==='FREE'){it=night?'🌙 スリープ中':'● 60分間隔で見守り中';bt=night?'🌙 スリープモード：08:00に再開します':'● 08:00–19:00 稼働中 / 60分間隔';}
+    if(currentPlan==='FREE'){it=night?'夜間スリープ中':'● 60分間隔で見守り中';bt=night?'夜間スリープ：08:00に再開します':'● 08:00–19:00 稼働中 / 60分間隔';}
     else if(currentPlan==='STANDARD'){it=night?'夜間：60分間隔に変更済み':'● 15分間隔で見守り中';bt=night?'夜間モード：60分間隔':'● 08:00–19:00 稼働中 / 15分間隔';}
     else if(currentPlan==='PRO'){it=night?'夜間：60分間隔に変更済み':'● 5分間隔（Jitter）で見守り中';bt=night?'夜間モード：60分間隔':'● 08:00–19:00 稼働中 / 5分間隔';}
     else if(currentPlan==='VIP'){it='● 5分間隔（Jitter）で常時稼働中';bt='ステルス常時稼働中 / 5分間隔';}
@@ -3039,56 +3257,396 @@ function updateNightModeStatus() {
 // ── ユーザー設定 ──────────────────────────────────────────────
 function isUserConfigured(){return userProfile.gender!==''||userProfile.clothSize!=='';}
 function goToUserSettings(){
-    const f=document.getElementById('home-setting-form');
-    const s=document.getElementById('home-setting-summary-wrap');
-    if(f)f.style.display='block'; if(s)s.style.display='none';
+    openUserSettingsBottomSheet();
     document.getElementById('home-user-settings-box')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function formatPrefLabel(formal) {
+    if (!formal) return '';
+    if (formal === '東京都' || formal === '大阪府' || formal === '京都府') {
+        if (formal === '東京都') return '東京';
+        if (formal === '大阪府') return '大阪';
+        if (formal === '京都府') return '京都';
+    }
+    if (formal === '北海道') return '北海道';
+    return String(formal).replace(/(都|道|府|県)$/u, '') || formal;
 }
 function buildHomeSettingSummary(){
     const p=[];
     if(userProfile.gender==='male')p.push('男性');else if(userProfile.gender==='female')p.push('女性');
+    if (userProfile.prefecture) p.push('地域：' + formatPrefLabel(userProfile.prefecture));
     if(userProfile.clothSize)p.push('服：'+userProfile.clothSize);
     if(userProfile.shoeSize)p.push('靴：'+userProfile.shoeSize+'cm');
+    if (userProfile.glovesSml) p.push('小物(手袋)：' + userProfile.glovesSml);
     if(userProfile.hasChildren&&userProfile.childGender){
         const cg=userProfile.childGender==='boy'?'男の子':'女の子';
-        p.push('子供：'+cg+(userProfile.childShoeSize?'・'+userProfile.childShoeSize+'cm':''));
+        const ch = (userProfile.childShoeSize ? '・' + userProfile.childShoeSize + 'cm' : '') +
+            (userProfile.childGlovesSml ? '・小物' + userProfile.childGlovesSml : '');
+        p.push('子供：' + cg + (ch || ''));
     }
     return p.join(' / ');
 }
+function setUserSettingsCategory(cat) {
+    const order = ['shoe', 'cloth', 'accessory'];
+    if (order.indexOf(cat) < 0) return;
+    document.querySelectorAll('.settings-cat-seg-btn').forEach((b) => b.classList.toggle('active', b.getAttribute('data-cat') === cat));
+    const map = { shoe: 'settings-panel-shoe', cloth: 'settings-panel-cloth', accessory: 'settings-panel-accessory' };
+    order.forEach((k) => {
+        const el = document.getElementById(map[k]);
+        if (el) el.classList.toggle('is-active', k === cat);
+    });
+}
+function setScoutTargetForChild(forChild) {
+    _scoutTargetForChild = !!forChild;
+    try {
+        localStorage.setItem(RE_EYE_SCOUT_FOR_CHILD, _scoutTargetForChild ? '1' : '0');
+    } catch (e) {}
+    syncScoutTargetToggleUI();
+}
+/** 表示上「お子様」だが性別未登録のとき API は大人扱い（forChild: false） */
+function getEffectiveScoutForChild() {
+    if (!_scoutTargetForChild) return false;
+    return !!(userProfile.hasChildren && userProfile.childGender);
+}
+function syncScoutTargetToggleUI() {
+    const selfB = document.getElementById('scout-target-self');
+    const childB = document.getElementById('scout-target-child');
+    const blocked = document.getElementById('scout-target-child-blocked-hint');
+    const hasChild = !!(userProfile.hasChildren && userProfile.childGender);
+    const selfActive = !(_scoutTargetForChild && hasChild);
+    const childActive = _scoutTargetForChild && hasChild;
+    if (selfB) selfB.classList.toggle('active', selfActive);
+    if (childB) {
+        childB.classList.toggle('active', childActive);
+        childB.disabled = !hasChild;
+    }
+    if (blocked) blocked.style.display = _scoutTargetForChild && !hasChild ? 'block' : 'none';
+}
+function syncMonitorScoutCockpitChrome() {
+    const sw = document.getElementById('monitor-search-wrap');
+    const bar = document.getElementById('monitor-scout-target-bar');
+    const hint = document.getElementById('monitor-cockpit-hint');
+    const ok = isUserConfigured() && sw && sw.classList.contains('revealed');
+    const hasChild = !!(userProfile.hasChildren && userProfile.childGender);
+    const showBar = ok && hasChild;
+    if (bar) bar.style.display = showBar ? 'flex' : 'none';
+    if (hint) hint.style.display = showBar ? 'block' : 'none';
+    if (showBar) syncScoutTargetToggleUI();
+}
+function openUserSettingsBottomSheet() {
+    const s = document.getElementById('user-settings-bottom-sheet');
+    if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
+    setUserSettingsCategory('shoe');
+    applyChildRevealedStateFromProfile();
+    try { document.body.style.overflow = 'hidden'; } catch (e) {}
+}
+function closeUserSettingsBottomSheet() {
+    if (isSettingsSaveLocked()) return;
+    const s = document.getElementById('user-settings-bottom-sheet');
+    if (s) { s.style.display = 'none'; s.setAttribute('aria-hidden', 'true'); }
+    try { document.body.style.overflow = ''; } catch (e) {}
+}
 function toggleHomeSettings(){
-    const f=document.getElementById('home-setting-form');
-    const s=document.getElementById('home-setting-summary-wrap');
-    if(f)f.style.display='block'; if(s)s.style.display='none';
+    openUserSettingsBottomSheet();
 }
 function selectChip(type,el){
+    if (isSettingsSaveLocked()) return;
     el.parentElement.querySelectorAll('.setting-chip').forEach(i=>i.classList.remove('active'));
-    el.classList.add('active'); saveUserSettings();
+    el.classList.add('active');
+    readProfileFromDials();
+    syncScoutTargetToggleUI();
+    saveUserSettings();
 }
-function initDials(){}
+/** 0.5 刻みの配列（浮動小数誤差を避ける） */
+function _reEyeHalfStepRange(start, end) {
+    const a = [];
+    for (let x = start; x <= end + 1e-6; x += 0.5) {
+        a.push((Math.round(x * 10) / 10).toFixed(1));
+    }
+    return a;
+}
+function fillChipRowFromValues(rowId, values, onClickAttr) {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    const esc = (v) => String(v).replace(/"/g, '&quot;');
+    row.innerHTML = values.map((v) =>
+        '<div class="setting-chip" data-val="' + esc(v) + '" ' + onClickAttr + '>' + v + '</div>'
+    ).join('');
+}
+function initUserSettingsChipRows() {
+    const adultShoe = _reEyeHalfStepRange(22.5, 28.0);
+    const childShoe = _reEyeHalfStepRange(10.0, 22.0);
+    const sml = ['S', 'M', 'L'];
+    const childCloth = [];
+    for (let n = 80; n <= 160; n += 10) childCloth.push(String(n));
+    fillChipRowFromValues('dial-shoe-size', adultShoe, 'onclick="selectChip(\'shoe\',this)"');
+    fillChipRowFromValues('dial-child-shoe', childShoe, 'onclick="selectChip(\'childShoe\',this)"');
+    fillChipRowFromValues('dial-cloth-size', sml, 'onclick="selectChip(\'cloth\',this)"');
+    fillChipRowFromValues('dial-child-size', childCloth, 'onclick="selectChip(\'childCloth\',this)"');
+    fillChipRowFromValues('dial-gloves-sml', sml, 'onclick="selectChip(\'glovesSml\',this)"');
+    fillChipRowFromValues('dial-child-gloves-sml', sml, 'onclick="selectChip(\'childGlovesSml\',this)"');
+    fillChipRowFromValues('frm-dial-shoe', adultShoe, 'onclick="selectFrmChip(\'shoe\',this)"');
+    fillChipRowFromValues('frm-dial-child-shoe', childShoe, 'onclick="selectFrmChip(\'childShoe\',this)"');
+    fillChipRowFromValues('frm-dial-child-size', childCloth, 'onclick="selectFrmChip(\'childCloth\',this)"');
+    fillChipRowFromValues('frm-dial-gloves-sml', sml, 'onclick="selectFrmChip(\'glovesSml\',this)"');
+    fillChipRowFromValues('frm-dial-child-gloves-sml', sml, 'onclick="selectFrmChip(\'childGlovesSml\',this)"');
+}
+function initDials() {
+    initUserSettingsChipRows();
+}
+function act(rowId, val) {
+    if (val == null || val === '') return;
+    const row = document.getElementById(rowId);
+    if (row) row.querySelectorAll('.setting-chip').forEach((i) => i.classList.remove('active'));
+    const c = document.querySelector('#' + rowId + ' .setting-chip[data-val="' + String(val).replace(/"/g, '&quot;') + '"]');
+    if (c) c.classList.add('active');
+}
+function readProfileFromDials() {
+    const sel = (id) => { const e = document.querySelector('#' + id + ' .setting-chip.active'); return e ? e.dataset.val : ''; };
+    userProfile.gender = sel('dial-gender');
+    userProfile.clothSize = sel('dial-cloth-size');
+    userProfile.shoeSize = sel('dial-shoe-size');
+    userProfile.glovesSml = sel('dial-gloves-sml') || '';
+    const pr = document.getElementById('dial-prefecture');
+    userProfile.prefecture = pr ? (pr.value || '') : (userProfile.prefecture || '');
+    const cgv = sel('dial-child-gender') || '';
+    userProfile.hasChildren = cgv !== '';
+    userProfile.childGender = cgv;
+    userProfile.childClothSize = sel('dial-child-size');
+    userProfile.childShoeSize = sel('dial-child-shoe');
+    userProfile.childGlovesSml = userProfile.hasChildren ? (sel('dial-child-gloves-sml') || '') : '';
+}
+function actDialPrefecture() {
+    const pr = document.getElementById('dial-prefecture');
+    if (pr && userProfile && userProfile.prefecture != null) pr.value = userProfile.prefecture;
+}
+let _settingsSaveLocked = false;
+function isSettingsSaveLocked() {
+    return _settingsSaveLocked;
+}
+function setSettingsSaveLock(on) {
+    _settingsSaveLocked = !!on;
+    const box = document.getElementById('home-user-settings-box');
+    const sheet = document.getElementById('user-settings-bottom-sheet');
+    const pr = document.getElementById('dial-prefecture');
+    const btn = document.getElementById('btn-save-user-settings');
+    if (box) box.classList.toggle('settings-ui-locked', on);
+    if (sheet) sheet.classList.toggle('settings-ui-locked', on);
+    if (pr) pr.disabled = on;
+    if (btn) btn.disabled = on;
+}
+function onPrefectureDialChange() {
+    if (isSettingsSaveLocked()) return;
+    saveUserSettings();
+}
+/** 子ども枠のチップを全外し（巻き戻しで hasChildren false のとき必須） */
+function clearAllChipsInRow(rowId) {
+    const row = document.getElementById(rowId);
+    if (row) row.querySelectorAll('.setting-chip').forEach((i) => i.classList.remove('active'));
+}
+/** 空なら行クリア、値があれば act（act は空を無視するため巻き戻し専用） */
+function setChipRowFromSnapshotValue(rowId, val) {
+    if (val != null && val !== '') {
+        act(rowId, val);
+    } else {
+        clearAllChipsInRow(rowId);
+    }
+}
+/** 明示保存失敗・通信失敗時の巻き戻し（snapP / snapPr を唯一の正とする。大人〜子） */
+function applyUserSettingsSnapshot(snapP, snapPr) {
+    userProfile = JSON.parse(JSON.stringify(snapP));
+    if (userProfile.childGender !== 'boy' && userProfile.childGender !== 'girl') {
+        try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
+    }
+    const pr = document.getElementById('dial-prefecture');
+    if (pr) {
+        pr.value = snapPr;
+        userProfile.prefecture = snapPr || '';
+    }
+    setChipRowFromSnapshotValue('dial-gender', userProfile.gender);
+    setChipRowFromSnapshotValue('dial-cloth-size', userProfile.clothSize);
+    setChipRowFromSnapshotValue('dial-shoe-size', userProfile.shoeSize);
+    setChipRowFromSnapshotValue('dial-gloves-sml', userProfile.glovesSml);
+    if (userProfile.hasChildren) {
+        setChipRowFromSnapshotValue('dial-child-gender', userProfile.childGender);
+        setChipRowFromSnapshotValue('dial-child-size', userProfile.childClothSize);
+        setChipRowFromSnapshotValue('dial-child-shoe', userProfile.childShoeSize);
+        setChipRowFromSnapshotValue('dial-child-gloves-sml', userProfile.childGlovesSml);
+    } else {
+        clearAllChipsInRow('dial-child-gender');
+        clearAllChipsInRow('dial-child-size');
+        clearAllChipsInRow('dial-child-shoe');
+        clearAllChipsInRow('dial-child-gloves-sml');
+    }
+    try {
+        localStorage.setItem('re_eye_profile', JSON.stringify(userProfile));
+    } catch (e) {}
+    applyChildRevealedStateFromProfile();
+}
 let _saveTimer;
-function saveUserSettings(explicit){
+async function postUserSettingsToRedis() {
+    const body = { userId: getUserId() };
+    if (userProfile.shoeSize !== '' && userProfile.shoeSize != null) {
+        const n = Number(String(userProfile.shoeSize).replace(/cm$/i, '').trim());
+        if (Number.isFinite(n)) body.shoeCm = n;
+    }
+    if (userProfile.clothSize) body.clothing = String(userProfile.clothSize);
+    body.prefecture = (userProfile.prefecture == null || userProfile.prefecture === '') ? '' : String(userProfile.prefecture);
+    body.childGender = (userProfile.childGender === 'boy' || userProfile.childGender === 'girl') ? userProfile.childGender : '';
+    body.childClothSize = userProfile.childClothSize != null && userProfile.childClothSize !== '' ? String(userProfile.childClothSize) : '';
+    body.childShoeSize = userProfile.childShoeSize != null && userProfile.childShoeSize !== '' ? String(userProfile.childShoeSize) : '';
+    body.glovesSml = (userProfile.glovesSml === 'S' || userProfile.glovesSml === 'M' || userProfile.glovesSml === 'L') ? userProfile.glovesSml : '';
+    body.childGlovesSml = (userProfile.childGlovesSml === 'S' || userProfile.childGlovesSml === 'M' || userProfile.childGlovesSml === 'L') ? userProfile.childGlovesSml : '';
+    const res = await fetchApi('/api/user-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.saved || !data.settings) return { ok: false, data };
+    if (data.settings.shoeCm != null) userProfile.shoeSize = String(data.settings.shoeCm);
+    if (data.settings.clothing) userProfile.clothSize = data.settings.clothing;
+    if (data.settings.prefecture != null && data.settings.prefecture !== '') {
+        userProfile.prefecture = data.settings.prefecture;
+    } else {
+        userProfile.prefecture = '';
+    }
+    if (data.settings.childGender === 'boy' || data.settings.childGender === 'girl') {
+        userProfile.childGender = data.settings.childGender;
+    } else {
+        userProfile.childGender = '';
+    }
+    userProfile.childClothSize = (data.settings.childClothSize != null && data.settings.childClothSize !== '') ? String(data.settings.childClothSize) : '';
+    userProfile.childShoeSize = (data.settings.childShoeSize != null && data.settings.childShoeSize !== '') ? String(data.settings.childShoeSize) : '';
+    if (data.settings.glovesSml === 'S' || data.settings.glovesSml === 'M' || data.settings.glovesSml === 'L') {
+        userProfile.glovesSml = data.settings.glovesSml;
+    } else {
+        userProfile.glovesSml = '';
+    }
+    if (data.settings.childGlovesSml === 'S' || data.settings.childGlovesSml === 'M' || data.settings.childGlovesSml === 'L') {
+        userProfile.childGlovesSml = data.settings.childGlovesSml;
+    } else {
+        userProfile.childGlovesSml = '';
+    }
+    userProfile.hasChildren = !!userProfile.childGender;
+    if (userProfile.childGender !== 'boy' && userProfile.childGender !== 'girl') {
+        try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
+    }
+    try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+    return { ok: true, data };
+}
+async function loadUserSettingsFromServerAndApply() {
+    const uid = getUserId();
+    if (!uid) return;
+    try {
+        const res = await fetchApi('/api/user-settings?userId=' + encodeURIComponent(uid), { method: 'GET' });
+        const data = await res.json();
+        if (!res.ok || !data.found || !data.settings) return;
+        const st = data.settings;
+        if (st.shoeCm != null) userProfile.shoeSize = String(st.shoeCm);
+        if (st.clothing) userProfile.clothSize = st.clothing;
+        if (st.prefecture) userProfile.prefecture = st.prefecture;
+        if (st.childGender === 'boy' || st.childGender === 'girl') {
+            userProfile.childGender = st.childGender;
+        } else {
+            userProfile.childGender = '';
+        }
+        userProfile.childClothSize = (st.childClothSize != null && st.childClothSize !== '') ? String(st.childClothSize) : '';
+        userProfile.childShoeSize = (st.childShoeSize != null && st.childShoeSize !== '') ? String(st.childShoeSize) : '';
+        if (st.glovesSml === 'S' || st.glovesSml === 'M' || st.glovesSml === 'L') {
+            userProfile.glovesSml = st.glovesSml;
+        } else {
+            userProfile.glovesSml = '';
+        }
+        if (st.childGlovesSml === 'S' || st.childGlovesSml === 'M' || st.childGlovesSml === 'L') {
+            userProfile.childGlovesSml = st.childGlovesSml;
+        } else {
+            userProfile.childGlovesSml = '';
+        }
+        userProfile.hasChildren = !!userProfile.childGender;
+        try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+        actDialPrefecture();
+        setChipRowFromSnapshotValue('dial-gender', userProfile.gender);
+        setChipRowFromSnapshotValue('dial-cloth-size', userProfile.clothSize);
+        setChipRowFromSnapshotValue('dial-shoe-size', userProfile.shoeSize);
+        setChipRowFromSnapshotValue('dial-gloves-sml', userProfile.glovesSml);
+        if (userProfile.hasChildren) {
+            setChipRowFromSnapshotValue('dial-child-gender', userProfile.childGender);
+            setChipRowFromSnapshotValue('dial-child-size', userProfile.childClothSize);
+            setChipRowFromSnapshotValue('dial-child-shoe', userProfile.childShoeSize);
+            setChipRowFromSnapshotValue('dial-child-gloves-sml', userProfile.childGlovesSml);
+        } else {
+            clearAllChipsInRow('dial-child-gender');
+            clearAllChipsInRow('dial-child-size');
+            clearAllChipsInRow('dial-child-shoe');
+            clearAllChipsInRow('dial-child-gloves-sml');
+        }
+        const cta2 = document.getElementById('home-setting-unconfigured-cta');
+        if (isUserConfigured()) {
+            const se0 = document.getElementById('home-setting-summary-text');
+            const sw0 = document.getElementById('home-setting-summary-wrap');
+            if (se0) se0.textContent = buildHomeSettingSummary();
+            if (sw0) sw0.style.display = 'block';
+            if (cta2) cta2.style.display = 'none';
+        }
+        syncScoutTargetToggleUI();
+        syncMonitorScoutCockpitChrome();
+        applyChildRevealedStateFromProfile();
+    } catch (e) {}
+}
+function saveUserSettings(explicit) {
+    if (explicit) {
+        (async () => {
+            if (isSettingsSaveLocked()) return;
+            setSettingsSaveLock(true);
+            try {
+                // DOM を先に正へ反映し、その状態を巻き戻し用に取る（デバウンス前の「保存」でもチップを失わない）
+                readProfileFromDials();
+                const snapP = JSON.parse(JSON.stringify(userProfile));
+                const snapPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
+                let r;
+                try {
+                    r = await postUserSettingsToRedis();
+                } catch (net) {
+                    r = { ok: false, data: {} };
+                }
+                if (!r || !r.ok) {
+                    applyUserSettingsSnapshot(snapP, snapPr);
+                    alert('設定をサーバに保存できませんでした。通信を確認のうえ、もう一度お試しください。');
+                    return;
+                }
+                // Redis 永続 + localStorage 反映済み。以降の /api/search・/api/scout（userId 付き）は新しい靴 cm / 服を参照する
+                updateBannerAdContent(lastMonitorKeyword);
+                const st = buildHomeSettingSummary();
+                const se = document.getElementById('home-setting-summary-text');
+                const sw = document.getElementById('home-setting-summary-wrap');
+                if (se) se.textContent = st;
+                if (sw) sw.style.display = 'block';
+                const cta = document.getElementById('home-setting-unconfigured-cta');
+                if (cta) cta.style.display = 'none';
+                closeUserSettingsBottomSheet();
+                const mb = document.getElementById('monitor-section-body');
+                if (mb) mb.classList.remove('monitor-locked');
+                const uw = document.getElementById('user-setup-warning');
+                if (uw) uw.style.display = 'none';
+                checkUserSetup();
+                applyChildRevealedStateFromProfile();
+                alert('設定を保存しました。');
+            } catch (e) {
+                applyUserSettingsSnapshot(snapP, snapPr);
+                alert('設定をサーバに保存できませんでした。通信を確認のうえ、もう一度お試しください。');
+            } finally {
+                setSettingsSaveLock(false);
+            }
+        })();
+        return;
+    }
+    if (isSettingsSaveLocked()) return;
     clearTimeout(_saveTimer);
     _saveTimer=setTimeout(()=>{
-        const sel=id=>{const e=document.querySelector('#'+id+' .setting-chip.active');return e?e.dataset.val:'';};
-        userProfile.gender=sel('dial-gender'); userProfile.clothSize=sel('dial-cloth-size');
-        userProfile.shoeSize=sel('dial-shoe-size');
-        const cgv=sel('dial-child-gender')||'';
-        userProfile.hasChildren=cgv!==''; userProfile.childGender=cgv;
-        userProfile.childClothSize=sel('dial-child-size'); userProfile.childShoeSize=sel('dial-child-shoe');
+        readProfileFromDials();
         try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
+        syncScoutTargetToggleUI();
         updateBannerAdContent(lastMonitorKeyword);
-        if(explicit){
-            const st=buildHomeSettingSummary();
-            const se=document.getElementById('home-setting-summary-text');
-            const sw=document.getElementById('home-setting-summary-wrap');
-            const f=document.getElementById('home-setting-form');
-            if(se)se.textContent=st; if(sw)sw.style.display='block'; if(f)f.style.display='none';
-            const mb=document.getElementById('monitor-section-body');
-            if(mb)mb.classList.remove('monitor-locked');
-            const uw=document.getElementById('user-setup-warning');
-            if(uw)uw.style.display='none';
-            alert('設定を保存しました。');
-        }
     },80);
 }
 function checkUserSetup(){
@@ -3099,16 +3657,18 @@ function checkUserSetup(){
         if(mb)mb.classList.add('monitor-locked');
         if(uw)uw.style.display='block';
         if(sw){sw.style.display='none';sw.classList.remove('revealed');}
+        syncMonitorScoutCockpitChrome();
         return;
     }
     if(mb)mb.classList.remove('monitor-locked');
     if(uw)uw.style.display='none';
     const anyOn=document.querySelector('.monitor-mode-item.selected')!==null;
-    if(!anyOn){if(sw){sw.style.display='none';sw.classList.remove('revealed');}return;}
+    if(!anyOn){if(sw){sw.style.display='none';sw.classList.remove('revealed');} syncMonitorScoutCockpitChrome(); return;}
     if(sw&&!sw.classList.contains('revealed')){
         sw.style.display=''; sw.classList.add('revealed');
         document.getElementById('monitor-input')?.focus();
     }
+    syncMonitorScoutCockpitChrome();
 }
 
 // ── モード切替 ────────────────────────────────────────────────
@@ -3194,14 +3754,14 @@ function triggerInsightScout(){
 }
 
 // ── 初回起動 ─────────────────────────────────────────────────
-let _frmProfile={gender:'',cloth:'',shoe:'',childGender:'',childCloth:'',childShoe:''};
+let _frmProfile={gender:'',cloth:'',shoe:'',glovesSml:'',childGender:'',childCloth:'',childShoe:'',childGlovesSml:''};
 function checkFirstRun(){
     if(!localStorage.getItem('re_eye_setup_v1'))
         document.getElementById('first-run-modal').style.display='flex';
 }
 function selectFrmChip(field,el){
-    const map={gender:'frm-dial-gender',cloth:'frm-dial-cloth',shoe:'frm-dial-shoe',
-               childGender:'frm-dial-child-gender',childCloth:'frm-dial-child-size',childShoe:'frm-dial-child-shoe'};
+    const map={gender:'frm-dial-gender',cloth:'frm-dial-cloth',shoe:'frm-dial-shoe',glovesSml:'frm-dial-gloves-sml',
+               childGender:'frm-dial-child-gender',childCloth:'frm-dial-child-size',childShoe:'frm-dial-child-shoe',childGlovesSml:'frm-dial-child-gloves-sml'};
     if(map[field])document.querySelectorAll('#'+map[field]+' .setting-chip').forEach(c=>c.classList.remove('active'));
     el.classList.add('active'); _frmProfile[field]=el.dataset.val;
 }
@@ -3211,9 +3771,14 @@ function completeFirstRun(){
         if(err){err.style.display='block';err.textContent='性別・服サイズ・靴サイズを選択してください';}return;
     }
     userProfile.gender=_frmProfile.gender; userProfile.clothSize=_frmProfile.cloth;
-    userProfile.shoeSize=_frmProfile.shoe; userProfile.hasChildren=!!_frmProfile.childGender;
+    userProfile.shoeSize=_frmProfile.shoe; userProfile.glovesSml=_frmProfile.glovesSml||'';
+    userProfile.hasChildren=!!_frmProfile.childGender;
     userProfile.childGender=_frmProfile.childGender;
     userProfile.childClothSize=_frmProfile.childCloth; userProfile.childShoeSize=_frmProfile.childShoe;
+    userProfile.childGlovesSml=_frmProfile.childGlovesSml||'';
+    if (userProfile.childGender !== 'boy' && userProfile.childGender !== 'girl') {
+        try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
+    }
     try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
     try{localStorage.setItem('re_eye_setup_v1','1');}catch(e){}
     restoreDialUI(); saveUserSettings();
@@ -3242,43 +3807,69 @@ const SNEAKER_MODEL_HINT_RE=/エアマックス|エア\s*マックス|air\s*max|
 /** HQ7001-001 のようなハイフン付き品番のみでも靴プロファイルの cm を付与する */
 const SHOE_SKU_HINT_RE=/\b[A-Z]{2,4}\d{3,5}-\d{2,4}\b/i;
 const CLOTH_KW=['ジャケット','コート','ニット','シャツ','パンツ','スカート','服','アウター'];
+/** サーバ user-size.js GLOVE_ACCESSORY_KW と同型（手袋検索では服ではなく小物SML） */
+const GLOVE_ACCESSORY_KW=['手袋','グローブ','革手袋','ミトン','軍手','指なし','glove','gloves','mitten','mittens'];
+function _kwHasGloveAccessory(kl){
+    return GLOVE_ACCESSORY_KW.some(w=>kl.includes(String(w).toLowerCase()));
+}
 function buildSizeAwareKeyword(keyword,forChild){
     let kw=keyword; const kl=keyword.toLowerCase();
     const isShoe=SHOE_KW.some(w=>kl.includes(w.toLowerCase()));
     const likelySneaker=SNEAKER_MODEL_HINT_RE.test(keyword);
     const treatShoe=isShoe||likelySneaker||SHOE_SKU_HINT_RE.test(keyword);
     const isCloth=CLOTH_KW.some(w=>kl.includes(w.toLowerCase()));
+    const isAcc=_kwHasGloveAccessory(kl);
     if(forChild){
         const cg=userProfile.childGender==='girl'?'女の子':(userProfile.childGender==='boy'?'男の子':'');
         if(cg)kw+=' '+cg;
-        if(isCloth&&userProfile.childClothSize)kw+=' '+userProfile.childClothSize;
+        if(isAcc){
+            if(userProfile.childGlovesSml)kw+=' '+userProfile.childGlovesSml;
+        } else {
+            if(isCloth&&userProfile.childClothSize)kw+=' '+userProfile.childClothSize;
+        }
         if(treatShoe&&userProfile.childShoeSize)kw+=' '+userProfile.childShoeSize+'cm';
     } else {
-        if(isCloth&&userProfile.clothSize)kw+=' '+userProfile.clothSize;
+        if(isAcc){
+            if(userProfile.glovesSml)kw+=' '+userProfile.glovesSml;
+        } else {
+            if(isCloth&&userProfile.clothSize)kw+=' '+userProfile.clothSize;
+        }
         if(treatShoe&&userProfile.shoeSize)kw+=' '+userProfile.shoeSize+'cm';
     }
     return kw.trim();
 }
 
 let _lastStockSearchContext = { keyword: '', forChild: false, displayKw: '' };
+/** 在庫「次へ」: サーバの prePdpScanIndex / listOffset と既出キー */
+let _stockPageState = { seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false };
+/** 在庫検索の世代。再検索で増やし、古い非同期の描画を捨てる */
+let _stockSearchGen = 0;
+/** /api/search 最新応答の userSettings（都道府県目安の表示用） */
+let _lastSearchUserSettings = {
+    shoeCm: null, clothing: null, prefecture: null, glovesSml: null,
+    childGender: null, childClothSize: null, childShoeSize: null, childGlovesSml: null,
+};
 function buildWatchMetaLine(forChild) {
     const raw = (_lastStockSearchContext.keyword || '').trim();
     if (!raw) return '';
     const kl = raw.toLowerCase();
     const isShoe = SHOE_KW.some(w => kl.includes(w.toLowerCase()));
     const isCloth = CLOTH_KW.some(w => kl.includes(w.toLowerCase()));
+    const isAcc = _kwHasGloveAccessory(kl);
     const likelySneakerModel = SNEAKER_MODEL_HINT_RE.test(raw);
     const showShoeSize = isShoe || likelySneakerModel || SHOE_SKU_HINT_RE.test(raw);
     const parts = [];
     if (forChild) {
         const cg = userProfile.childGender === 'girl' ? '女の子' : (userProfile.childGender === 'boy' ? '男の子' : '');
         if (cg) parts.push(cg);
-        if (isCloth && userProfile.childClothSize) parts.push('服：' + userProfile.childClothSize);
+        if (isAcc && userProfile.childGlovesSml) parts.push('小物(手袋)：' + userProfile.childGlovesSml);
+        else if (isCloth && userProfile.childClothSize) parts.push('服：' + userProfile.childClothSize);
         if (showShoeSize && userProfile.childShoeSize) parts.push('靴：' + userProfile.childShoeSize + 'cm');
     } else {
         if (userProfile.gender === 'male') parts.push('男性');
         else if (userProfile.gender === 'female') parts.push('女性');
-        if (isCloth && userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
+        if (isAcc && userProfile.glovesSml) parts.push('小物(手袋)：' + userProfile.glovesSml);
+        else if (isCloth && userProfile.clothSize) parts.push('服：' + userProfile.clothSize);
         if (showShoeSize && userProfile.shoeSize) parts.push('靴：' + userProfile.shoeSize + 'cm');
     }
     return parts.length ? parts.join(' / ') : '';
@@ -3296,12 +3887,25 @@ async function runCampaignScout(keywords){
     const c=document.getElementById('campaign-results-container');
     if(c){c.innerHTML='<p class="trend-intro-11px" style="text-align:center;margin:12px 0;color:rgba(247,231,206,0.5);">索敵中...</p>';c.style.display='block';}
     try{
-        const res=await fetch(API_BASE + '/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({keywords:Array.isArray(keywords)?keywords:[keywords],mode:'campaign',limit:15})});
-        const data=await res.json();
-        campaignResults=(data.items||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id)));
+        const res=await fetchApi('/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({keywords:Array.isArray(keywords)?keywords:[keywords],mode:'campaign',limit:15,userId:getUserId(),bypassDedup:true,forChild:false})});
+        const raw=await res.text();
+        let data;
+        try{data=JSON.parse(raw);}catch(pe){
+            console.error('[campaign-scout] phase=parse JSON parse:',pe.message,'bodyHead=',String(raw).slice(0,200));
+            throw pe;
+        }
+        if(!res.ok){
+            console.error('[campaign-scout] phase=http',res.status,'bodyHead=',String(raw).slice(0,400),data&&data.error,data&&data.debug);
+            if(c)c.innerHTML='<p class="trend-intro-11px" style="text-align:center;color:rgba(247,231,206,0.45);margin:12px 0;">応募・ギフト索敵を取得できませんでした (HTTP '+res.status+')</p>';
+            campaignResults=[];renderCampaignResults();return;
+        }
+        campaignResults=dedupeByNormalizedTitle((data.items||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id))));
         renderCampaignResults();
-    }catch(e){if(c)c.innerHTML='<p class="trend-intro-11px" style="text-align:center;color:rgba(247,231,206,0.4);margin:12px 0;">検索に失敗しました</p>';}
+    }catch(e){
+        console.error('[campaign-scout] phase=ui',e&&e.message,e&&e.stack?String(e.stack).slice(0,900):e);
+        if(c)c.innerHTML='<p class="trend-intro-11px" style="text-align:center;color:rgba(247,231,206,0.4);margin:12px 0;">検索に失敗しました（ネットワークまたは応答形式）</p>';
+    }
 }
 function renderCampaignResults(){
     const c=document.getElementById('campaign-results-container');
@@ -3342,12 +3946,14 @@ function scoutAndShow(){
     if(ir)ir.style.display='none';
     if(!val) return;
     lastMonitorKeyword=val;
-    if(_currentMode==='stock') showForWhomModal(val);
-    else runIntelScout(val,false,true);
+    if(_currentMode==='stock') runStockSearch(val, getEffectiveScoutForChild());
+    else runIntelScout(val,false,true,getEffectiveScoutForChild());
 }
 
 // ── 在庫検索（デザイン維持・ロジック直結版） ────────────────────────────────
-async function runStockSearch(keyword, forChild) {
+async function runStockSearch(keyword, forChild, loadMore) {
+    const append = !!loadMore;
+    const myGen = ++_stockSearchGen;
     _lastStockSearchContext = { keyword: keyword, forChild: !!forChild, displayKw: '' };
     const sk = buildSizeAwareKeyword(keyword, forChild);
     _lastStockSearchContext.displayKw = sk;
@@ -3359,95 +3965,251 @@ async function runStockSearch(keyword, forChild) {
 
     if (sp) sp.style.display = 'inline-block';
     if (ic) ic.style.display = 'none';
-    if (hdr) hdr.innerHTML = '';
-    if (list) list.innerHTML = '';
+    if (!append) {
+        if (hdr) hdr.innerHTML = '';
+        if (list) list.innerHTML = '';
+        _stockPageState = { seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false };
+    }
+
+    function isSeqPdpCursor(c) {
+        return c && c.staged && c.staged.sequentialPdp;
+    }
+    // 1 当たり 1 品＋1 PDP 往復（YouTube 型ポン出し; サーバは searchMeta.carrier=sequential-one-pdp）
+    const baseBody = { keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 1, sequentialPdp: true };
+    if (append) {
+        baseBody.excludeKeys = Array.from(_stockPageState.seenKeys);
+        baseBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
+        const cur = _stockPageState.cursor || {};
+        if (_stockPageState.isPdp) {
+            const n = cur.prePdpScanIndex != null ? cur.prePdpScanIndex : 0;
+            baseBody.prePdpScanIndex = n;
+            baseBody.offset = n;
+        } else {
+            baseBody.offset = cur.listOffset != null ? cur.listOffset : 0;
+        }
+    }
 
     try {
-        const res = await fetch(API_BASE + '/api/search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keyword: sk, userId: getUserId(), forChild: !!forChild })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            list.innerHTML = '<div class="stock-not-found meta-11px">通信エラー (HTTP ' + res.status + '): ' + String(data.error || '').slice(0, 120) + '</div>';
-            if (ir) ir.style.display = 'block';
-            return;
-        }
-        const apiErrs = data.errors && data.errors.length;
-        if (apiErrs && (!data.items || data.items.length === 0) && (data.debug && (data.debug.handlerError || data.debug.wrapperError))) {
-            list.innerHTML = '<div class="stock-not-found meta-11px">検索サービスに一時的に接続できませんでした。しばらくしてから再度お試しください。</div>';
-            if (ir) ir.style.display = 'block';
-            return;
-        }
-        if (data.debug) {
-            console.log('[RE-EYE search] 楽天・Yahoo 検索デバッグ', {
-                apiKeywords: data.debug.searchKeywordsTried,
-                color条件: data.debug.colorKeywords,
-                色フィルタ厳格: data.debug.colorFilterStrict,
-                trimmed: data.debug.trimmed
-            });
-        } else {
-            console.log('[RE-EYE search] keyword=', sk, 'normalized=', data.normalizedKeyword);
+        const runOneSearch = async (reqBody) => {
+            const res = await fetchApi('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqBody) });
+            let data = {};
+            try { data = await res.json(); } catch (e) {}
+            return { res, data };
+        };
+
+        let first = true;
+        let displayedInBatch = 0;
+        const maxSeqSteps = 24;
+        const maxPerPage = 10;
+        if (!append) {
+            if (hdr) hdr.innerHTML = '';
         }
 
-        if (!data.found || data.items.length === 0) {
-            list.innerHTML = '';
-            const nf = document.createElement('div');
-            nf.className = 'stock-not-found';
-            const p = document.createElement('p');
-            p.textContent = data.inventoryRuleNoHits
-                ? '条件に合う在庫が見つかりませんでした。'
-                : '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。';
-            const btn = document.createElement('button');
-            btn.className = 'btn-purple';
-            btn.style.marginTop = '10px';
-            btn.textContent = 'この条件で「再入荷」を監視する';
-            const manualId = 'manual_' + Date.now();
-            const dispTitle = data.normalizedKeyword || sk;
-            btn.onclick = () => watchStockItem({
-                itemId: manualId, sourceId: 'manual', title: dispTitle,
-                price: 0, available: false, url: '', shopName: 'キーワード監視'
-            }, sk, btn);
-            nf.appendChild(p);
-            nf.appendChild(btn);
-            list.appendChild(nf);
-            if (ir) ir.style.display = 'block';
-            return;
+        for (let step = 0; step < maxSeqSteps; step++) {
+            const reqBody = { ...baseBody, sequentialPdp: true };
+            reqBody.excludeKeys = Array.from(_stockPageState.seenKeys);
+            reqBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
+            if (_stockPageState.isPdp) {
+                const cur = _stockPageState.cursor || {};
+                const n = cur.prePdpScanIndex != null ? cur.prePdpScanIndex : 0;
+                reqBody.prePdpScanIndex = n;
+                reqBody.offset = n;
+            } else if (append) {
+                const cur = _stockPageState.cursor || {};
+                reqBody.offset = cur.listOffset != null ? cur.listOffset : 0;
+            }
+            const { res, data } = await runOneSearch(reqBody);
+            if (myGen !== _stockSearchGen) return;
+            if (data && data.userSettings) {
+                const us = data.userSettings;
+                _lastSearchUserSettings = {
+                    shoeCm: us.shoeCm != null ? us.shoeCm : null,
+                    clothing: us.clothing != null ? us.clothing : null,
+                    prefecture: us.prefecture != null ? us.prefecture : null,
+                    glovesSml: us.glovesSml != null ? us.glovesSml : null,
+                    childGender: us.childGender != null ? us.childGender : null,
+                    childClothSize: us.childClothSize != null ? us.childClothSize : null,
+                    childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
+                    childGlovesSml: us.childGlovesSml != null ? us.childGlovesSml : null,
+                };
+            }
+            if (!res.ok) {
+                if (!append && first) {
+                    const errText = (data.msg && String(data.msg).trim()) ? String(data.msg) : (String((data && data.error) || '').slice(0, 120) || '不明なエラー');
+                    list.innerHTML = '<div class="stock-not-found meta-11px">通信エラー (HTTP ' + res.status + '): ' + errText + '</div>';
+                }
+                if (ir) ir.style.display = 'block';
+                return;
+            }
+            const apiErrs = data.errors && data.errors.length;
+            if (apiErrs && (!data.items || data.items.length === 0) && (data.debug && (data.debug.handlerError || data.debug.wrapperError))) {
+                if (!append && first) {
+                    list.innerHTML = '<div class="stock-not-found meta-11px">検索サービスに一時的に接続できませんでした。しばらくしてから再度お試しください。</div>';
+                }
+                if (ir) ir.style.display = 'block';
+                return;
+            }
+            if (data.debug) {
+                if (data.debug.searchKeywordsTried) {
+                    console.log('[RE-EYE search] 楽天・Yahoo 検索デバッグ', {
+                        apiKeywords: data.debug.searchKeywordsTried,
+                        color条件: data.debug.colorKeywords,
+                        色フィルタ厳格: data.debug.colorFilterStrict,
+                        trimmed: data.debug.trimmed
+                    });
+                } else {
+                    console.log('[RE-EYE search] profileFromRedis', data.debug.profileFromRedis, 'stopReason', data.debug.stopReason);
+                }
+            } else {
+                console.log('[RE-EYE search] keyword=', sk, 'normalized=', data.normalizedKeyword);
+            }
+
+            const seq = isSeqPdpCursor(data.searchCursor);
+            if (data.items && data.items[0] && data.items[0].pdpSizeVerified) _stockPageState.isPdp = true;
+            if (!data.items || data.items.length === 0) {
+                if (first && !append) {
+                    list.innerHTML = '';
+                    const nf = document.createElement('div');
+                    nf.className = 'stock-not-found';
+                    const p = document.createElement('p');
+                    p.textContent = (data.msg && String(data.msg).trim())
+                        ? String(data.msg)
+                        : (data.inventoryRuleNoHits
+                            ? '条件に合う在庫が見つかりませんでした。'
+                            : '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。');
+                    const btn = document.createElement('button');
+                    btn.className = 'btn-purple';
+                    btn.style.marginTop = '10px';
+                    btn.textContent = 'この条件で「再入荷」を監視する';
+                    const manualId = 'manual_' + Date.now();
+                    const dispTitle = data.normalizedKeyword || sk;
+                    btn.onclick = () => watchStockItem({
+                        itemId: manualId, sourceId: 'manual', title: dispTitle,
+                        price: 0, available: false, url: '', shopName: 'キーワード監視'
+                    }, sk, btn);
+                    nf.appendChild(p);
+                    nf.appendChild(btn);
+                    list.appendChild(nf);
+                }
+                _stockPageState.cursor = data.searchCursor || null;
+                if (ir) ir.style.display = 'block';
+                const oldB0 = document.getElementById('stock-load-more-wrap');
+                if (oldB0) oldB0.remove();
+                if (!seq || !data.searchCursor || !data.searchCursor.hasMore) {
+                    if (ir) ir.style.display = 'block';
+                    return;
+                }
+                first = false;
+                continue;
+            }
+
+            for (const it of data.items) {
+                if (it.itemKey) _stockPageState.seenKeys.add(String(it.itemKey));
+                if (it.dedupeSellerModel) _stockPageState.seenSm.add(String(it.dedupeSellerModel));
+            }
+            if (data.nextStartingItem) {
+                const b = data.nextStartingItem;
+                if (b.itemKey) _stockPageState.seenKeys.add(String(b.itemKey));
+                if (b.dedupeSellerModel) _stockPageState.seenSm.add(String(b.dedupeSellerModel));
+            }
+            _stockPageState.cursor = data.searchCursor || null;
+            if (myGen !== _stockSearchGen) return;
+            const pdpItem = (data.items || [])[0] && (data.items || [])[0].pdpSizeVerified;
+            if (!append && pdpItem && seq) {
+                (data.items || []).forEach((it, j) => {
+                    if (myGen !== _stockSearchGen) return;
+                    renderStockResults([it], sk, data.normalizedKeyword || sk, data.errors || [], { append: !(first && j === 0), searchCursor: data.searchCursor });
+                });
+            } else {
+                renderStockResults(data.items, sk, data.normalizedKeyword || sk, data.errors || [], { append: !first && !append, searchCursor: data.searchCursor });
+            }
+            if (seq && pdpItem && myGen === _stockSearchGen) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+            displayedInBatch += (data.items || []).length;
+            if (!(seq && pdpItem)) {
+                if (ir) ir.style.display = 'block';
+                return;
+            }
+            if (displayedInBatch >= maxPerPage) {
+                if (ir) ir.style.display = 'block';
+                return;
+            }
+            if (!data.searchCursor || !data.searchCursor.hasMore) {
+                if (ir) ir.style.display = 'block';
+                return;
+            }
+            first = false;
         }
-        renderStockResults(data.items, sk, data.normalizedKeyword || sk, data.errors || []);
-    } catch (e) {
-        list.innerHTML = '<div class="stock-not-found">通信エラーが発生しました。</div>';
-    } finally {
-        if (sp) sp.style.display = 'none';
-        if (ic) ic.style.display = '';
         if (ir) ir.style.display = 'block';
+    } catch (e) {
+        if (myGen !== _stockSearchGen) return;
+        if (!append) {
+            list.innerHTML = '<div class="stock-not-found">通信エラーが発生しました。</div>';
+        }
+    } finally {
+        if (myGen === _stockSearchGen) {
+            if (sp) sp.style.display = 'none';
+            if (ic) ic.style.display = '';
+            if (ir) ir.style.display = 'block';
+        }
+    }
+}
+async function loadMoreStockResults() {
+    if (_stockPageState.loadingMore) return;
+    if (!_lastStockSearchContext.keyword) return;
+    if (!_stockPageState.cursor || !_stockPageState.cursor.hasMore) return;
+    _stockPageState.loadingMore = true;
+    const btn = document.getElementById('stock-load-more-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '確認中...'; }
+    try {
+        await runStockSearch(_lastStockSearchContext.keyword, _lastStockSearchContext.forChild, true);
+    } finally {
+        _stockPageState.loadingMore = false;
+        if (btn) { btn.disabled = false; btn.textContent = 'さらに10件の在庫を確認する'; }
     }
 }
 
-function renderStockResults(items, keyword, displayKw, apiErrors) {
+function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
+    const o = opts || {};
+    const append = !!o.append;
+    const sc = o.searchCursor;
     const wrap = document.getElementById('home-inline-results');
     const list = document.getElementById('home-inline-list');
     const hdr = document.getElementById('home-slot-header');
-    if (!wrap || !list) return; 
-    list.innerHTML = '';
+    if (!wrap || !list) return;
+    if (!append) {
+        list.innerHTML = '';
+    }
 
-    if (hdr) {
+    if (hdr && !append) {
         hdr.innerHTML = `<span class="gold-label" style="font-size:11px;">検索結果 — ${displayKw}</span>`;
     }
 
-    const aiBanner = document.createElement('div');
-    aiBanner.className = 'meta-11px';
-    aiBanner.setAttribute('role', 'status');
-    aiBanner.style.cssText =
-        'margin-bottom:14px;padding:12px 14px;line-height:1.55;letter-spacing:0.4px;' +
-        'color:var(--champagne-gold);font-weight:600;font-size:12px;' +
-        'border:1px solid rgba(155,89,182,0.55);border-radius:2px;' +
-        'background:rgba(155,89,182,0.12);box-shadow:0 0 18px rgba(155,89,182,0.15);';
-    aiBanner.textContent = 'AI判定：在庫の可能性があります。詳細はリンク先で確認してください';
-    list.appendChild(aiBanner);
+    if (!append) {
+        const aiBanner = document.createElement('div');
+        aiBanner.className = 'meta-11px';
+        aiBanner.setAttribute('role', 'status');
+        aiBanner.style.cssText =
+            'margin-bottom:14px;padding:12px 14px;line-height:1.55;letter-spacing:0.4px;' +
+            'color:var(--champagne-gold);font-weight:600;font-size:12px;' +
+            'border:1px solid rgba(155,89,182,0.55);border-radius:2px;' +
+            'background:rgba(155,89,182,0.12);box-shadow:0 0 18px rgba(155,89,182,0.15);';
+        const pref = _lastSearchUserSettings && _lastSearchUserSettings.prefecture;
+        const prefLine = pref
+            ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
+            : '価格・送料の目安は各店舗条件により異なります。';
+        aiBanner.textContent =
+            'AI判定：在庫の可能性があります。表示価格は「目安」です（送料・最安は保証しません）。詳細はリンク先で確認してください。' +
+            ' ' +
+            prefLine;
+        list.appendChild(aiBanner);
+    }
 
-    items.slice(0, 10).forEach(item => {
+    const oldMore = document.getElementById('stock-load-more-wrap');
+    if (oldMore) oldMore.remove();
+
+    (items || []).forEach(item => {
         const card = document.createElement('div');
         card.className = 'home-result-card';
         
@@ -3499,6 +4261,22 @@ function renderStockResults(items, keyword, displayKw, apiErrors) {
         card.appendChild(actionArea);
         list.appendChild(card);
     });
+
+    if (sc && sc.hasMore) {
+        const moreWrap = document.createElement('div');
+        moreWrap.id = 'stock-load-more-wrap';
+        moreWrap.style.cssText = 'margin-top:18px;padding-top:14px;border-top:1px solid rgba(247,231,206,0.12);text-align:center;';
+        const moreBtn = document.createElement('button');
+        moreBtn.id = 'stock-load-more-btn';
+        moreBtn.type = 'button';
+        moreBtn.className = 'btn-purple';
+        moreBtn.style.cssText = 'min-width:260px;padding:12px 18px;font-size:12px;letter-spacing:0.5px;';
+        moreBtn.textContent = 'さらに10件の在庫を確認する';
+        moreBtn.onclick = () => loadMoreStockResults();
+        moreWrap.appendChild(moreBtn);
+        list.appendChild(moreWrap);
+    }
+
     wrap.style.display = 'block';
 }
 function watchKeyword(kw,btn){
@@ -3512,7 +4290,7 @@ async function watchStockItem(item,keyword,btn){
 
     try {
         // バックエンドの /api/monitor に登録。AIが品番(ModelNumber)を自動判別する
-        const res = await fetch(API_BASE + '/api/monitor', {
+        const res = await fetchApi('/api/monitor', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3589,7 +4367,7 @@ async function watchStockItem(item,keyword,btn){
 async function syncWatchStatus(){
     try{
         purgeLegacyStockRows();
-        const res=await fetch(API_BASE + '/api/monitor?userId='+encodeURIComponent(getUserId()));
+        const res=await fetchApi('/api/monitor?userId='+encodeURIComponent(getUserId()));
         if(!res.ok) return;
         const data=await res.json();
         let changed=false;
@@ -3651,7 +4429,7 @@ function executeMonitor(keyword,mode){
 }
 async function _startMonitorCore(val){
     try{
-        const res=await fetch(API_BASE + '/api/poll',{method:'POST',headers:{'Content-Type':'application/json'},
+        const res=await fetchApi('/api/poll',{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify({keyword:val,userId:getUserId(),plan:currentPlan})});
         if(res.ok){const data=await res.json();mergeApiResultsToHistory(data.allItems||[]);}
     }catch(e){console.warn('[monitor]poll失敗:',e.message);}
@@ -3665,7 +4443,7 @@ function selectPlan(plan,el){
     el.parentElement.querySelectorAll('.category-item').forEach(p=>p.classList.remove('selected'));
     el.classList.add('selected'); updateAdVisibility(); updateNightModeStatus();
     if(document.getElementById('settings')?.classList.contains('active'))renderSettingsTrendWatching();
-    fetch(API_BASE + '/api/monitor',{
+    fetchApi('/api/monitor',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ syncPlanOnly: true, userId: getUserId(), plan })
@@ -3692,23 +4470,28 @@ document.querySelectorAll('.screen').forEach(el=>{
 });
 
 // ── インテル・スカウター ──────────────────────────────────────
-async function runIntelScout(forceKeyword,autoNavigate,homeInline){
+async function runIntelScout(forceKeyword,autoNavigate,homeInline,forChildScout){
     setScoutLoading(true); setInsightLoading(true);
     try{
         const mode=homeInline?(_currentMode||'stock'):'newitem';
-        const res=await fetch(API_BASE + '/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({keywords:[forceKeyword],mode:mode,limit:15,bypassDedup:true})});
+        const uid = getUserId();
+        const res=await fetchApi('/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+                keywords:[forceKeyword],mode:mode,limit:15,bypassDedup:true,userId:uid||undefined,
+                forChild:!!forChildScout
+            })});
         const data=await res.json();
         let raw=(data.items||[]).sort((a,b)=>{
             const da=a.pubDate?new Date(a.pubDate).getTime():(a.lastCheckedAt||0);
             const db=b.pubDate?new Date(b.pubDate).getTime():(b.lastCheckedAt||0);
             return db-da;
         });
+        raw = dedupeByNormalizedTitle(raw);
         if(homeInline){
             renderHomeInlineResults(raw,forceKeyword);
         } else {
             // 探索画面：intelScoutResults に格納して renderTrendItems で表示
-            intelScoutResults=(raw||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id)));
+            intelScoutResults=dedupeByNormalizedTitle((raw||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id))));
             const word=document.getElementById('insight-search')?.value;
             renderTrendItems(word);
             // ステータス表示（CLAUDE.md 誠実な報告ロジック）
@@ -3718,9 +4501,9 @@ async function runIntelScout(forceKeyword,autoNavigate,homeInline){
                 if(intelScoutResults.length>0){
                     st.textContent=intelScoutResults.length+'件の情報を捕捉しました';
                 } else if(found>0){
-                    st.textContent='過去60日間の足跡を検知。ハントの参考にしてください';
+                    st.textContent='最新（48h）の記事にヒントあり。リンク先でご確認ください';
                 } else {
-                    st.textContent='過去60日間の深層スキャンを完了。予約・新作の有力な予兆は検知されませんでした。24H哨戒を継続します';
+                    st.textContent='最新（48h）をスキャン済み。有力な予兆は検知されませんでした。継続して哨戒します';
                 }
                 st.classList.add('visible');
                 setTimeout(()=>st.classList.remove('visible'),6000);
@@ -3744,7 +4527,7 @@ function _renderHomeInlineList(){
     const wrap=document.getElementById('home-inline-results');
     if(!list||!wrap) return; list.innerHTML='';
     if(_homeInlineItems.length===0){
-        list.innerHTML='<div class="home-slot-empty">過去60日間の深層スキャンを完了。予兆は検知されませんでした。</div>';
+        list.innerHTML='<div class="home-slot-empty">最新（48h）をスキャンしましたが、該当する予兆は見つかりませんでした。</div>';
         wrap.style.display='block'; return;
     }
     _homeInlineItems.forEach(item=>{
@@ -3824,23 +4607,33 @@ function closeCoachMark(permanent){
 
 // ── ダイアルUI復元 ────────────────────────────────────────────
 function restoreDialUI(){
-    function act(rowId,val){
-        if(!val)return;
-        const c=document.querySelector('#'+rowId+' .setting-chip[data-val="'+val+'"]');
-        if(c)c.classList.add('active');
-    }
     act('dial-gender',userProfile.gender); act('dial-cloth-size',userProfile.clothSize);
     act('dial-shoe-size',userProfile.shoeSize);
+    setChipRowFromSnapshotValue('dial-gloves-sml', userProfile.glovesSml);
     if(userProfile.childGender)act('dial-child-gender',userProfile.childGender);
     act('dial-child-size',userProfile.childClothSize); act('dial-child-shoe',userProfile.childShoeSize);
+    if (userProfile.hasChildren) {
+        setChipRowFromSnapshotValue('dial-child-gloves-sml', userProfile.childGlovesSml);
+    } else {
+        clearAllChipsInRow('dial-child-gloves-sml');
+    }
+    actDialPrefecture();
+    const cta = document.getElementById('home-setting-unconfigured-cta');
     if(isUserConfigured()){
         const st=buildHomeSettingSummary();
         const se=document.getElementById('home-setting-summary-text');
         const sw=document.getElementById('home-setting-summary-wrap');
-        const f=document.getElementById('home-setting-form');
-        if(se)se.textContent=st; if(sw)sw.style.display='block'; if(f)f.style.display='none';
+        if(se)se.textContent=st; if(sw)sw.style.display='block';
+        if (cta) cta.style.display = 'none';
+    } else {
+        if (cta) cta.style.display = 'block';
+        const sw0 = document.getElementById('home-setting-summary-wrap');
+        if (sw0) sw0.style.display = 'none';
     }
+    syncScoutTargetToggleUI();
+    syncMonitorScoutCockpitChrome();
     checkUserSetup();
+    applyChildRevealedStateFromProfile();
 }
 
 // ── Service Worker ────────────────────────────────────────────
@@ -3887,6 +4680,7 @@ window.onload=()=>{
     startHistoryObserver();
     initDials();
     restoreDialUI();
+    void loadUserSettingsFromServerAndApply();
     initModeUI();
 
     // Web Push 初期化（サイレント・ブロッキングなし）
@@ -3923,6 +4717,7 @@ window.onload=()=>{
 
     // 初回起動チェック
     checkFirstRun();
+    applyChildRevealedStateFromProfile();
 
     // ── トレンドデータをクラウドから復元（localStorage → Redis 優先） ──
     loadTrendFromServer();

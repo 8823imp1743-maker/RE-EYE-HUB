@@ -8,7 +8,7 @@ const REGISTRY = [
 ];
 
 export function getActiveAdapters() {
-  return REGISTRY.filter(a => a.isConfigured());
+  return REGISTRY.filter((a) => a.isConfigured());
 }
 
 function isRunCli() {
@@ -17,12 +17,15 @@ function isRunCli() {
 
 export async function searchAll(keyword, options = {}) {
   const adapters = getActiveAdapters();
-
-  const names = adapters.map(a => a.id).join(', ') || 'NONE';
-  console.log('[Reporting Officer] Active adapters: ' + names);
+  const activeIds = adapters.map((a) => a.id);
+  // 本番 Vercel での「誰が生きているか」証明用（getActiveAdapters = isConfigured() 通過分のみ）
+  console.log(
+    '[AUDIT] Active Adapters: ' +
+      (activeIds.length ? '[' + activeIds.join(', ') + ']' : '[]')
+  );
 
   if (isRunCli() && adapters.length === 0) {
-    console.log('[run-cli] 楽天・Yahoo の API キーが未設定のため、ショップ検索 API は呼び出されません');
+    console.log('[run-cli] 楽天・Yahoo の API キーが未設定のため、ショップ検索 API は呼び出しません');
   }
 
   const results = await Promise.allSettled(
@@ -31,16 +34,20 @@ export async function searchAll(keyword, options = {}) {
 
   const items  = [];
   const errors = [];
+  const perAdapter = [];
 
   results.forEach((result, i) => {
     const shopName = adapters[i].name;
+    const id = adapters[i].id;
     if (result.status === 'fulfilled') {
       const arr = result.value || [];
+      perAdapter.push({ id, count: arr.length, ok: true });
       if (isRunCli()) {
         console.log(`[run-cli] ${shopName}: 取得成功（${arr.length}件ヒット）`);
       }
       items.push(...arr);
     } else {
+      perAdapter.push({ id, count: 0, ok: false, err: result.reason?.message || 'Error' });
       const msg = `[${shopName}] ${result.reason?.message || 'Error'}`;
       errors.push(msg);
       console.error('[Reporting Officer] ' + msg);
@@ -49,9 +56,20 @@ export async function searchAll(keyword, options = {}) {
       }
     }
   });
+  console.log(
+    '[AUDIT][searchAll] 1キーワードあたり合流(事後filterNoise前) raw=',
+    items.length,
+    'adapters=',
+    JSON.stringify(perAdapter),
+    'inKeyword=',
+    String(keyword).slice(0, 180)
+  );
 
   // ── 事後検閲：中古・オークション・禁止ドメインを全滅させる ──
   const cleanItems = filterNoise(items);
+  if (items.length !== cleanItems.length) {
+    console.log('[AUDIT][searchAll] filterNoise 除外', items.length - cleanItems.length, '件');
+  }
 
   return { items: cleanItems, errors };
 }

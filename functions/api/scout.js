@@ -3,7 +3,11 @@
  * インテル・スカウター — オンデマンド巡回 API
  *
  * リクエスト Body（省略可）:
- *   { keywords?: string[] }   省略時はデフォルトシードを使用
+ *   { keywords?: string[], userId?: string }  **userId 必須に近い** — 付与時のみ Redis `user:settings` から
+ *   靴 cm / 服を読み、シードへ `getUserSizeKeywordsForUser` で合成する。未送信だと在庫ニュース上乗せ
+ *   `scoreInventoryNewsBonusForUser` も効かない。フロントは **必ず getUserId() を body に含める**こと。
+ *   保存直後の次のスカウトから新サイズが反映される（毎回 Redis 直読、キャッシュなし）。
+ *   `forChild: true` 時は子ども用の服・靴 cm のみをシードに注入（大人と混在しない; `/api/search` の forChild と同型）。
  *
  * レスポンス:
  *   { ok, newCount, items, errors, scannedAt }
@@ -11,10 +15,22 @@
  * スケジューラー（index.js の scoutScheduler）からも同じロジックを使う。
  */
 
-import { scanAll }             from '../lib/rss-scanner.js';
+import { sanitizeUserId } from '../lib/user-settings.js';
+import { scanAll, scanAllSequentialUntil } from '../lib/rss-scanner.js';
 import { jitterDelay }         from '../lib/stealth.js';
-import { resolveGoogleNewsToSource } from '../lib/google-news.js';
 import { filterNoise, QUERY_NOISE_MINUS } from '../lib/noise-filter.js';
+import {
+  getUserSizeKeywordsForUser,
+  loadUserSettings,
+  scoreInventoryNewsBonusForUser,
+} from '../lib/user-size.js';
+
+/** HTTP スカウトの鮮度窓（RSS・oshi 向け・最新特化） */
+const SCOUT_LATEST_MS = 48 * 60 * 60 * 1000;
+/** campaign のみ RSS / フィルター① をこの程度まで広げる（懸賞・予告の取りこぼし防止） */
+const SCOUT_CAMPAIGN_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+/** Vercel 10 秒壁の前に必ず JSON を返す */
+const SCOUT_HTTP_DEADLINE_MS = 7000;
 
 /**
  * URL先行判定 — ショップ/公式/品番入りURLを即時お宝フラグ
@@ -28,6 +44,21 @@ function isShopOrOfficialUrl(url) {
     if (/[A-Z]{2,}-\d{3,}/i.test(pathname)) return true;
     return false;
   } catch { return false; }
+}
+
+/** 公式・大手販路に近いシグナル → 温度に上乗せ（素人記事を相対的に沈める） */
+function officialPresenceBonus(item) {
+  const u = ((item.url || '') + ' ' + (item.sourceDomain || '')).toLowerCase();
+  const t = (item.title || '').toLowerCase();
+  const hay = `${u} ${t}`;
+  if (
+    /公式|official|pr\s*times|prtimes\.|amazon\.co\.jp|楽天市場|yahoo\.co\.jp\/shopping|\.go\.jp\/|\.or\.jp\/|rakuten\.co\.jp\/|corp\.|brand\.jp/i.test(
+      hay
+    )
+  ) {
+    return 220;
+  }
+  return 0;
 }
 
 /**
@@ -51,7 +82,9 @@ const MAX_EXPANDED = 12;
 // ── ノイズ除去：中古市場・無関係ワードを全クエリに強制付加 ─────────────
 // noise-filter.js の QUERY_NOISE_MINUS を基底とし、スカウト特有のワードを追加
 const NOISE_MINUS =
-  QUERY_NOISE_MINUS + ' -SNKRDUNK -スニダン -買取 -事件 -株価';
+  QUERY_NOISE_MINUS +
+  ' -SNKRDUNK -スニダン -買取 -事件 -株価' +
+  ' -愛犬 -おばあちゃん -コラム -日記 -ブログ -感想 -紹介';
 
 // ── 4カテゴリ別ブーストサフィックス（単語を空白 AND で結合） ────────────
 // newitem/stock は商品名をそのまま追うためブーストなし
@@ -327,67 +360,101 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  try {
   const body        = req.method === 'POST' ? (req.body || {}) : {};
   const mode        = body.mode || 'trend';                          // デフォルトは trend モード
   const limit       = Math.min(Number(body.limit) || 10, 50);        // 最大50件まで
-  const bypassDedup = Boolean(body.bypassDedup);                     // 手動検索時は Redis dedup をバイパス
+  /** API 呼び出しは既定で Redis 既読を無視し RSS を毎回生かける（batch のみ false を明示） */
+  const bypassDedup = body.bypassDedup !== false;
 
-  // rawSeeds を保持（oshi 鉄の掟フィルター用）
-  const rawSeeds    = resolveSeeds(body.keywords);
+  // rawSeeds を保持（oshi 鉄の掟フィルター用）。userId があれば靴/服文脈に応じてシードへサイズ注入
+  // forChild: true のとき子ども用 childShoeSize / childClothSize のみ注入（大人と混在しない）
+  const forChild = !!body.forChild;
+  let rawSeeds = resolveSeeds(body.keywords);
+  const scoutUserId = sanitizeUserId(typeof body.userId === 'string' ? body.userId.trim() : '') || '';
+  if (scoutUserId) {
+    rawSeeds = await getUserSizeKeywordsForUser(scoutUserId, rawSeeds, forChild);
+  }
+
+  const scoutSettings =
+    scoutUserId ? await loadUserSettings(scoutUserId) : null;
+
   const seeds       = await expandKeywords(rawSeeds, mode);
 
   // ── デバッグログ：展開クエリを全開示 ──
   console.log(`[scout] mode=${mode} limit=${limit} bypass=${bypassDedup} 展開クエリ (${seeds.length}本): ${seeds.map(s => `"${s}"`).join(' | ')}`);
 
-  const { items, errors, totalFoundInFeed } = await scanAll(seeds, bypassDedup);
+  const rssItemMaxAgeMs =
+    mode === 'campaign' ? SCOUT_CAMPAIGN_WINDOW_MS : SCOUT_LATEST_MS;
 
-  // ── 監督命令：Google News リンクを直リンクへ浄化（広告遮断の最初の砦） ──
-  // 8秒の打ち切りレース：解決できた分だけ採用、間に合わなかったものは resolveOnClient: true。
-  // 「70点を8秒で」が RE-EYE-HUB の道具としての正解。
-  const CONCURRENCY = 4;
-  const cleanedItems = await (async () => {
-    const out = items.map(it => ({ ...it, resolveOnClient: true })); // 全件デフォルト：未解決
-    let idx = 0;
-    const workers = new Array(Math.min(CONCURRENCY, items.length)).fill(0).map(async () => {
-      while (idx < items.length) {
-        const cur = idx++;
-        const it  = items[cur];
-        if (!it || !it.url) { out[cur] = it; continue; }
-        try {
-          const { sourceUrl, newsUrl } = await resolveGoogleNewsToSource(it.url, { timeoutMs: 3000 });
-          if (sourceUrl) {
-            const urlChanged = sourceUrl !== it.url;
-            out[cur] = { ...it, url: sourceUrl, newsUrl: urlChanged ? newsUrl : undefined, sourceUrl };
-          }
-        } catch (_) { /* out[cur] は既に resolveOnClient: true */ }
-      }
-    });
-    await Promise.race([
-      Promise.all(workers),
-      new Promise(resolve => setTimeout(resolve, 8000)),
-    ]);
-    return out;
-  })();
+  const scanDeadline = Date.now() + SCOUT_HTTP_DEADLINE_MS;
+  const {
+    items,
+    errors,
+    totalFoundInFeed,
+    truncated: rssScanTruncated,
+  } = await scanAllSequentialUntil(seeds, bypassDedup, scanDeadline, true, {
+    maxItemAgeMs: rssItemMaxAgeMs,
+  });
+
+  // 爆速化：Google News の実 URL 解決は行わず、リンク＋タイトルのまま返す（クライアントで開く）
+  const cleanedItems = items.map((it) => ({ ...it, resolveOnClient: true }));
 
   // ── 冷徹フィルター：中古・オークション・禁止ドメインを全滅させる ──────────
   const noiseFiltered = filterNoise(cleanedItems);
 
+  // campaign：商取引シグナル無しは足切り（入荷・在庫・販売・抽選のいずれも無い記事は不要）
+  let postCommerce = noiseFiltered;
+  if (mode === 'campaign') {
+    const COMMERCE_SIG = /入荷|在庫|販売|抽選/;
+    postCommerce = noiseFiltered.filter((item) => {
+      const hay = (item.title || '') + (item.description || '');
+      return COMMERCE_SIG.test(hay);
+    });
+  }
+
   // ── 温度スコアリング（キーワード免責を有効化）────────────────────────────
   // isPriority: 全キーワードが含まれる = お宝確定 → フロントで黄色ハイライト
   const seedTokens = rawSeeds.flatMap(s => s.toLowerCase().split(/\s+/)).filter(Boolean);
-  let scored = noiseFiltered.map(item => {
-    const temp = scoreTemperature(item, rawSeeds);
+  let scored = postCommerce.map(item => {
+    const sizeStockBonus = scoutSettings ? scoreInventoryNewsBonusForUser(scoutSettings, item, forChild) : 0;
+    const temp =
+      scoreTemperature(item, rawSeeds) + officialPresenceBonus(item) + sizeStockBonus;
     const titleL = (item.title || '').toLowerCase();
     const urlIsPriority   = isShopOrOfficialUrl(item.url);
     const titleIsPriority = seedTokens.length > 0 && seedTokens.every(t => titleL.includes(t));
     const isPriority      = urlIsPriority || titleIsPriority;
-    return { ...item, temperature: temp, isPriority };
+    return {
+      ...item,
+      temperature: temp,
+      isPriority,
+      /** 設定サイズ×在庫ニュース一致の上乗せ（0 のときはキー省略に近いがデバッグのため常に数値） */
+      sizeStockNewsBonus: sizeStockBonus,
+    };
   }).filter(item => item.temperature >= 0);
 
+  const withBonus = scored.filter((i) => (i.sizeStockNewsBonus || 0) > 0);
+  const bonus900 = withBonus.filter((i) => (i.sizeStockNewsBonus || 0) >= 900);
+  const sampleB = withBonus.slice(0, 10).map((i) => ({
+    bonus: i.sizeStockNewsBonus,
+    temp: i.temperature,
+    title: (i.title || '').slice(0, 72),
+  }));
+  console.log(
+    '[AUDIT][scout] sizeStockNewsBonus>0: ' +
+      withBonus.length +
+      '/' +
+      scored.length +
+      ' | >=900: ' +
+      bonus900.length +
+      ' | サンプル(最大10)=' +
+      JSON.stringify(sampleB)
+  );
+
   // ── oshi / campaign 共通 鉄の掟（5段フィルター）────────────────────────
-  // フィルター①: 60日以内 pubDate 鮮度フィルター（oshi / campaign 一律）
+  // フィルター①: pubDate 鮮度（oshi=48h / campaign=14 日・RSS maxItemAge と整合）
   // フィルター②: タイトル中の旧西暦スキャン（URL は除外）
-  // フィルター③: 全語タイトル AND 一致（アーティスト名＋チップ 両方必須）
+  // フィルター③: oshi=全語 AND / campaign=先頭語必須＋残りのいずれか1語（緩和）
   // フィルター④: 他の既知アーティストが主語の記事を排除（oshi 専用）
   // フィルター⑤: Jaccard 類似度 80% 以上の重複を最新1件に集約
   if (mode === 'oshi' || mode === 'campaign') {
@@ -397,11 +464,9 @@ export default async function handler(req, res) {
       .map(t => t.toLowerCase());
 
     const NOW_TS   = Date.now();
-    // oshi / campaign ともに一律「過去60日」（Deep Recon 公式スペック）
-    const FRESH_D  = 60 * 24 * 60 * 60 * 1000;
-    const CURR_YR  = new Date().getFullYear(); // 2026
+    const FRESH_D  = mode === 'campaign' ? SCOUT_CAMPAIGN_WINDOW_MS : SCOUT_LATEST_MS;
 
-    // ── フィルター①：鮮度チェック（oshi / campaign ともに60日）──────────────
+    // ── フィルター①：鮮度チェック ───────────────────────────────────────────
     const beforeFresh = scored.length;
     scored = scored.filter(item => {
       if (!item.pubDate) return true; // pubDate 欠如は通す（件数枯渇防止）
@@ -420,10 +485,17 @@ export default async function handler(req, res) {
     if (searchTerms.length > 0) {
       const primaryArtist = searchTerms[0]; // 先頭語 = アーティスト名
 
-      // ── フィルター③：全語タイトル AND 一致（ノイズ根絶） ──────────────────
+      // ── フィルター③：タイトル一致（oshi 厳格 AND / campaign 緩和） ───────────
       const before3 = scored.length;
       scored = scored.filter(item => {
         const title = (item.title || '').toLowerCase();
+        if (mode === 'campaign') {
+          if (searchTerms.length === 0) return true;
+          const primary = searchTerms[0];
+          if (!title.includes(primary)) return false;
+          if (searchTerms.length === 1) return true;
+          return searchTerms.slice(1).some(term => title.includes(term));
+        }
         return searchTerms.every(term => title.includes(term));
       });
 
@@ -492,11 +564,11 @@ export default async function handler(req, res) {
 
       console.log(
         `[scout] ${mode} 鉄の掟 (${searchTerms.join(' AND ')}): ` +
-        `温度通過=${beforeFresh} → 7日鮮度=${beforeYear} → 旧年号除去=${before3} ` +
+        `温度通過=${beforeFresh} → 48h鮮度=${beforeYear} → 旧年号除去=${before3} ` +
         `→ AND通過=${before4} → 他アーティスト排除=${before5} → Jaccard重複排除後=${scored.length} 件`
       );
     } else {
-      console.log(`[scout] ${mode}: 7日鮮度=${beforeYear} (キーワードなし)`);
+      console.log(`[scout] ${mode}: 48h鮮度=${beforeYear} (キーワードなし)`);
     }
   }
 
@@ -504,10 +576,10 @@ export default async function handler(req, res) {
   if (mode === 'campaign') {
     const NOW_MS = Date.now();
     const DAY_MS = 86400000;
-    const WINDOW_MS = 60 * DAY_MS; // タイムウィンドウ：60日以内（Deep Recon）
+    const WINDOW_MS = SCOUT_CAMPAIGN_WINDOW_MS; // campaign は 14 日窓（RSS と整合）
     const DEADLINE_MS = 7 * DAY_MS; // 締切優先：7日以内
 
-    // 60日以内の記事のみに絞る
+    // 14 日以内の記事のみに絞る
     scored = scored.filter(item => {
       const pubMs = item.pubDate ? new Date(item.pubDate).getTime() : 0;
       return (NOW_MS - pubMs) <= WINDOW_MS;
@@ -543,18 +615,35 @@ export default async function handler(req, res) {
   }
 
   scored = scored
-    .sort((a, b) => b.temperature - a.temperature)   // 高温度順
+    .sort((a, b) => b.temperature - a.temperature)   // 高温度順（sizeStockNewsBonus 込み）
     .slice(0, limit);
 
-  // ── 監督命令：レスポンス直前に pubDate ミリ秒降順で最終ソート ──
-  // 温度スコアで上位 limit 件に絞った後、時系列を正確に並べ直す。
+  // 温度（ユーザー別在庫×サイズボーナス含む）を最優先。同点のみ新しい pubDate を上に。
   scored.sort((a, b) => {
+    const d = (b.temperature || 0) - (a.temperature || 0);
+    if (d !== 0) return d;
     const ta = a.pubDate ? new Date(a.pubDate).getTime() : (a.createdAt || 0);
     const tb = b.pubDate ? new Date(b.pubDate).getTime() : (b.createdAt || 0);
     return tb - ta;
   });
 
   const removedByNoise = items.length - scored.length;
+
+  const outBonus = scored.filter((i) => (i.sizeStockNewsBonus || 0) > 0);
+  console.log(
+    '[AUDIT][scout] 最終返却 最大' +
+      limit +
+      '件内: sizeStockNewsBonus>0 → ' +
+      outBonus.length +
+      ' 件 | 先頭3件=' +
+      JSON.stringify(
+        scored.slice(0, 3).map((i) => ({
+          t: (i.temperature || 0),
+          b: i.sizeStockNewsBonus || 0,
+          title: (i.title || '').slice(0, 64),
+        }))
+      )
+  );
 
   // ── デバッグログ：スキャン結果サマリー ──
   console.log(
@@ -563,6 +652,10 @@ export default async function handler(req, res) {
   );
   if (errors.length > 0) errors.forEach(e => console.warn('[scout] error:', e));
 
+  res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   return res.status(200).json({
     ok:              true,
     newCount:        scored.length,
@@ -570,7 +663,28 @@ export default async function handler(req, res) {
     errors,
     totalFoundInFeed,
     scannedAt:       Date.now(),
+    debug: {
+      latestWindowMs: mode === 'campaign' ? SCOUT_CAMPAIGN_WINDOW_MS : SCOUT_LATEST_MS,
+      rssItemMaxAgeMs: rssItemMaxAgeMs,
+      httpDeadlineMs: SCOUT_HTTP_DEADLINE_MS,
+      rssScanTruncated,
+      skippedNewsUrlResolve: true,
+      bonusAudit: {
+        itemsWithSizeStockNewsBonus: outBonus.length,
+        top3: scored.slice(0, 3).map((i) => ({
+          temperature: i.temperature,
+          sizeStockNewsBonus: i.sizeStockNewsBonus || 0,
+        })),
+      },
+    },
   });
+  } catch (e) {
+    console.error('[scout] phase=handler', {
+      message: e?.message || String(e),
+      stack: e?.stack ? String(e.stack).slice(0, 1200) : undefined,
+    });
+    throw e;
+  }
 }
 
 /**

@@ -16,6 +16,7 @@ import {
 } from '../lib/color-filter.js';
 import { serpItemMatchesRule } from '../lib/serp-item-rule.js';
 import { searchAllCached } from '../lib/shop-search-cache.js';
+import { getUserMallPreserveTokens, loadUserSettings } from '../lib/user-size.js';
 import { sendOneSignalNotification } from '../lib/notification.js';
 import { getAuctionMinPrice } from '../lib/auction-checker.js';
 import { getStockInterval, getStockIntervalForPlan, CURRENT_PLAN, STOCK_CONFIG } from '../lib/plan-config.js';
@@ -484,10 +485,16 @@ export async function checkAllWatched() {
  * @param {string} officialTitle 公式タイトル（品番抽出に使用）
  * @returns {{ cascadeText: string, marketFound: boolean, cheapest: object|null, googleFound: boolean }}
  */
-async function runCascadeSearch(keyword, officialTitle) {
+async function runCascadeSearch(keyword, officialTitle, userId) {
   try {
     const expandedKeyword = expandColorQuery(keyword);
     const sizeInfo        = extractSizeFromKeyword(keyword);
+
+    let mallPreserveTokens = [];
+    if (userId) {
+      const settings = await loadUserSettings(userId);
+      if (settings) mallPreserveTokens = getUserMallPreserveTokens(settings, keyword, false);
+    }
 
     console.log(
       `[CASCADE] 開始: expanded="${expandedKeyword.slice(0, 60)}"` +
@@ -498,6 +505,7 @@ async function runCascadeSearch(keyword, officialTitle) {
       maxResults: 10,
       inStockOnly: false,
       cacheTtlSec: 120,
+      ...(mallPreserveTokens.length ? { mallPreserveTokens } : {}),
     });
     const marketItems = marketResult.items || [];
 
@@ -553,6 +561,12 @@ async function checkAndNotifySerp(r, entry) {
   const expandedKeyword = expandColorQuery(keyword);
   const sizeInfo        = extractSizeFromKeyword(keyword);
 
+  let mallPreserveTokens = [];
+  if (userId) {
+    const settings = await loadUserSettings(userId);
+    if (settings) mallPreserveTokens = getUserMallPreserveTokens(settings, keyword, false);
+  }
+
   console.log(
     `[SERP] "${keyword.slice(0, 40)}" ` +
     `expanded="${expandedKeyword.slice(0, 50)}" ` +
@@ -563,6 +577,7 @@ async function checkAndNotifySerp(r, entry) {
     maxResults: 20,
     inStockOnly: false,
     cacheTtlSec: 120,
+    ...(mallPreserveTokens.length ? { mallPreserveTokens } : {}),
   });
   const searchErrs = marketResult.errors || [];
   if (isRunCli() && searchErrs.length) {
@@ -792,7 +807,7 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
 
   // ── 全方位波及検索（公式の在庫状況に関わらず常に実行）───────────────────────
   // 公式が品切れでも楽天・専門店を意地でも探す。
-  const cascade = await runCascadeSearch(keyword, title);
+  const cascade = await runCascadeSearch(keyword, title, userId);
 
   // ── 2軸状態変化の判定 ─────────────────────────────────────────────────────
   const prevMarketStatus = entry.marketStatus || 'NOT_FOUND';

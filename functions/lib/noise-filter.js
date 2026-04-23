@@ -29,6 +29,9 @@ export const BANNED_TITLE_WORDS = [
   'メルカリ', 'ラクマ', 'ヤフオク', 'フリマ', 'フリル',
   '転売', '転売品', 'プレ値', 'プレミア価格',
 
+  // 小物（靴本体の在庫検索では誤爆の中心 — 26.5cm 表記の替え紐等）
+  'シューレース', 'ショーレース', '靴紐', '靴ひも', '替え紐', '替紐', 'shoelace',
+
   // 書籍・ムック（商品ではなく雑誌・本）
   'Special Book', 'special book',
   '本/雑誌', '本・雑誌', '書籍', 'ムック', 'スニーカー本', '図鑑',
@@ -50,6 +53,16 @@ export const BANNED_DOMAINS = [
   'snkrdunk.jp',
   'xl2.digivalley.co.jp',   // ヤフオク旧ドメイン
   'item.fril.jp',
+  // 個人ブログ・無料ホスト（公式トレンドから除外）
+  'ameblo.jp',
+  'blog.fc2.com',
+  'fc2.com',
+  'fc2blog.net',
+  'hatenablog.com',
+  'hatenadiary.jp',
+  'blog.livedoor.jp',
+  'seesaa.net',
+  'g.hatena.ne.jp',
 ];
 
 // ── 事前排除クエリサフィックス（検索APIに投げる前に付加）───────────────────
@@ -62,6 +75,9 @@ export const RAKUTEN_NG_KEYWORD =
   '中古 リユース USED used 訳あり ジャンク 難あり 古着 古物 ランクB コンディション ' +
   'オークション フリマ メルカリ ヤフオク 転売 B品';
 
+/** タイトル・説明の両方で弾く（日記系は本文に出やすい） */
+const AMATEUR_HAYSTACK_WORDS = ['愛犬', 'おばあちゃん', 'うちの犬', 'コラム', '日記', 'ブログ', '感想'];
+
 /**
  * 単一アイテムがノイズかどうか判定する。
  *
@@ -72,11 +88,19 @@ export function isNoise(item) {
   const title = (item.title || '').toLowerCase();
   const desc  = (item.description || '').toLowerCase();
   const url   = (item.url || item.sourceUrl || '').toLowerCase();
+  const hay   = title + '\n' + desc;
 
   // タイトルに禁止ワードが含まれるか
   for (const word of BANNED_TITLE_WORDS) {
     if (title.includes(word.toLowerCase())) {
       console.log(`[noise-filter] BANNED word="${word}" title="${item.title?.slice(0,50)}"`);
+      return true;
+    }
+  }
+
+  for (const w of AMATEUR_HAYSTACK_WORDS) {
+    if (hay.includes(w.toLowerCase())) {
+      console.log(`[noise-filter] AMATEUR marker="${w}" title="${item.title?.slice(0,50)}"`);
       return true;
     }
   }

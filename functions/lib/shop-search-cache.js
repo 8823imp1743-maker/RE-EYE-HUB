@@ -16,15 +16,21 @@ function isRunCli() {
 }
 
 function buildKey(keyword, options) {
+  const preserve = Array.isArray(options.mallPreserveTokens)
+    ? options.mallPreserveTokens.map((t) => String(t || '').trim()).filter(Boolean).sort()
+    : [];
   const o = {
     maxResults: options.maxResults ?? 20,
     inStockOnly: !!options.inStockOnly,
+    mallPreserveTokens: preserve,
+    page: options.page > 0 ? options.page : 1,
+    yahooStart: options.yahooStart > 0 ? options.yahooStart : 1,
   };
   const h = createHash('sha256')
     .update(`${keyword}\0${JSON.stringify(o)}`)
     .digest('hex')
     .slice(0, 40);
-  return `shopsearch:v2:${h}`;
+  return `shopsearch:v3:${h}`;
 }
 
 /**
@@ -38,6 +44,13 @@ export async function searchAllCached(keyword, options = {}) {
   const { cacheTtlSec, skipCache: _s, ...searchOpts } = options;
 
   const key = buildKey(keyword, searchOpts);
+
+  if (skipCache) {
+    console.log(
+      '[AUDIT][shop-cache] skipCache=true → Redis 読取/書込をスキップ | keyHead=' + key.slice(0, 32) + '… | keyword=' +
+        String(keyword).slice(0, 200)
+    );
+  }
 
   let r = null;
   try {
@@ -67,7 +80,14 @@ export async function searchAllCached(keyword, options = {}) {
 
   if (isRunCli()) {
     const k = String(keyword || '').slice(0, 72);
-    console.log(`[run-cli] ショップ検索キャッシュミス — 楽天・Yahoo の API を呼び出します「${k}${k.length >= 72 ? '…' : ''}」`);
+    console.log(
+      `[run-cli] ショップ検索キャッシュミス — 楽天・Yahoo の API を呼び出します「${k}${k.length >= 72 ? '…' : ''}」`
+    );
+  } else if (skipCache) {
+    const k = String(keyword || '').slice(0, 100);
+    console.log(
+      '[AUDIT][shop-cache] searchAll 直前 キーワード="' + k + (k.length >= 100 ? '…' : '') + '"'
+    );
   }
 
   let result;
@@ -83,6 +103,11 @@ export async function searchAllCached(keyword, options = {}) {
   }
   if (!Array.isArray(result.items)) result.items = [];
   if (!Array.isArray(result.errors)) result.errors = [];
+  if (skipCache) {
+    console.log(
+      '[AUDIT][shop-cache] searchAll 戻り items=' + result.items.length + ' errors=' + (result.errors || []).length
+    );
+  }
 
   if (r && !skipCache) {
     try {

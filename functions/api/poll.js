@@ -27,6 +27,10 @@ import {
   userSettingsKey,
 } from '../lib/user-settings.js';
 import { stampPollSizeRankAndSort } from '../lib/serp-item-rule.js';
+import {
+  applyUserSizesToKeywordFromSettings,
+  getUserMallPreserveTokens,
+} from '../lib/user-size.js';
 
 // プラン別の検索件数上限
 const PLAN_MAX_RESULTS = {
@@ -77,14 +81,32 @@ export default async function handler(req, res) {
     }
   }
 
+  const baseKw = String(keyword || '').trim();
+  let searchKeyword = baseKw;
+  let mallPreserveTokens = [];
+  if (storedUserSettings && typeof storedUserSettings === 'object') {
+    searchKeyword = applyUserSizesToKeywordFromSettings(storedUserSettings, baseKw, false);
+    mallPreserveTokens = getUserMallPreserveTokens(storedUserSettings, baseKw, false);
+  }
+
   // 1. 全アクティブショップで並列検索
-  const { items: rawItems, errors } = await searchAllCached(keyword, {
+  const { items: rawItems, errors } = await searchAllCached(searchKeyword, {
     maxResults,
     inStockOnly: false,
     cacheTtlSec: CACHE_TTL[plan] || 60,
+    ...(mallPreserveTokens.length ? { mallPreserveTokens } : {}),
   });
 
-  let allItems = stampPollSizeRankAndSort(rawItems, storedUserSettings);
+  const safeRawItems = Array.isArray(rawItems)
+    ? rawItems.filter(it => it != null && typeof it === 'object')
+    : [];
+  let allItems;
+  try {
+    allItems = stampPollSizeRankAndSort(safeRawItems, storedUserSettings);
+  } catch (e) {
+    console.error('[poll] stampPollSizeRankAndSort(allItems):', e.message);
+    allItems = safeRawItems;
+  }
 
   // 2. 各アイテムの seenチェック → 未見のみ抽出
   const newItems = [];
@@ -104,14 +126,26 @@ export default async function handler(req, res) {
     })
   );
 
-  const sortedNewItems = stampPollSizeRankAndSort(newItems, storedUserSettings);
+  let sortedNewItems;
+  try {
+    sortedNewItems = stampPollSizeRankAndSort(newItems, storedUserSettings);
+  } catch (e) {
+    console.error('[poll] stampPollSizeRankAndSort(newItems):', e.message);
+    sortedNewItems = newItems;
+  }
 
   // 3. フィルタリング（除外ワード除去・カテゴリ分類）
   const filteredNew = sortedNewItems.filter(item =>
     !shouldExclude(item.title, item.title) // LIVE/チケット等は除外
   );
 
-  const sortedFilteredNew = stampPollSizeRankAndSort(filteredNew, storedUserSettings);
+  let sortedFilteredNew;
+  try {
+    sortedFilteredNew = stampPollSizeRankAndSort(filteredNew, storedUserSettings);
+  } catch (e) {
+    console.error('[poll] stampPollSizeRankAndSort(filteredNew):', e.message);
+    sortedFilteredNew = filteredNew;
+  }
 
   // 4. 在庫ありの新着アイテムがあれば OneSignal でプッシュ通知
   const inStockNew = sortedFilteredNew.filter(i => i.available);
@@ -133,7 +167,7 @@ export default async function handler(req, res) {
   }
 
   // 5. 結果を Redis にキャッシュ（フロントのステータス取得用）
-  const cacheKey = buildCacheKey(userId, keyword);
+  const cacheKey = buildCacheKey(userId, searchKeyword);
   const ttl = CACHE_TTL[plan] || 3600;
   try {
     const r = getRedis();

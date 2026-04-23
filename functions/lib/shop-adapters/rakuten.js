@@ -22,17 +22,30 @@ export class RakutenAdapter extends ShopAdapter {
   }
 
   async search(keyword, options = {}) {
-    const { maxResults = 20, inStockOnly = false } = options;
+    const {
+      maxResults = 20,
+      inStockOnly = false,
+      mallPreserveTokens = [],
+      page: mallPage = 1,
+    } = options;
+    const preserve = Array.isArray(mallPreserveTokens)
+      ? mallPreserveTokens.map((t) => String(t || '').trim()).filter(Boolean)
+      : [];
 
-    // 🛠 検索ワードから「26.5cm」などのサイズ表記を消す（これが0件の原因）
+    // ヒット拡大のため cm を落とす → 続けて mallPreserveTokens をクエリ先頭に固定（検索の主眼＝ユーザーの鍵）
     let refinedKeyword = keyword
-      .replace(/[0-9]{2}(\.[0-9])?cm/g, '') 
+      .replace(/[0-9]{2}(\.[0-9])?cm/g, '')
       .replace(/国内正規品|メンズ|レディース|送料無料|新品|公式|ショップ|【.*?】|（.*?）/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
-    // 🚩 報告係：実際に何で検索してるかログに出す
-    console.log(`[Reporting Officer] 楽天・改善ワード: "${refinedKeyword}" (サイズを除外しました)`);
+    if (preserve.length) {
+      const anchor = preserve.join(' ').trim();
+      refinedKeyword = `${anchor} ${refinedKeyword}`.replace(/\s+/g, ' ').trim();
+    }
+
+    const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（サイズを除外しました）';
+    console.log(`[Reporting Officer] 楽天・改善ワード: "${refinedKeyword}" ${preserveNote}`);
 
     // applicationId: 環境変数のハイフンは API が受け付ける形式に合わせて除去
     const applicationId = (process.env.RAKUTEN_APP_ID || '').trim().replace(/-/g, '');
@@ -45,12 +58,14 @@ export class RakutenAdapter extends ShopAdapter {
       );
     }
 
+    const pageNum = Math.max(1, Math.min(100, Number(mallPage) || 1));
     const params = new URLSearchParams({
       applicationId,
       accessKey,
       keyword: refinedKeyword,
       NGKeyword: RAKUTEN_NG_KEYWORD,
       hits: String(Math.min(maxResults, 30)),
+      page: String(pageNum),
       sort: '-updateTimestamp',
       ...(affiliateId ? { affiliateId } : {}),
       ...(inStockOnly ? { availability: '1' } : {}),
@@ -62,10 +77,19 @@ export class RakutenAdapter extends ShopAdapter {
       console.log(`[run-cli] 楽天の商品を検索中… 「${q}${refinedKeyword.length > 80 ? '…' : ''}」`);
     }
 
+    const requestUrl = `${API_BASE}?${params.toString()}`;
+    const kwForLog = String(params.get('keyword') || '').slice(0, 220);
+    console.log(
+      '[AUDIT][rakuten] OUTBOUND HTTPS GET host=openapi.rakuten.co.jp path=/ichibams/.../Search keywordQuery=' +
+        JSON.stringify(kwForLog) +
+        ' (sizeワード含むか=' +
+        /\d+(\.\d+)?\s*cm/i.test(kwForLog) +
+        ')'
+    );
     const json = await withRetry(
       () =>
         fetchWithTimeout(
-          `${API_BASE}?${params.toString()}`,
+          requestUrl,
           {
             headers: {
               Referer: APP_ORIGIN + '/',
@@ -76,11 +100,22 @@ export class RakutenAdapter extends ShopAdapter {
         ),
       { label: '楽天API', maxRetries: 2, baseDelayMs: 400 }
     );
+    // 200 でも body に error / Message が載る場合がある（このとき Items は空に近い）
+    if (json && (json.error != null || json.Errors)) {
+      console.error(
+        '[AUDIT][rakuten] API 本文エラー（HTTP 200 でも要確認）',
+        JSON.stringify({ error: json.error, Errors: json.Errors, Message: json.Message }).slice(0, 500)
+      );
+    }
     const items = (json.Items || []);
-    console.log(`[Reporting Officer] 楽天で ${items.length} 件ヒット。`);
+    console.log(
+      `[Reporting Officer] 楽天で ${items.length} 件ヒット。`,
+      items.length === 0 ? '（0件: クエリ不調・在庫なし・上記errorのいずれか。keyword はログ参照）' : ''
+    );
 
     return items.map(({ Item }) => {
       const title = Item.itemName || '';
+      const sellerName = Item.shopName != null ? String(Item.shopName).trim() : '';
       const modelNumbers = extractModelNumbers(title);
       const tagList = Item.tagList || [];
       const tags = tagList.map(t => t.tagName || t.name || '').filter(Boolean);
@@ -94,15 +129,24 @@ export class RakutenAdapter extends ShopAdapter {
       }
       const catchcopy = Item.catchcopy != null ? String(Item.catchcopy) : '';
       const itemCaption = Item.itemCaption != null ? String(Item.itemCaption) : '';
+      // Ichiba Search の availability: 1=販売可が基本。文字列 "1" や数値揺れに対応。
+      // 親SKUで返る行は「全サイズ売切れ」でも 0 になり得る（バリエーション在庫は PDP のみ）→ 厳密一致だけだと誤判定しやすい。
+      const rawAv = Item.availability;
+      const inStock =
+        rawAv === 1 ||
+        rawAv === '1' ||
+        Number(rawAv) === 1;
+
       return {
         sourceId:     this.id,
         itemId:       String(Item.itemCode || Item.itemUrl || Item.itemName),
         title,
         price:        Number(Item.itemPrice) || 0,
-        available:    Item.availability === 1,
+        available:    inStock,
         url:          Item.itemUrl,
         imageUrl:     Item.mediumImageUrls?.[0]?.imageUrl || '',
-        shopName:     this.name,
+        shopName:     sellerName || this.name,
+        sellerName:   sellerName || undefined,
         checkedAt:    Date.now(),
         colorLabel,
         tags:         tags.length ? tags : undefined,

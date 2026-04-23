@@ -80,9 +80,15 @@ export function extractModelNumbers(title) {
 export function extractSizeFromKeyword(keyword) {
   if (!keyword) return null;
 
-  // 靴サイズ: 25.5cm / 26cm
+  // 靴サイズ: 25.5cm / 26cm（従来）
   const shoeMatch = keyword.match(/(\d{2}(?:\.\d)?)cm/i);
   if (shoeMatch) return { type: 'shoe', raw: shoeMatch[1] };
+
+  // 靴: 楽天等の「US8.5-26.5」「US8.5〜26.5cm」「US8.5－26.5」（全角ハイフン・en dash 含む / u フラグ）
+  const usJoint = keyword.match(
+    /\bUS\s*[\d.]+\s*[-\/～〜\u2013\u2014\uFF0D]\s*(\d{2}(?:\.\d)?)(?:\s*cm|\bセンチ\b)?/iu
+  );
+  if (usJoint) return { type: 'shoe', raw: usJoint[1] };
 
   // 服サイズ（文字）: 長い表記を優先 (4XL > 3XL > XXL > XL > XS > S/M/L)
   const CLOTHING_SIZES = ['4XL','3XL','2XL','XXL','XL','XS','S','M','L'];
@@ -108,8 +114,16 @@ function hasSizeInTitle(title, sizeCmStr) {
   if (!sizeCmStr) return true;
   const t   = (title || '').replace(/\s+/g, '');
   const cm  = parseFloat(sizeCmStr);
+  if (!Number.isFinite(cm)) return false;
   const usA = cm - 18;
   const usStr = Number.isInteger(usA) ? usA.toFixed(0) : usA.toFixed(1);
+  const cmEsc = cm.toFixed(1).replace('.', '\\.');
+  // US8.5-26.5 / US8.5ー26.5cm（ハイフン・波ダッシュ併記。includes('26.5') だけでは拾い切れない表記用）
+  const usHyphenJoint = new RegExp(
+    `US\\s*\\d+(?:\\.\\d)?\\s*[-\\/～〜\\u2013\\u2014\\uFF0D]\\s*${cmEsc}(?:cm)?`,
+    'iu'
+  );
+  if (usHyphenJoint.test(t)) return true;
 
   return [
     cm.toFixed(1),             // "26.5"

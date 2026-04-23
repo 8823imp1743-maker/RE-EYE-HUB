@@ -11,6 +11,13 @@
 
 import { getRedis } from '../lib/redis.js';
 
+/** ブラウザ・CDN が 304 / 古いボディを返さないようにする */
+function setNoStore(res) {
+  res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+}
+
 const TREND_TTL       = 60 * 60 * 24 * 90; // 90日
 const TREND_MAX_SLOTS = 10;                  // バックエンド側の絶対上限
 
@@ -50,6 +57,7 @@ async function handleGet(req, res) {
   try {
     const r = getRedis();
     const raw = await r.get(`user:trend:items:${userId}`);
+    setNoStore(res);
     if (!raw) return res.status(200).json({ found: false, items: [] });
     const items = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return res.status(200).json({ found: true, items: Array.isArray(items) ? items : [] });
@@ -74,6 +82,7 @@ async function handlePost(req, res) {
   try {
     const r = getRedis();
     await r.set(`user:trend:items:${userId}`, JSON.stringify(items), { ex: TREND_TTL });
+    setNoStore(res);
     return res.status(200).json({ saved: true, count: items.length });
   } catch(e) {
     console.error('[trend] POST 失敗:', e.message);

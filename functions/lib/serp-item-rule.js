@@ -59,10 +59,12 @@ export function buildSerpRuleEntryForKeyword(trimmed) {
  * キーワード・色・品番・サイズが商品テキストと整合するか（プログラム判定）
  * @param {{ keyword?: string, colorKeywords?: string[], modelNumbers?: string[] }} entry
  * @param {object} item 楽天・Yahoo 正規化アイテム（available = API の在庫フラグ想定）
- * @param {{ relaxSizeWhenInStock?: boolean }} [opts] 検索 API 専用: 本文にサイズが無くても API が在庫ありならサイズ条件だけ通す（靴 cm / 服 S〜XL / 数値サイズ。追加 HTTP なし）
+ * @param {{ relaxSizeWhenInStock?: boolean, inventoryListingSearch?: boolean }} [opts]
+ *   relaxSizeWhenInStock: 本文にサイズが無くても API が在庫ありならサイズ条件だけ通す
+ *   inventoryListingSearch: POST /api/search 在庫検索向け。一覧にサイズが載らない店舗でも relaxable 型はサイズ軸を落とさない（PDP で要確認）
  */
 export function serpItemMatchesRule(entry, item, opts = {}) {
-  const { relaxSizeWhenInStock = false } = opts;
+  const { relaxSizeWhenInStock = false, inventoryListingSearch = false } = opts;
   const keyword = entry.keyword || '';
   const normalized = normalizeBrand(keyword);
   const hay = buildSerpPlainTextHaystack(item);
@@ -81,6 +83,12 @@ export function serpItemMatchesRule(entry, item, opts = {}) {
       if (relaxSizeWhenInStock && item.available === true && relaxable) {
         console.log(
           `[SERP] サイズが本文に無いが API 在庫あり → 緩和通過（${si.type}=${si.raw}・リンク先で要確認）`
+        );
+        continue;
+      }
+      if (inventoryListingSearch && relaxable) {
+        console.log(
+          `[SERP] 在庫検索API サイズ緩和: 本文に無いが通過（${si.type}=${si.raw}・PDP要確認）`
         );
         continue;
       }
@@ -121,8 +129,14 @@ const SHOE_CM_IN_TEXT = /(\d{2}(?:\.\d)?)\s*cm/gi;
  */
 export function pickPollMySizeInfoFromSettings(settings) {
   if (!settings || typeof settings !== 'object') return null;
-  if (typeof settings.shoeCm === 'number' && Number.isFinite(settings.shoeCm)) {
-    const r = Math.round(settings.shoeCm * 10) / 10;
+  const shoeN =
+    typeof settings.shoeCm === 'number' && Number.isFinite(settings.shoeCm)
+      ? settings.shoeCm
+      : settings.shoeCm != null && settings.shoeCm !== ''
+        ? Number(settings.shoeCm)
+        : NaN;
+  if (Number.isFinite(shoeN)) {
+    const r = Math.round(shoeN * 10) / 10;
     if (r < 20.0 || r > 35.0) return null;
     const raw = Number.isInteger(r) ? String(r) : r.toFixed(1);
     return { type: 'shoe', raw };
@@ -130,8 +144,14 @@ export function pickPollMySizeInfoFromSettings(settings) {
   if (typeof settings.clothing === 'string' && settings.clothing.trim()) {
     return { type: 'clothing', raw: settings.clothing.trim().toUpperCase() };
   }
-  if (typeof settings.numeric === 'number' && Number.isFinite(settings.numeric)) {
-    const i = Math.round(settings.numeric);
+  const numN =
+    typeof settings.numeric === 'number' && Number.isFinite(settings.numeric)
+      ? settings.numeric
+      : settings.numeric != null && settings.numeric !== ''
+        ? Number(settings.numeric)
+        : NaN;
+  if (Number.isFinite(numN)) {
+    const i = Math.round(numN);
     if (i < 20 || i > 60) return null;
     return { type: 'numeric', raw: String(i) };
   }
@@ -171,6 +191,8 @@ function hayHasAnyClothingSizeSignal(hay) {
 export function computePollSizeRank(item, settings) {
   const sizeInfo = pickPollMySizeInfoFromSettings(settings);
   if (!sizeInfo) return null;
+  // 検索結果配列に null/欠損が混じると buildSerpPlainTextHaystack が落ちる（Vercel 500）
+  if (!item || typeof item !== 'object') return 'C';
   const hay = buildSerpPlainTextHaystack(item);
   if (hasSizeInTitleUniversal(hay, sizeInfo)) return 'A';
   if (sizeInfo.type === 'shoe') {
@@ -208,7 +230,7 @@ export function stampPollSizeRankAndSort(items, settings) {
     return a.idx - b.idx;
   });
   for (const { item, rank } of decorated) {
-    item.sizeRank = rank;
+    if (item && typeof item === 'object') item.sizeRank = rank;
   }
   return decorated.map(d => d.item);
 }
