@@ -6,6 +6,8 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RE-EYE-HUB</title>
+    <!-- `BUILD_STAMP` Vercel 強制認識用（デプロイのたびに日時を更新すること） -->
+    <!-- BUILD_STAMP: 2026-04-24T14:30:00Z bottom-sheet-open-first -->
     
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
     <!-- Lucide Icons（ISC）— 商用可 / stroke は CSS で 1.5px 相当に統一 -->
@@ -1398,7 +1400,7 @@
             </div>
 
             <!-- マイサイズ編集：ボトムシート（id=home-setting-form は保存ロック・成否で参照） -->
-            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet" style="display:none" aria-hidden="true">
+            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet hidden" style="display:none" aria-hidden="true">
                 <div class="user-settings-bs-backdrop" onclick="if(!isSettingsSaveLocked())closeUserSettingsBottomSheet()"></div>
                 <div class="user-settings-bs-panel" role="dialog" aria-label="マイサイズ">
                     <div class="user-settings-bs-header">
@@ -1854,6 +1856,7 @@
     </div>
 
     <script>
+// `BUILD_STAMP` 2026-04-24T14:30:00Z bottom-sheet-open-first (Vercel 差分検知用・更新時に書き換え)
 // ════════════════════════════════════════════════
 //  RE-EYE-HUB CORE v2 — 5係合同改修・監督承認版
 //  10秒待機完全抹殺 / StateStore / Direct Access
@@ -3379,19 +3382,37 @@ function syncMonitorScoutCockpitChrome() {
     if (showBar) syncScoutTargetToggleUI();
 }
 function openUserSettingsBottomSheet() {
-    const s = document.getElementById('user-settings-bottom-sheet');
-    if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
-    ensureSizeChipsRendered();
+    const bs = document.getElementById('user-settings-bottom-sheet');
+    try { if (bs) bs.classList.remove('hidden'); } catch (e) {}
+    try { if (bs) bs.style.display = 'flex'; } catch (e) {}
+    try { if (bs) bs.setAttribute('aria-hidden', 'false'); } catch (e) {}
+    try { console.log('Setting Opened'); } catch (e) {}
+    try { document.body.style.overflow = 'hidden'; } catch (e) {}
+    try {
+        ensureSizeChipsRendered();
+    } catch (e) {
+        console.warn('[openUserSettingsBottomSheet] ensureSizeChipsRendered', e);
+    }
     try {
         restoreDialUI(userProfile);
-    } catch (e) {}
-    applyChildRevealedStateFromProfile();
-    try { document.body.style.overflow = 'hidden'; } catch (e) {}
+    } catch (e) {
+        console.warn('[openUserSettingsBottomSheet] restoreDialUI', e);
+    }
+    try {
+        applyChildRevealedStateFromProfile();
+    } catch (e) {
+        console.warn('[openUserSettingsBottomSheet] applyChildRevealedStateFromProfile', e);
+    }
+    try { if (typeof refreshLucideIcons === 'function') refreshLucideIcons(); } catch (e) {}
 }
 function closeUserSettingsBottomSheet() {
     if (isSettingsSaveLocked()) return;
     const s = document.getElementById('user-settings-bottom-sheet');
-    if (s) { s.style.display = 'none'; s.setAttribute('aria-hidden', 'true'); }
+    if (s) {
+        s.style.display = 'none';
+        s.classList.add('hidden');
+        s.setAttribute('aria-hidden', 'true');
+    }
     try { document.body.style.overflow = ''; } catch (e) {}
 }
 function toggleHomeSettings(){
@@ -3492,15 +3513,43 @@ function initIndependentChips() {
     };
     const adultShoes = [];
     for (let s = 23.0; s <= 28.0; s += 0.5) adultShoes.push(s.toFixed(1));
-    fill('dial-adult-shoe', adultShoes, 're_eye_my_shoe');
-    fill('dial-adult-cloth', ['S', 'M', 'L', 'XL'], 're_eye_my_cloth');
-    fillLabeled('dial-adult-gender', [['男性', 'male'], ['女性', 'female']], 're_eye_my_gender');
+    try {
+        fill('dial-adult-shoe', adultShoes, 're_eye_my_shoe');
+    } catch (e) {
+        console.warn('[initIndependentChips] dial-adult-shoe', e);
+    }
+    try {
+        fill('dial-adult-cloth', ['S', 'M', 'L', 'XL'], 're_eye_my_cloth');
+    } catch (e) {
+        console.warn('[initIndependentChips] dial-adult-cloth', e);
+    }
+    try {
+        fillLabeled('dial-adult-gender', [['男性', 'male'], ['女性', 'female']], 're_eye_my_gender');
+    } catch (e) {
+        console.warn('[initIndependentChips] dial-adult-gender', e);
+    }
     const childShoes = [];
     for (let s = 13.0; s <= 21.0; s += 0.5) childShoes.push(s.toFixed(1));
-    fill('dial-child-shoe', childShoes, 're_eye_child_shoe');
-    fill('dial-child-cloth', ['80', '90', '100', '110', '120', '130', '140', '150', '160'], 're_eye_child_cloth');
-    fillLabeled('dial-child-gender', [['男の子', 'boy'], ['女の子', 'girl']], 're_eye_child_gender');
-    initFormChipRowsOnly();
+    try {
+        fill('dial-child-shoe', childShoes, 're_eye_child_shoe');
+    } catch (e) {
+        console.warn('[initIndependentChips] dial-child-shoe', e);
+    }
+    try {
+        fill('dial-child-cloth', ['80', '90', '100', '110', '120', '130', '140', '150', '160'], 're_eye_child_cloth');
+    } catch (e) {
+        console.warn('[initIndependentChips] dial-child-cloth', e);
+    }
+    try {
+        fillLabeled('dial-child-gender', [['男の子', 'boy'], ['女の子', 'girl']], 're_eye_child_gender');
+    } catch (e) {
+        console.warn('[initIndependentChips] dial-child-gender', e);
+    }
+    try {
+        initFormChipRowsOnly();
+    } catch (e) {
+        console.warn('[initIndependentChips] initFormChipRowsOnly', e);
+    }
 }
 /** 非表示タブ内の行が空のとき用：いずれかの行にチップが無ければ一括再生成 */
 function ensureSizeChipsRendered() {
