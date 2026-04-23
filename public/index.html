@@ -869,7 +869,7 @@
             padding-top: 10px;
         }
         .hidden { display: none !important; }
-        .setting-chip {
+        .setting-chip, .size-chip {
             padding: 7px 12px; font-size: 11px; letter-spacing: 0.8px;
             color: rgba(247,231,206,0.6);
             background: rgba(155,89,182,0.04);
@@ -877,7 +877,7 @@
             cursor: pointer; transition: 0.2s ease; user-select: none;
             white-space: nowrap;
         }
-        .setting-chip.active {
+        .setting-chip.active, .size-chip.active {
             color: var(--amethyst);
             background: rgba(155,89,182,0.15);
             border-color: var(--amethyst);
@@ -1463,10 +1463,7 @@
                         <div class="settings-section">
                             <div class="section-title"><i data-lucide="user" aria-hidden="true"></i> 自分のサイズ</div>
                             <label class="chip-label-row">性別</label>
-                            <div id="dial-adult-gender" class="chip-row">
-                                <div class="setting-chip" data-val="female" onclick="selectChip('gender',this)">女性</div>
-                                <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
-                            </div>
+                            <div id="dial-adult-gender" class="chip-row"></div>
                             <label class="chip-label-row">靴 (cm)</label>
                             <div id="dial-adult-shoe" class="chip-row"></div>
                             <label class="chip-label-row">服</label>
@@ -1478,10 +1475,7 @@
                         <div id="user-settings-child-cockpit" class="settings-section hidden" style="display:none" role="region" aria-label="お子様のサイズ（任意）">
                             <div class="section-title"><i data-lucide="baby" aria-hidden="true"></i> お子様のサイズ設定（任意）</div>
                             <label class="chip-label-row">お子様の性別</label>
-                            <div id="dial-child-gender" class="chip-row">
-                                <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
-                                <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
-                            </div>
+                            <div id="dial-child-gender" class="chip-row"></div>
                             <label class="chip-label-row">靴 (cm)</label>
                             <div id="dial-child-shoe" class="chip-row"></div>
                             <label class="chip-label-row">服</label>
@@ -3392,15 +3386,8 @@ function openUserSettingsBottomSheet() {
     if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
     ensureSizeChipsRendered();
     try {
-        if (userProfile.gender) act('dial-adult-gender', userProfile.gender);
-        if (userProfile.shoeSize) act('dial-adult-shoe', userProfile.shoeSize);
-        if (userProfile.clothSize) act('dial-adult-cloth', userProfile.clothSize);
-        if (userProfile.childGender) act('dial-child-gender', userProfile.childGender);
-        if (userProfile.childShoeSize) act('dial-child-shoe', userProfile.childShoeSize);
-        if (userProfile.childClothSize) act('dial-child-cloth', userProfile.childClothSize);
-        actDialPrefecture();
+        restoreDialUI(userProfile);
     } catch (e) {}
-    applyChildRevealedStateFromProfile();
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
 }
 function closeUserSettingsBottomSheet() {
@@ -3447,32 +3434,84 @@ function fillChipRowFromValues(rowId, values, onChipClick) {
     });
     row.appendChild(frag);
 }
-/** 大人・子のチップを独立 ID に流し込み（ボトムシート＋初回モーダル） */
-function initUserSettingsChipRows() {
+/** 初回モーダル用：setting-chip のまま（frm 専用） */
+function initFormChipRowsOnly() {
     const adultShoe = _reEyeHalfStepRange(23.0, 28.0);
     const childShoe = _reEyeHalfStepRange(13.0, 21.0);
-    const adultCloth = ['S', 'M', 'L', 'XL'];
     const childCloth = [];
     for (let n = 80; n <= 160; n += 10) childCloth.push(String(n));
-    fillChipRowFromValues('dial-adult-shoe', adultShoe, (el) => { selectChip('shoe', el); });
-    fillChipRowFromValues('dial-child-shoe', childShoe, (el) => { selectChip('childShoe', el); });
-    fillChipRowFromValues('dial-adult-cloth', adultCloth, (el) => { selectChip('cloth', el); });
-    fillChipRowFromValues('dial-child-cloth', childCloth, (el) => { selectChip('childCloth', el); });
     fillChipRowFromValues('frm-dial-shoe', adultShoe, (el) => { selectFrmChip('shoe', el); });
     fillChipRowFromValues('frm-dial-child-shoe', childShoe, (el) => { selectFrmChip('childShoe', el); });
     fillChipRowFromValues('frm-dial-child-cloth', childCloth, (el) => { selectFrmChip('childCloth', el); });
 }
+/**
+ * ボトムシート：size-chip 生成（ID なしは無視）。表示と userProfile 用 data-val（性別）を分離し、
+ * localStorage の補助キーと既存 readProfileFromDials を同期。
+ */
 function initIndependentChips() {
-    initUserSettingsChipRows();
+    const fill = (id, values, key) => {
+        const container = document.getElementById(id);
+        if (!container) return;
+        container.innerHTML = '';
+        values.forEach((v) => {
+            const chip = document.createElement('div');
+            chip.className = 'size-chip';
+            const vs = String(v);
+            chip.innerText = vs;
+            chip.dataset.val = vs;
+            chip.onclick = () => {
+                if (typeof isSettingsSaveLocked === 'function' && isSettingsSaveLocked()) return;
+                container.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
+                chip.classList.add('active');
+                try { localStorage.setItem(key, vs); } catch (e) {}
+                readProfileFromDials();
+                syncScoutTargetToggleUI();
+                saveUserSettings();
+            };
+            container.appendChild(chip);
+        });
+    };
+    const fillLabeled = (id, pairs, key) => {
+        const container = document.getElementById(id);
+        if (!container) return;
+        container.innerHTML = '';
+        pairs.forEach(([label, val]) => {
+            const chip = document.createElement('div');
+            chip.className = 'size-chip';
+            chip.innerText = label;
+            chip.dataset.val = val;
+            chip.onclick = () => {
+                if (typeof isSettingsSaveLocked === 'function' && isSettingsSaveLocked()) return;
+                container.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
+                chip.classList.add('active');
+                try { localStorage.setItem(key, val); } catch (e) {}
+                readProfileFromDials();
+                syncScoutTargetToggleUI();
+                saveUserSettings();
+            };
+            container.appendChild(chip);
+        });
+    };
+    const adultShoes = [];
+    for (let s = 23.0; s <= 28.0; s += 0.5) adultShoes.push(s.toFixed(1));
+    fill('dial-adult-shoe', adultShoes, 're_eye_my_shoe');
+    fill('dial-adult-cloth', ['S', 'M', 'L', 'XL'], 're_eye_my_cloth');
+    fillLabeled('dial-adult-gender', [['男性', 'male'], ['女性', 'female']], 're_eye_my_gender');
+    const childShoes = [];
+    for (let s = 13.0; s <= 21.0; s += 0.5) childShoes.push(s.toFixed(1));
+    fill('dial-child-shoe', childShoes, 're_eye_child_shoe');
+    fill('dial-child-cloth', ['80', '90', '100', '110', '120', '130', '140', '150', '160'], 're_eye_child_cloth');
+    fillLabeled('dial-child-gender', [['男の子', 'boy'], ['女の子', 'girl']], 're_eye_child_gender');
+    initFormChipRowsOnly();
 }
 /** 非表示タブ内の行が空のとき用：いずれかの行にチップが無ければ一括再生成 */
 function ensureSizeChipsRendered() {
-    const ids = ['dial-adult-shoe', 'dial-adult-cloth', 'dial-child-shoe', 'dial-child-cloth'];
+    const ids = ['dial-adult-gender', 'dial-adult-shoe', 'dial-adult-cloth', 'dial-child-gender', 'dial-child-shoe', 'dial-child-cloth'];
     const anyEmpty = ids.some((id) => {
         const r = document.getElementById(id);
-        return r && !r.querySelector('.setting-chip');
+        return r && !r.querySelector('.setting-chip, .size-chip');
     });
-    if (anyEmpty) initUserSettingsChipRows();
+    if (anyEmpty) initIndependentChips();
 }
 function initDials() {
     initIndependentChips();
@@ -3480,12 +3519,31 @@ function initDials() {
 function act(rowId, val) {
     if (val == null || val === '') return;
     const row = document.getElementById(rowId);
-    if (row) row.querySelectorAll('.setting-chip').forEach((i) => i.classList.remove('active'));
-    const c = document.querySelector('#' + rowId + ' .setting-chip[data-val="' + String(val).replace(/"/g, '&quot;') + '"]');
+    if (!row) return;
+    row.querySelectorAll('.setting-chip, .size-chip').forEach((i) => i.classList.remove('active'));
+    const str = String(val);
+    const wantNum = parseFloat(String(val).replace(/cm$/i, '').trim());
+    const wantFinite = Number.isFinite(wantNum);
+    const chips = row.querySelectorAll('.setting-chip, .size-chip');
+    let c = null;
+    chips.forEach((el) => {
+        const d = el.getAttribute('data-val');
+        if (d == null) return;
+        if (d === str) c = el;
+        else if (wantFinite) {
+            const ch = parseFloat(String(d).replace(/cm$/i, '').trim());
+            if (Number.isFinite(ch) && Math.abs(ch - wantNum) < 1e-6) c = el;
+        }
+    });
     if (c) c.classList.add('active');
 }
 function readProfileFromDials() {
-    const sel = (id) => { const e = document.querySelector('#' + id + ' .setting-chip.active'); return e ? e.dataset.val : ''; };
+    const sel = (id) => {
+        const e = document.querySelector('#' + id + ' .size-chip.active, #' + id + ' .setting-chip.active');
+        if (!e) return '';
+        if (e.dataset && e.dataset.val != null && e.dataset.val !== '') return e.dataset.val;
+        return (e.textContent || '').trim();
+    };
     userProfile.gender = sel('dial-adult-gender');
     userProfile.clothSize = sel('dial-adult-cloth');
     userProfile.shoeSize = sel('dial-adult-shoe');
@@ -3525,7 +3583,7 @@ function onPrefectureDialChange() {
 /** 子ども枠のチップを全外し（巻き戻しで hasChildren false のとき必須） */
 function clearAllChipsInRow(rowId) {
     const row = document.getElementById(rowId);
-    if (row) row.querySelectorAll('.setting-chip').forEach((i) => i.classList.remove('active'));
+    if (row) row.querySelectorAll('.setting-chip, .size-chip').forEach((i) => i.classList.remove('active'));
 }
 /** 空なら行クリア、値があれば act（act は空を無視するため巻き戻し専用） */
 function setChipRowFromSnapshotValue(rowId, val) {
@@ -3548,22 +3606,10 @@ function applyUserSettingsSnapshot(snapP, snapPr) {
         pr.value = snapPr;
         userProfile.prefecture = snapPr || '';
     }
-    setChipRowFromSnapshotValue('dial-adult-gender', userProfile.gender);
-    setChipRowFromSnapshotValue('dial-adult-cloth', userProfile.clothSize);
-    setChipRowFromSnapshotValue('dial-adult-shoe', userProfile.shoeSize);
-    if (userProfile.hasChildren) {
-        setChipRowFromSnapshotValue('dial-child-gender', userProfile.childGender);
-        setChipRowFromSnapshotValue('dial-child-cloth', userProfile.childClothSize);
-        setChipRowFromSnapshotValue('dial-child-shoe', userProfile.childShoeSize);
-    } else {
-        clearAllChipsInRow('dial-child-gender');
-        clearAllChipsInRow('dial-child-cloth');
-        clearAllChipsInRow('dial-child-shoe');
-    }
     try {
         localStorage.setItem('re_eye_profile', JSON.stringify(userProfile));
     } catch (e) {}
-    applyChildRevealedStateFromProfile();
+    restoreDialUI(userProfile);
 }
 let _saveTimer;
 async function postUserSettingsToRedis() {
@@ -3631,19 +3677,7 @@ async function loadUserSettingsFromServerAndApply() {
         userProfile.childGlovesSml = '';
         userProfile.hasChildren = !!userProfile.childGender;
         try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
-        actDialPrefecture();
-        setChipRowFromSnapshotValue('dial-adult-gender', userProfile.gender);
-        setChipRowFromSnapshotValue('dial-adult-cloth', userProfile.clothSize);
-        setChipRowFromSnapshotValue('dial-adult-shoe', userProfile.shoeSize);
-        if (userProfile.hasChildren) {
-            setChipRowFromSnapshotValue('dial-child-gender', userProfile.childGender);
-            setChipRowFromSnapshotValue('dial-child-cloth', userProfile.childClothSize);
-            setChipRowFromSnapshotValue('dial-child-shoe', userProfile.childShoeSize);
-        } else {
-            clearAllChipsInRow('dial-child-gender');
-            clearAllChipsInRow('dial-child-cloth');
-            clearAllChipsInRow('dial-child-shoe');
-        }
+        restoreDialUI(userProfile);
         const cta2 = document.getElementById('home-setting-unconfigured-cta');
         if (isUserConfigured()) {
             const se0 = document.getElementById('home-setting-summary-text');
@@ -3654,7 +3688,6 @@ async function loadUserSettingsFromServerAndApply() {
         }
         syncScoutTargetToggleUI();
         syncMonitorScoutCockpitChrome();
-        applyChildRevealedStateFromProfile();
     } catch (e) {}
 }
 function saveUserSettings(explicit) {
@@ -4676,13 +4709,41 @@ function closeCoachMark(permanent){
     if(permanent)localStorage.setItem('re_eye_coach_done','1');
 }
 
-// ── ダイアルUI復元 ────────────────────────────────────────────
-function restoreDialUI(){
-    act('dial-adult-gender',userProfile.gender); act('dial-adult-cloth',userProfile.clothSize);
-    act('dial-adult-shoe',userProfile.shoeSize);
-    if(userProfile.childGender)act('dial-child-gender',userProfile.childGender);
-    act('dial-child-cloth',userProfile.childClothSize); act('dial-child-shoe',userProfile.childShoeSize);
-    actDialPrefecture();
+// ── ダイアルUI復元（size-chip / data-val 優先。ID 欠損は無視） ───
+function restoreDialUI(profile) {
+    if (!profile) profile = userProfile;
+    const setSafe = (id, val) => {
+        const container = document.getElementById(id);
+        if (!container) return;
+        if (val == null || val === '') {
+            container.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
+            return;
+        }
+        const str = String(val);
+        const wantNum = parseFloat(String(val).replace(/cm$/i, '').trim());
+        const wantFinite = Number.isFinite(wantNum);
+        const chips = container.querySelectorAll('.size-chip, .setting-chip');
+        let hit = false;
+        chips.forEach((c) => {
+            const d = c.dataset && c.dataset.val != null && c.dataset.val !== '' ? String(c.dataset.val) : null;
+            const chipNum = d != null ? parseFloat(String(d).replace(/cm$/i, '').trim()) : NaN;
+            const on = d != null
+                && (d === str || (wantFinite && Number.isFinite(chipNum) && Math.abs(chipNum - wantNum) < 1e-6));
+            c.classList.toggle('active', !!on);
+            if (on) hit = true;
+        });
+        if (!hit) {
+            chips.forEach((c) => c.classList.toggle('active', (c.textContent || '').trim() === str));
+        }
+    };
+    setSafe('dial-adult-gender', profile.gender);
+    setSafe('dial-adult-shoe', profile.shoeSize);
+    setSafe('dial-adult-cloth', profile.clothSize);
+    setSafe('dial-child-gender', profile.childGender);
+    setSafe('dial-child-shoe', profile.childShoeSize);
+    setSafe('dial-child-cloth', profile.childClothSize);
+    const prefSelect = document.getElementById('dial-prefecture');
+    if (prefSelect) prefSelect.value = profile.prefecture || '';
     const cta = document.getElementById('home-setting-unconfigured-cta');
     if(isUserConfigured()){
         const st=buildHomeSettingSummary();
