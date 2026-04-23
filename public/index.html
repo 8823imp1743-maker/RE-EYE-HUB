@@ -806,6 +806,47 @@
         .chip-row {
             display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;
         }
+        /* ユーザーサイズ：空でもレイアウトが潰れない（チップ未生成時の保険） */
+        #home-setting-form .chip-row,
+        #first-run-modal .chip-row {
+            min-height: 40px;
+            margin-top: 10px;
+            gap: 8px;
+        }
+        /* 都道府県：ネイティブのダーク配布で文字が消える端末向け（背景と文字色を固定） */
+        #dial-prefecture.dial-pref-select,
+        select#dial-prefecture {
+            display: block;
+            max-width: 100%;
+            box-sizing: border-box;
+            margin: 6px 0 10px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background-color: #2a2a2a !important;
+            color: #ffffff !important;
+            border: 1px solid #555 !important;
+            font-size: 14px;
+            line-height: 1.3;
+            appearance: auto;
+            -webkit-appearance: menulist;
+            color-scheme: dark;
+            cursor: pointer;
+        }
+        #dial-prefecture.dial-pref-select:disabled,
+        select#dial-prefecture:disabled {
+            opacity: 0.6;
+        }
+        #dial-prefecture option,
+        select#dial-prefecture option {
+            background-color: #2a2a2a;
+            color: #ffffff;
+        }
+        .child-settings-block {
+            border-top: 1px solid rgba(155, 89, 182, 0.22);
+            margin-top: 10px;
+            padding-top: 10px;
+        }
+        .hidden { display: none !important; }
         .setting-chip {
             padding: 7px 12px; font-size: 11px; letter-spacing: 0.8px;
             color: rgba(247,231,206,0.6);
@@ -949,15 +990,17 @@
         .lucide-inline, .lucide-inline-wrap svg, .lucide-inline + svg { width: 15px; height: 15px; vertical-align: -3px; }
         .lucide-warn-inline { display: inline-flex; align-items: center; vertical-align: middle; margin-right: 4px; }
         .lucide-warn-inline svg { width: 14px; height: 14px; vertical-align: -2px; color: var(--champagne-gold); }
-        .btn-reveal-child {
+        .btn-reveal-child, .add-btn {
             display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
             margin: 10px 0 0; padding: 10px 12px; font-size: 11px; letter-spacing: 0.6px;
             background: rgba(155,89,182,0.1); border: 1px dashed rgba(155,89,182,0.5); border-radius: 4px;
             color: var(--amethyst); cursor: pointer; transition: 0.2s;
         }
-        .btn-reveal-child:hover { background: rgba(155,89,182,0.2); border-style: solid; }
-        [data-child-revealed="1"] .btn-reveal-child { display: none; }
-        [data-child-revealed="0"] .user-settings-child-cockpit { display: none !important; }
+        .btn-reveal-child:hover, .add-btn:hover { background: rgba(155,89,182,0.2); border-style: solid; }
+        #add-child-btn.hidden, #add-child-btn-first-run.hidden { display: none !important; }
+        #user-settings-child-cockpit .user-settings-child-sub { display: none; }
+        #user-settings-child-cockpit .user-settings-child-sub.is-active { display: block; }
+        #user-settings-child-cockpit.hidden .user-settings-child-sub { display: none !important; }
         .monitor-target-head { display: inline-flex; align-items: center; gap: 6px; }
         .monitor-target-head [data-lucide], .monitor-target-head svg { width: 14px; height: 14px; }
         .reward-icon svg, .home-banner-icon svg { width: 20px; height: 20px; }
@@ -1346,7 +1389,7 @@
                         <span class="gold-label" style="margin:0;">ユーザーサイズ設定（家族分含む）</span>
                         <button type="button" class="user-settings-bs-close" onclick="closeUserSettingsBottomSheet()">閉じる</button>
                     </div>
-                    <div class="user-settings-bs-body" id="home-setting-form" data-child-revealed="0">
+                    <div class="user-settings-bs-body" id="home-setting-form">
                         <p class="meta-11px" style="margin:0 0 10px;line-height:1.65;opacity:0.92">検索・在庫に使う足長・服・小物を登録します。下の「誰のサイズで検索」は見守り枠のすぐ上で切り替えます。</p>
                         <span class="meta-11px" style="display:block;margin-bottom:6px;">性別（自分）</span>
                         <div class="chip-row" id="dial-gender">
@@ -1354,7 +1397,7 @@
                             <div class="setting-chip" data-val="male" onclick="selectChip('gender',this)">男性</div>
                         </div>
                         <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">お届け先（都道府県）※価格・送料の目安用</span>
-                        <select id="dial-prefecture" class="dial-pref-select" onchange="onPrefectureDialChange();" style="max-width:100%;margin:6px 0 10px;padding:8px 10px;border-radius:4px;background:rgba(0,0,0,0.25);color:var(--champagne-gold);border:1px solid rgba(155,89,182,0.4);">
+                        <select id="dial-prefecture" class="dial-pref-select" onchange="onPrefectureDialChange();">
                             <option value="">（未設定）</option>
                             <option value="北海道">北海道</option>
                             <option value="青森県">青森</option>
@@ -1412,23 +1455,12 @@
                             <button type="button" class="settings-cat-seg-btn" data-cat="cloth" id="settings-cat-btn-cloth" onclick="setUserSettingsCategory('cloth')">服</button>
                             <button type="button" class="settings-cat-seg-btn" data-cat="accessory" id="settings-cat-btn-accessory" onclick="setUserSettingsCategory('accessory')">小物</button>
                         </div>
-                        <button type="button" class="btn-reveal-child" onclick="revealChildSizeSettings()" aria-expanded="false"><i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>子ども用サイズを登録する</span></button>
                         <div class="settings-category-panels-slot">
                         <div id="settings-panel-shoe" class="settings-cat-panel is-active" role="tabpanel">
                             <div class="cockpit-block">
                                 <div class="cockpit-block-title">自分</div>
                                 <span class="settings-cat-head">靴（0.5cm 刻み）</span>
                                 <div class="chip-row" id="dial-shoe-size"></div>
-                            </div>
-                            <div class="cockpit-block user-settings-child-cockpit">
-                                <div class="cockpit-block-title">お子様</div>
-                                <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
-                                <div class="chip-row" id="dial-child-gender">
-                                    <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
-                                    <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
-                                </div>
-                                <span class="settings-cat-head" style="margin-top:10px;">靴（0.5cm 刻み）</span>
-                                <div class="chip-row" id="dial-child-shoe"></div>
                             </div>
                         </div>
                         <div id="settings-panel-cloth" class="settings-cat-panel" role="tabpanel">
@@ -1437,11 +1469,6 @@
                                 <span class="settings-cat-head">服 S / M / L</span>
                                 <div class="chip-row" id="dial-cloth-size"></div>
                             </div>
-                            <div class="cockpit-block user-settings-child-cockpit">
-                                <div class="cockpit-block-title">お子様</div>
-                                <span class="settings-cat-head">子ども服（80〜160・10 刻み）</span>
-                                <div class="chip-row" id="dial-child-size"></div>
-                            </div>
                         </div>
                         <div id="settings-panel-accessory" class="settings-cat-panel" role="tabpanel">
                             <div class="cockpit-block">
@@ -1449,12 +1476,28 @@
                                 <span class="settings-cat-head">手袋・小物（服の SML とは別）</span>
                                 <div class="chip-row" id="dial-gloves-sml"></div>
                             </div>
-                            <div class="cockpit-block user-settings-child-cockpit">
-                                <div class="cockpit-block-title">お子様</div>
-                                <span class="settings-cat-head">手袋・小物 S / M / L</span>
+                        </div>
+                        </div>
+                        <button type="button" id="add-child-btn" class="btn-reveal-child add-btn" onclick="handleExpandChildSettings();" aria-expanded="false" aria-controls="user-settings-child-cockpit"><i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>子ども用サイズを登録する（任意）</span></button>
+                        <div id="user-settings-child-cockpit" class="child-settings-block cockpit-block hidden" style="display:none" role="region" aria-label="お子様のサイズ">
+                            <div class="cockpit-block-title">お子様</div>
+                            <span class="meta-11px" style="display:block;margin-bottom:6px;">性別</span>
+                            <div class="chip-row" id="dial-child-gender">
+                                <div class="setting-chip" data-val="girl" onclick="selectChip('childGender',this)">女の子</div>
+                                <div class="setting-chip" data-val="boy" onclick="selectChip('childGender',this)">男の子</div>
+                            </div>
+                            <div class="user-settings-child-sub is-active" data-cat="shoe" id="user-settings-child-sub-shoe">
+                                <span class="settings-cat-head" style="display:block;margin-top:10px;">靴（0.5cm 刻み）</span>
+                                <div class="chip-row" id="dial-child-shoe"></div>
+                            </div>
+                            <div class="user-settings-child-sub" data-cat="cloth" id="user-settings-child-sub-cloth" style="display:none">
+                                <span class="settings-cat-head" style="display:block;margin-top:10px;">子ども服（80〜160・10 刻み）</span>
+                                <div class="chip-row" id="dial-child-size"></div>
+                            </div>
+                            <div class="user-settings-child-sub" data-cat="accessory" id="user-settings-child-sub-accessory" style="display:none">
+                                <span class="settings-cat-head" style="display:block;margin-top:10px;">手袋・小物 S / M / L</span>
                                 <div class="chip-row" id="dial-child-gloves-sml"></div>
                             </div>
-                        </div>
                         </div>
                         <button type="button" id="btn-save-user-settings" class="sync-hub-btn" onclick="saveUserSettings(true)">設定を保存する</button>
                     </div>
@@ -1715,9 +1758,9 @@
                 <div class="chip-row" id="frm-dial-shoe" style="flex-wrap:wrap;"></div>
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">手袋・小物（任意・S/M/L）</span>
                 <div class="chip-row" id="frm-dial-gloves-sml"></div>
-                <div id="first-run-child-wrap" data-child-revealed="0">
-                <button type="button" class="btn-reveal-child" onclick="revealFirstRunChildSettings()"><i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>子ども用サイズを登録する</span></button>
-                <div class="user-settings-child-cockpit">
+                <div id="first-run-child-wrap">
+                <button type="button" id="add-child-btn-first-run" class="btn-reveal-child add-btn" onclick="handleExpandChildSettings();" aria-expanded="false" aria-controls="user-settings-child-cockpit-first-run"><i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>子ども用サイズを登録する（任意）</span></button>
+                <div id="user-settings-child-cockpit-first-run" class="user-settings-child-cockpit child-settings-block hidden" style="display:none" role="region" aria-label="お子様のサイズ（初回）">
                 <div style="margin-top:18px;padding-top:12px;border-top:1px solid rgba(155,89,182,0.2);">
                     <span style="font-size:11px;color:rgba(255,255,255,0.5);display:block;margin-bottom:4px;">（任意）</span>
                     <span class="gold-label" style="font-size:11px;">お子様設定</span>
@@ -2035,23 +2078,62 @@ function isChildSizeUiExpanded() {
     if (userProfile.childGender === 'boy' || userProfile.childGender === 'girl') return true;
     try { return localStorage.getItem(RE_EYE_CHILD_SETTINGS_EXPANDED) === '1'; } catch (e) { return false; }
 }
-function applyChildRevealedStateFromProfile() {
+function _syncChildBlockVisibility(btnId, blockId) {
+    const childBlock = document.getElementById(blockId);
+    const addChildBtn = document.getElementById(btnId);
+    if (!childBlock) return;
+    let isExpanded = false;
+    try { isExpanded = localStorage.getItem(RE_EYE_CHILD_SETTINGS_EXPANDED) === '1'; } catch (e) {}
+    const hasChildData = userProfile && (userProfile.childGender === 'boy' || userProfile.childGender === 'girl');
+    if (isExpanded || hasChildData) {
+        childBlock.classList.remove('hidden');
+        childBlock.style.display = 'block';
+        if (addChildBtn) addChildBtn.classList.add('hidden');
+    } else {
+        childBlock.classList.add('hidden');
+        childBlock.style.display = 'none';
+        if (addChildBtn) addChildBtn.classList.remove('hidden');
+    }
+}
+function syncChildSettingsVisibility() {
+    _syncChildBlockVisibility('add-child-btn', 'user-settings-child-cockpit');
+    _syncChildBlockVisibility('add-child-btn-first-run', 'user-settings-child-cockpit-first-run');
+    const active = document.querySelector('.settings-cat-seg-btn.active');
+    if (active) setUserSettingsCategory(active.getAttribute('data-cat') || 'shoe');
     const show = isChildSizeUiExpanded();
-    const sheet = document.getElementById('home-setting-form');
-    if (sheet) sheet.setAttribute('data-child-revealed', show ? '1' : '0');
-    const fr = document.getElementById('first-run-child-wrap');
-    if (fr) fr.setAttribute('data-child-revealed', show ? '1' : '0');
     try {
-        document.querySelectorAll('.btn-reveal-child').forEach((b) => b.setAttribute('aria-expanded', show ? 'true' : 'false'));
+        document.querySelectorAll('#add-child-btn, #add-child-btn-first-run').forEach((b) => {
+            if (b) b.setAttribute('aria-expanded', show ? 'true' : 'false');
+        });
     } catch (e) {}
     refreshLucideIcons();
 }
-function revealChildSizeSettings() {
+function applyChildRevealedStateFromProfile() {
+    syncChildSettingsVisibility();
+}
+/** 「子ども用サイズを登録」— 展開＋チップ再生成＋選択の復元 */
+window.handleExpandChildSettings = function () {
     try { localStorage.setItem(RE_EYE_CHILD_SETTINGS_EXPANDED, '1'); } catch (e) {}
-    applyChildRevealedStateFromProfile();
+    if (typeof initUserSettingsChipRows === 'function') initUserSettingsChipRows();
+    try {
+        if (userProfile.childGender) act('dial-child-gender', userProfile.childGender);
+        if (userProfile.childShoeSize) act('dial-child-shoe', userProfile.childShoeSize);
+        if (userProfile.childClothSize) act('dial-child-size', userProfile.childClothSize);
+        if (userProfile.hasChildren && userProfile.childGlovesSml) act('dial-child-gloves-sml', userProfile.childGlovesSml);
+        if (typeof _frmProfile !== 'undefined' && _frmProfile) {
+            if (_frmProfile.childGender) act('frm-dial-child-gender', _frmProfile.childGender);
+            if (_frmProfile.childCloth) act('frm-dial-child-size', _frmProfile.childCloth);
+            if (_frmProfile.childShoe) act('frm-dial-child-shoe', _frmProfile.childShoe);
+            if (_frmProfile.childGlovesSml) act('frm-dial-child-gloves-sml', _frmProfile.childGlovesSml);
+        }
+    } catch (e) {}
+    syncChildSettingsVisibility();
+};
+function revealChildSizeSettings() {
+    handleExpandChildSettings();
 }
 function revealFirstRunChildSettings() {
-    revealChildSizeSettings();
+    handleExpandChildSettings();
 }
 (function loadSavedProfile() {
     try {
@@ -3294,6 +3376,14 @@ function setUserSettingsCategory(cat) {
         const el = document.getElementById(map[k]);
         if (el) el.classList.toggle('is-active', k === cat);
     });
+    const subMap = { shoe: 'user-settings-child-sub-shoe', cloth: 'user-settings-child-sub-cloth', accessory: 'user-settings-child-sub-accessory' };
+    order.forEach((k) => {
+        const sub = document.getElementById(subMap[k]);
+        if (!sub) return;
+        const on = (k === cat);
+        sub.classList.toggle('is-active', on);
+        sub.style.display = on ? 'block' : 'none';
+    });
 }
 function setScoutTargetForChild(forChild) {
     _scoutTargetForChild = !!forChild;
@@ -3336,6 +3426,18 @@ function openUserSettingsBottomSheet() {
     const s = document.getElementById('user-settings-bottom-sheet');
     if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
     setUserSettingsCategory('shoe');
+    ensureSizeChipsRendered();
+    try {
+        if (userProfile.gender) act('dial-gender', userProfile.gender);
+        if (userProfile.shoeSize) act('dial-shoe-size', userProfile.shoeSize);
+        if (userProfile.clothSize) act('dial-cloth-size', userProfile.clothSize);
+        if (userProfile.glovesSml) act('dial-gloves-sml', userProfile.glovesSml);
+        if (userProfile.childGender) act('dial-child-gender', userProfile.childGender);
+        if (userProfile.childShoeSize) act('dial-child-shoe', userProfile.childShoeSize);
+        if (userProfile.childClothSize) act('dial-child-size', userProfile.childClothSize);
+        if (userProfile.hasChildren && userProfile.childGlovesSml) act('dial-child-gloves-sml', userProfile.childGlovesSml);
+        actDialPrefecture();
+    } catch (e) {}
     applyChildRevealedStateFromProfile();
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
 }
@@ -3364,31 +3466,51 @@ function _reEyeHalfStepRange(start, end) {
     }
     return a;
 }
-function fillChipRowFromValues(rowId, values, onClickAttr) {
+/** サイズチップを DOM で生成（innerHTML 失敗・引用符崩れを避ける） */
+function fillChipRowFromValues(rowId, values, onChipClick) {
     const row = document.getElementById(rowId);
     if (!row) return;
-    const esc = (v) => String(v).replace(/"/g, '&quot;');
-    row.innerHTML = values.map((v) =>
-        '<div class="setting-chip" data-val="' + esc(v) + '" ' + onClickAttr + '>' + v + '</div>'
-    ).join('');
+    while (row.firstChild) row.removeChild(row.firstChild);
+    if (!Array.isArray(values) || !values.length) return;
+    const frag = document.createDocumentFragment();
+    values.forEach((v) => {
+        const chip = document.createElement('div');
+        chip.className = 'setting-chip';
+        chip.setAttribute('data-val', String(v));
+        chip.textContent = String(v);
+        chip.addEventListener('click', function reEyeChipClick() {
+            onChipClick(chip);
+        });
+        frag.appendChild(chip);
+    });
+    row.appendChild(frag);
 }
 function initUserSettingsChipRows() {
-    const adultShoe = _reEyeHalfStepRange(22.5, 28.0);
-    const childShoe = _reEyeHalfStepRange(10.0, 22.0);
+    const adultShoe = _reEyeHalfStepRange(22.5, 29.0);
+    const childShoe = _reEyeHalfStepRange(12.0, 22.0);
     const sml = ['S', 'M', 'L'];
     const childCloth = [];
     for (let n = 80; n <= 160; n += 10) childCloth.push(String(n));
-    fillChipRowFromValues('dial-shoe-size', adultShoe, 'onclick="selectChip(\'shoe\',this)"');
-    fillChipRowFromValues('dial-child-shoe', childShoe, 'onclick="selectChip(\'childShoe\',this)"');
-    fillChipRowFromValues('dial-cloth-size', sml, 'onclick="selectChip(\'cloth\',this)"');
-    fillChipRowFromValues('dial-child-size', childCloth, 'onclick="selectChip(\'childCloth\',this)"');
-    fillChipRowFromValues('dial-gloves-sml', sml, 'onclick="selectChip(\'glovesSml\',this)"');
-    fillChipRowFromValues('dial-child-gloves-sml', sml, 'onclick="selectChip(\'childGlovesSml\',this)"');
-    fillChipRowFromValues('frm-dial-shoe', adultShoe, 'onclick="selectFrmChip(\'shoe\',this)"');
-    fillChipRowFromValues('frm-dial-child-shoe', childShoe, 'onclick="selectFrmChip(\'childShoe\',this)"');
-    fillChipRowFromValues('frm-dial-child-size', childCloth, 'onclick="selectFrmChip(\'childCloth\',this)"');
-    fillChipRowFromValues('frm-dial-gloves-sml', sml, 'onclick="selectFrmChip(\'glovesSml\',this)"');
-    fillChipRowFromValues('frm-dial-child-gloves-sml', sml, 'onclick="selectFrmChip(\'childGlovesSml\',this)"');
+    fillChipRowFromValues('dial-shoe-size', adultShoe, (el) => { selectChip('shoe', el); });
+    fillChipRowFromValues('dial-child-shoe', childShoe, (el) => { selectChip('childShoe', el); });
+    fillChipRowFromValues('dial-cloth-size', sml, (el) => { selectChip('cloth', el); });
+    fillChipRowFromValues('dial-child-size', childCloth, (el) => { selectChip('childCloth', el); });
+    fillChipRowFromValues('dial-gloves-sml', sml, (el) => { selectChip('glovesSml', el); });
+    fillChipRowFromValues('dial-child-gloves-sml', sml, (el) => { selectChip('childGlovesSml', el); });
+    fillChipRowFromValues('frm-dial-shoe', adultShoe, (el) => { selectFrmChip('shoe', el); });
+    fillChipRowFromValues('frm-dial-child-shoe', childShoe, (el) => { selectFrmChip('childShoe', el); });
+    fillChipRowFromValues('frm-dial-child-size', childCloth, (el) => { selectFrmChip('childCloth', el); });
+    fillChipRowFromValues('frm-dial-gloves-sml', sml, (el) => { selectFrmChip('glovesSml', el); });
+    fillChipRowFromValues('frm-dial-child-gloves-sml', sml, (el) => { selectFrmChip('childGlovesSml', el); });
+}
+/** 非表示タブ内の行が空のとき用：いずれかの行にチップが無ければ一括再生成 */
+function ensureSizeChipsRendered() {
+    const ids = ['dial-shoe-size', 'dial-cloth-size', 'dial-gloves-sml', 'dial-child-shoe', 'dial-child-size', 'dial-child-gloves-sml'];
+    const anyEmpty = ids.some((id) => {
+        const r = document.getElementById(id);
+        return r && !r.querySelector('.setting-chip');
+    });
+    if (anyEmpty) initUserSettingsChipRows();
 }
 function initDials() {
     initUserSettingsChipRows();
