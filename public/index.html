@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-re-eye-build="2026-04-25T15:00:00Z-ui-close-removed-child-clear">
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RE-EYE-HUB</title>
     <!-- `BUILD_STAMP` Vercel 強制認識用（デプロイのたびに日時を更新すること） -->
-    <!-- BUILD_STAMP: 2026-04-24T14:30:00Z bottom-sheet-open-first -->
+    <!-- BUILD_STAMP: 2026-04-25T15:00:00Z no-close-btn-child-clear-btn -->
     
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
     <!-- Lucide Icons（ISC）— 商用可 / stroke は CSS で 1.5px 相当に統一 -->
@@ -18,21 +18,25 @@
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
-          appId: "9fb344ba-8b77-4508-a7c5-0009959c3561",
-          // 既存の /sw.js と共存: OneSignal 専用 SW は使わない
-          serviceWorkerParam: { scope: "/onesignal/" },
-          notifyButton: { enable: false },
-          allowLocalhostAsSecureOrigin: true,
-        });
-        // 購読済みなら userId タグを即付与
-        const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
-        if (isSubscribed) {
-          const uid = localStorage.getItem('re_eye_uid') || '';
-          if (uid) {
-            OneSignal.User.addTag("userId", uid);
-            console.log("[OneSignal] userId タグ付与:", uid);
+        try {
+          await OneSignal.init({
+            appId: "9fb344ba-8b77-4508-a7c5-0009959c3561",
+            // 既存の /sw.js と共存: OneSignal 専用 SW は使わない
+            serviceWorkerParam: { scope: "/onesignal/" },
+            notifyButton: { enable: false },
+            allowLocalhostAsSecureOrigin: true,
+          });
+          // 購読済みなら userId タグを即付与
+          const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+          if (isSubscribed) {
+            const uid = localStorage.getItem('re_eye_uid') || '';
+            if (uid) {
+              OneSignal.User.addTag("userId", uid);
+              console.log("[OneSignal] userId タグ付与:", uid);
+            }
           }
+        } catch (e) {
+          console.warn("[OneSignal] init failed (ignored):", e);
         }
       });
     </script>
@@ -920,30 +924,76 @@
         .monitor-locked { opacity: 0.3; pointer-events: none; user-select: none; }
 
         /* ── マイサイズ：ボトムシート + カテゴリ切替 ── */
+        /* body 直下。ビューポート全体を基準に fixed。flex は column + flex-end で下からせり上げ。パネル高さを明示（flex:1 の中身が潰れない） */
         .user-settings-bottom-sheet {
-            position: fixed; inset: 0; z-index: 9980; display: none; align-items: flex-end; justify-content: center;
+            position: fixed;
+            left: 0;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            min-height: 100%;
+            min-height: 100dvh;
+            z-index: 10050;
+            display: none;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            align-content: center;
+            box-sizing: border-box;
+            padding: 0;
+            /* ノッチ・ホームインジケータ。パネルが安全域の上に収まる */
+            padding-bottom: env(safe-area-inset-bottom, 0px);
         }
         .user-settings-bottom-sheet[aria-hidden="true"] { pointer-events: none; }
         .user-settings-bs-backdrop {
-            position: absolute; inset: 0; background: rgba(0,0,0,0.65);
+            position: absolute;
+            left: 0; right: 0; top: 0; bottom: 0;
+            width: 100%;
+            height: 100%;
+            min-height: 100dvh;
+            background: rgba(0,0,0,0.65);
         }
         .user-settings-bs-panel {
-            position: relative; width: 100%; max-width: 480px; max-height: 90vh; overflow: hidden;
-            display: flex; flex-direction: column;
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 480px;
+            /* 画面下からおおよそ 80%（dvh で実表示領域に合わせる） */
+            height: 80vh;
+            height: 80dvh;
+            min-height: 200px; /* 極小ビューでも中身0にしない */
+            max-height: min(88vh, 100dvh);
+            margin: 0;
+            flex-shrink: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
             background: #08040c;
             border-top: 1px solid var(--amethyst);
             border-radius: 4px 4px 0 0;
             box-shadow: 0 -8px 40px rgba(155,89,182,0.25);
         }
         .user-settings-bs-header {
-            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            display: flex; align-items: center; justify-content: flex-start; gap: 8px;
             padding: 14px 16px 8px; flex-shrink: 0;
         }
         .user-settings-bs-header .gold-label { margin: 0; }
-        .user-settings-bs-close {
-            background: none; border: 1px solid rgba(155,89,182,0.4); color: var(--amethyst);
-            font-size: 11px; letter-spacing: 0.5px; padding: 6px 12px; border-radius: 2px; cursor: pointer;
+        #home-setting-form .user-settings-child-title-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            margin-bottom: 10px; flex-wrap: wrap;
         }
+        #home-setting-form .user-settings-child-title-row .section-title { margin-bottom: 0; flex: 1 1 auto; min-width: 0; }
+        .user-settings-child-clear-btn {
+            background: rgba(155, 89, 182, 0.12);
+            border: 1px solid rgba(155, 89, 182, 0.55);
+            border-radius: 2px;
+            padding: 6px 10px; margin: 0;
+            font-size: 11px; letter-spacing: 0.4px; color: var(--champagne-gold); cursor: pointer;
+            white-space: nowrap; flex-shrink: 0;
+        }
+        .user-settings-child-clear-btn:active { opacity: 0.85; }
+        .user-settings-bottom-sheet.settings-ui-locked .user-settings-child-clear-btn { opacity: 0.45; pointer-events: none; }
         /* flex:1 + min-height:0 必須：パネル max-height 内で本文だけスクロールし、下の保存が切れない */
         .user-settings-bs-body {
             flex: 1 1 0;
@@ -952,7 +1002,6 @@
             -webkit-overflow-scrolling: touch;
             padding: 0 16px 28px;
         }
-        .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-close { opacity: 0.5; pointer-events: none; }
         .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-backdrop { pointer-events: none; }
         .settings-section-divider { margin: 10px 0; padding-top: 8px; border-top: 1px solid rgba(155,89,182,0.2); }
         .cockpit-block {
@@ -1399,95 +1448,6 @@
                 </div>
             </div>
 
-            <!-- マイサイズ編集：ボトムシート（id=home-setting-form は保存ロック・成否で参照） -->
-            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet hidden" style="display:none" aria-hidden="true">
-                <div class="user-settings-bs-backdrop" onclick="if(!isSettingsSaveLocked())closeUserSettingsBottomSheet()"></div>
-                <div class="user-settings-bs-panel" role="dialog" aria-label="マイサイズ">
-                    <div class="user-settings-bs-header">
-                        <span class="gold-label" style="margin:0;">ユーザーサイズ設定（家族分含む）</span>
-                        <button type="button" class="user-settings-bs-close" onclick="closeUserSettingsBottomSheet()">閉じる</button>
-                    </div>
-                    <div class="user-settings-bs-body" id="home-setting-form">
-                        <div class="settings-section">
-                            <div class="section-title"><i data-lucide="map-pin" aria-hidden="true"></i> お届け先（都道府県）</div>
-                            <label class="chip-label-row" for="dial-prefecture">価格・送料の目安に使用します</label>
-                            <select id="dial-prefecture" class="dial-pref-select" onchange="onPrefectureDialChange();">
-                            <option value="">（未設定）</option>
-                            <option value="北海道">北海道</option>
-                            <option value="青森県">青森</option>
-                            <option value="岩手県">岩手</option>
-                            <option value="宮城県">宮城</option>
-                            <option value="秋田県">秋田</option>
-                            <option value="山形県">山形</option>
-                            <option value="福島県">福島</option>
-                            <option value="茨城県">茨城</option>
-                            <option value="栃木県">栃木</option>
-                            <option value="群馬県">群馬</option>
-                            <option value="埼玉県">埼玉</option>
-                            <option value="千葉県">千葉</option>
-                            <option value="東京都">東京</option>
-                            <option value="神奈川県">神奈川</option>
-                            <option value="新潟県">新潟</option>
-                            <option value="富山県">富山</option>
-                            <option value="石川県">石川</option>
-                            <option value="福井県">福井</option>
-                            <option value="山梨県">山梨</option>
-                            <option value="長野県">長野</option>
-                            <option value="岐阜県">岐阜</option>
-                            <option value="静岡県">静岡</option>
-                            <option value="愛知県">愛知</option>
-                            <option value="三重県">三重</option>
-                            <option value="滋賀県">滋賀</option>
-                            <option value="京都府">京都</option>
-                            <option value="大阪府">大阪</option>
-                            <option value="兵庫県">兵庫</option>
-                            <option value="奈良県">奈良</option>
-                            <option value="和歌山県">和歌山</option>
-                            <option value="鳥取県">鳥取</option>
-                            <option value="島根県">島根</option>
-                            <option value="岡山県">岡山</option>
-                            <option value="広島県">広島</option>
-                            <option value="山口県">山口</option>
-                            <option value="徳島県">徳島</option>
-                            <option value="香川県">香川</option>
-                            <option value="愛媛県">愛媛</option>
-                            <option value="高知県">高知</option>
-                            <option value="福岡県">福岡</option>
-                            <option value="佐賀県">佐賀</option>
-                            <option value="長崎県">長崎</option>
-                            <option value="熊本県">熊本</option>
-                            <option value="大分県">大分</option>
-                            <option value="宮崎県">宮崎</option>
-                            <option value="鹿児島県">鹿児島</option>
-                            <option value="沖縄県">沖縄</option>
-                        </select>
-                        </div>
-                        <div class="settings-section">
-                            <div class="section-title"><i data-lucide="user" aria-hidden="true"></i> 自分のサイズ</div>
-                            <label class="chip-label-row">性別</label>
-                            <div id="dial-adult-gender" class="chip-row"></div>
-                            <label class="chip-label-row">靴 (cm)</label>
-                            <div id="dial-adult-shoe" class="chip-row"></div>
-                            <label class="chip-label-row">服</label>
-                            <div id="dial-adult-cloth" class="chip-row"></div>
-                        </div>
-                        <div id="add-child-btn" class="optional-add-btn" onclick="handleExpandChildSettings();" role="button" tabindex="0" aria-expanded="false" aria-controls="user-settings-child-cockpit" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleExpandChildSettings();}">
-                            <i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>お子様のサイズを登録する（任意）</span>
-                        </div>
-                        <div id="user-settings-child-cockpit" class="settings-section hidden" style="display:none" role="region" aria-label="お子様のサイズ（任意）">
-                            <div class="section-title"><i data-lucide="baby" aria-hidden="true"></i> お子様のサイズ設定（任意）</div>
-                            <label class="chip-label-row">お子様の性別</label>
-                            <div id="dial-child-gender" class="chip-row"></div>
-                            <label class="chip-label-row">靴 (cm)</label>
-                            <div id="dial-child-shoe" class="chip-row"></div>
-                            <label class="chip-label-row">服</label>
-                            <div id="dial-child-cloth" class="chip-row"></div>
-                        </div>
-                        <button type="button" id="save-settings-btn" class="main-save-btn" onclick="saveUserSettings(true)">設定を保存する</button>
-                    </div>
-                </div>
-            </div>
-
             <!-- ── MONITOR INPUT ── -->
             <div class="transparent-box">
                 <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:var(--gap-11);">
@@ -1641,6 +1601,20 @@
 
     <div id="settings" class="screen">
         <div class="screen-content">
+            <div class="transparent-box" id="settings-user-profile-box">
+                <span class="gold-label">ユーザー設定</span>
+                <p class="meta-11px" style="display:block;margin-top:8px;margin-bottom:10px;line-height:1.7;letter-spacing:0.5px;">在庫・送料目安用の都道府県とサイズ（靴・服）です。ホーム画面と同じ内容を共有します。</p>
+                <div id="settings-user-configured-block" style="display:none;">
+                    <div class="home-setting-summary" style="align-items:flex-start;">
+                        <span id="settings-user-summary-text" class="home-setting-summary-text" style="display:block;width:100%;"></span>
+                    </div>
+                    <button type="button" class="sync-hub-btn" style="margin-top:10px;" onclick="openUserSettingsFromSettingsTab()">地域・サイズを編集</button>
+                </div>
+                <div id="settings-user-unconfigured-block" style="display:none;">
+                    <span class="meta-11px" style="display:block;margin:4px 0 10px;color:var(--champagne-gold);line-height:1.7;">都道府県と性別が未登録です。登録するまで在庫検索の土台が揃いません。</span>
+                    <button type="button" class="sync-hub-btn" onclick="openUserSettingsFromSettingsTab()">設定を開く</button>
+                </div>
+            </div>
             <div class="transparent-box">
                 <span class="gold-label">見守りリスト</span>
                 <div id="settings-watch-list">
@@ -1722,10 +1696,62 @@
     <div id="first-run-modal" style="display:none;">
         <div class="frm-inner">
             <span class="frm-title">RE-EYE-HUB</span>
-            <span class="frm-sub">はじめに、あなたの情報を教えてください。<br>入荷を追う際にサイズを考慮した検索に使用します。<br>（後から「ホーム」→「ユーザー設定」で変更できます）</span>
+            <span class="frm-sub">はじめに、あなたの情報を教えてください。<br>入荷を追う際に地域・サイズを考慮した検索に使用します。<br>（後から「ホーム」→「変更する」からいつでも編集できます）</span>
             <div class="transparent-box">
                 <span class="gold-label">ユーザー設定</span>
-                <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別 <span style="color:var(--amethyst);">＊必須</span></span>
+                <label class="chip-label-row" for="frm-dial-prefecture">お届け先（都道府県）<span style="color:var(--amethyst);">＊必須</span></label>
+                <span class="meta-11px" style="display:block;margin:4px 0 6px;">価格・送料の目安に使用します</span>
+                <select id="frm-dial-prefecture" class="dial-pref-select" onchange="if (typeof _frmSetPref==='function') _frmSetPref(this.value)">
+                <option value="">（未設定）</option>
+                <option value="北海道">北海道</option>
+                <option value="青森県">青森</option>
+                <option value="岩手県">岩手</option>
+                <option value="宮城県">宮城</option>
+                <option value="秋田県">秋田</option>
+                <option value="山形県">山形</option>
+                <option value="福島県">福島</option>
+                <option value="茨城県">茨城</option>
+                <option value="栃木県">栃木</option>
+                <option value="群馬県">群馬</option>
+                <option value="埼玉県">埼玉</option>
+                <option value="千葉県">千葉</option>
+                <option value="東京都">東京</option>
+                <option value="神奈川県">神奈川</option>
+                <option value="新潟県">新潟</option>
+                <option value="富山県">富山</option>
+                <option value="石川県">石川</option>
+                <option value="福井県">福井</option>
+                <option value="山梨県">山梨</option>
+                <option value="長野県">長野</option>
+                <option value="岐阜県">岐阜</option>
+                <option value="静岡県">静岡</option>
+                <option value="愛知県">愛知</option>
+                <option value="三重県">三重</option>
+                <option value="滋賀県">滋賀</option>
+                <option value="京都府">京都</option>
+                <option value="大阪府">大阪</option>
+                <option value="兵庫県">兵庫</option>
+                <option value="奈良県">奈良</option>
+                <option value="和歌山県">和歌山</option>
+                <option value="鳥取県">鳥取</option>
+                <option value="島根県">島根</option>
+                <option value="岡山県">岡山</option>
+                <option value="広島県">広島</option>
+                <option value="山口県">山口</option>
+                <option value="徳島県">徳島</option>
+                <option value="香川県">香川</option>
+                <option value="愛媛県">愛媛</option>
+                <option value="高知県">高知</option>
+                <option value="福岡県">福岡</option>
+                <option value="佐賀県">佐賀</option>
+                <option value="長崎県">長崎</option>
+                <option value="熊本県">熊本</option>
+                <option value="大分県">大分</option>
+                <option value="宮崎県">宮崎</option>
+                <option value="鹿児島県">鹿児島</option>
+                <option value="沖縄県">沖縄</option>
+                </select>
+                <span class="meta-11px" style="display:block;margin-top:14px;margin-bottom:6px;">性別 <span style="color:var(--amethyst);">＊必須</span></span>
                 <div class="chip-row" id="frm-dial-gender">
                     <div class="setting-chip" data-val="female" onclick="selectFrmChip('gender',this)">女性</div>
                     <div class="setting-chip" data-val="male" onclick="selectFrmChip('gender',this)">男性</div>
@@ -1844,6 +1870,96 @@
         </div>
     </div>
 
+    <!-- マイサイズ編集：body 直下（.screen overflow 内に置かない。id=home-setting-form は保存で参照） -->
+    <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet hidden" style="display:none" aria-hidden="true">
+        <div class="user-settings-bs-backdrop" onclick="if(!isSettingsSaveLocked())closeUserSettingsBottomSheet()"></div>
+        <div class="user-settings-bs-panel" role="dialog" aria-label="マイサイズ" aria-modal="true">
+            <div class="user-settings-bs-header">
+                <span class="gold-label" style="margin:0;">ユーザー設定</span>
+            </div>
+            <div class="user-settings-bs-body" id="home-setting-form">
+                <div class="settings-section">
+                    <div class="section-title"><i data-lucide="map-pin" aria-hidden="true"></i> お届け先（都道府県）</div>
+                    <label class="chip-label-row" for="dial-prefecture">価格・送料の目安に使用します</label>
+                    <select id="dial-prefecture" class="dial-pref-select" onchange="onPrefectureDialChange();">
+                    <option value="">（未設定）</option>
+                    <option value="北海道">北海道</option>
+                    <option value="青森県">青森</option>
+                    <option value="岩手県">岩手</option>
+                    <option value="宮城県">宮城</option>
+                    <option value="秋田県">秋田</option>
+                    <option value="山形県">山形</option>
+                    <option value="福島県">福島</option>
+                    <option value="茨城県">茨城</option>
+                    <option value="栃木県">栃木</option>
+                    <option value="群馬県">群馬</option>
+                    <option value="埼玉県">埼玉</option>
+                    <option value="千葉県">千葉</option>
+                    <option value="東京都">東京</option>
+                    <option value="神奈川県">神奈川</option>
+                    <option value="新潟県">新潟</option>
+                    <option value="富山県">富山</option>
+                    <option value="石川県">石川</option>
+                    <option value="福井県">福井</option>
+                    <option value="山梨県">山梨</option>
+                    <option value="長野県">長野</option>
+                    <option value="岐阜県">岐阜</option>
+                    <option value="静岡県">静岡</option>
+                    <option value="愛知県">愛知</option>
+                    <option value="三重県">三重</option>
+                    <option value="滋賀県">滋賀</option>
+                    <option value="京都府">京都</option>
+                    <option value="大阪府">大阪</option>
+                    <option value="兵庫県">兵庫</option>
+                    <option value="奈良県">奈良</option>
+                    <option value="和歌山県">和歌山</option>
+                    <option value="鳥取県">鳥取</option>
+                    <option value="島根県">島根</option>
+                    <option value="岡山県">岡山</option>
+                    <option value="広島県">広島</option>
+                    <option value="山口県">山口</option>
+                    <option value="徳島県">徳島</option>
+                    <option value="香川県">香川</option>
+                    <option value="愛媛県">愛媛</option>
+                    <option value="高知県">高知</option>
+                    <option value="福岡県">福岡</option>
+                    <option value="佐賀県">佐賀</option>
+                    <option value="長崎県">長崎</option>
+                    <option value="熊本県">熊本</option>
+                    <option value="大分県">大分</option>
+                    <option value="宮崎県">宮崎</option>
+                    <option value="鹿児島県">鹿児島</option>
+                    <option value="沖縄県">沖縄</option>
+                </select>
+                </div>
+                <div class="settings-section">
+                    <div class="section-title"><i data-lucide="user" aria-hidden="true"></i> 自分のサイズ</div>
+                    <label class="chip-label-row">性別</label>
+                    <div id="dial-adult-gender" class="chip-row"></div>
+                    <label class="chip-label-row">靴 (cm)</label>
+                    <div id="dial-adult-shoe" class="chip-row"></div>
+                    <label class="chip-label-row">服</label>
+                    <div id="dial-adult-cloth" class="chip-row"></div>
+                </div>
+                <div id="add-child-btn" class="optional-add-btn" onclick="handleExpandChildSettings();" role="button" tabindex="0" aria-expanded="false" aria-controls="user-settings-child-cockpit" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleExpandChildSettings();}">
+                    <i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>お子様のサイズを登録する（任意）</span>
+                </div>
+                <div id="user-settings-child-cockpit" class="settings-section hidden" style="display:none" role="region" aria-label="お子様設定（任意）">
+                    <div class="user-settings-child-title-row">
+                        <div class="section-title" style="margin-bottom:0;"><i data-lucide="baby" aria-hidden="true"></i> お子様設定（任意）</div>
+                        <button type="button" class="user-settings-child-clear-btn" onclick="clearUserSettingsChildBlock()">設定をクリア</button>
+                    </div>
+                    <label class="chip-label-row">お子様の性別</label>
+                    <div id="dial-child-gender" class="chip-row"></div>
+                    <label class="chip-label-row">靴 (cm)</label>
+                    <div id="dial-child-shoe" class="chip-row"></div>
+                    <label class="chip-label-row">服</label>
+                    <div id="dial-child-cloth" class="chip-row"></div>
+                </div>
+                <button type="button" id="save-settings-btn" class="main-save-btn" onclick="saveUserSettings(true)">設定を保存する</button>
+            </div>
+        </div>
+    </div>
 
     <div class="screen-fade-overlay" aria-hidden="true"></div>
     <div class="nav-bar">
@@ -1856,7 +1972,7 @@
     </div>
 
     <script>
-// `BUILD_STAMP` 2026-04-24T14:30:00Z bottom-sheet-open-first (Vercel 差分検知用・更新時に書き換え)
+// `BUILD_STAMP` 2026-04-25T15:00:00Z no-close-btn-child-clear-btn
 // ════════════════════════════════════════════════
 //  RE-EYE-HUB CORE v2 — 5係合同改修・監督承認版
 //  10秒待機完全抹殺 / StateStore / Direct Access
@@ -2428,7 +2544,7 @@ function show(id, btn) {
     if (id === 'home')     { loadWatchHistory({ silent: true }); }
     if (id === 'history')  { renderHistory(historyItems); syncWatchStatus(); }
     if (id === 'insight')  renderTrendItems(document.getElementById('insight-search')?.value);
-    if (id === 'settings') { renderSettingsTrendWatching(); loadWatchHistory({ silent: true }); syncWatchStatus(); }
+    if (id === 'settings') { try { syncUserSettingSummaryDisplays(); } catch (e) {} renderSettingsTrendWatching(); loadWatchHistory({ silent: true }); syncWatchStatus(); }
     updateAdVisibility();
     requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); refreshLucideIcons(); });
 }
@@ -3342,6 +3458,37 @@ function buildHomeSettingSummary(){
     }
     return p.join(' / ');
 }
+/** ホーム要約＋見守りタブ「ユーザー設定」ブロックを同期 */
+function syncUserSettingSummaryDisplays() {
+    const cta = document.getElementById('home-setting-unconfigured-cta');
+    const se = document.getElementById('home-setting-summary-text');
+    const sw = document.getElementById('home-setting-summary-wrap');
+    const suText = document.getElementById('settings-user-summary-text');
+    const suOk = document.getElementById('settings-user-configured-block');
+    const suNeed = document.getElementById('settings-user-unconfigured-block');
+    if (isUserConfigured()) {
+        const st = buildHomeSettingSummary();
+        if (se) se.textContent = st;
+        if (sw) sw.style.display = 'block';
+        if (cta) cta.style.display = 'none';
+        if (suText) suText.textContent = st;
+        if (suOk) suOk.style.display = 'block';
+        if (suNeed) suNeed.style.display = 'none';
+    } else {
+        if (sw) sw.style.display = 'none';
+        if (cta) cta.style.display = 'block';
+        if (suText) suText.textContent = '';
+        if (suOk) suOk.style.display = 'none';
+        if (suNeed) suNeed.style.display = 'block';
+    }
+}
+function openUserSettingsFromSettingsTab() {
+    const hb = document.querySelector('.nav-item[onclick*="\'home\'"]');
+    if (hb) show('home', hb);
+    setTimeout(function () {
+        goToUserSettings();
+    }, 80);
+}
 /** 旧タブ UI 用（互換のため残す・独立コックピット化後は未使用） */
 function setUserSettingsCategory(cat) {}
 function setScoutTargetForChild(forChild) {
@@ -3383,15 +3530,20 @@ function syncMonitorScoutCockpitChrome() {
 }
 function openUserSettingsBottomSheet() {
     const bs = document.getElementById('user-settings-bottom-sheet');
+    // 前回の保存失敗等でロックが残った場合に備え、開くときは必ず解除
+    try { setSettingsSaveLock(false); } catch (e) {}
     try { if (bs) bs.classList.remove('hidden'); } catch (e) {}
-    try { if (bs) bs.style.display = 'flex'; } catch (e) {}
+    // .hidden は display:none !important のため、必ず !important で上書き
+    try { if (bs) bs.style.setProperty('display', 'flex', 'important'); } catch (e) {}
     try { if (bs) bs.setAttribute('aria-hidden', 'false'); } catch (e) {}
     try { console.log('Setting Opened'); } catch (e) {}
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
+    // 行が空のとき ensure だけに頼ると再現しにくい不整合でチップ未生成のままになる。開くたび再生成→復元
     try {
-        ensureSizeChipsRendered();
+        if (typeof initIndependentChips === 'function') initIndependentChips();
+        else ensureSizeChipsRendered();
     } catch (e) {
-        console.warn('[openUserSettingsBottomSheet] ensureSizeChipsRendered', e);
+        console.warn('[openUserSettingsBottomSheet] initIndependentChips', e);
     }
     try {
         restoreDialUI(userProfile);
@@ -3409,8 +3561,8 @@ function closeUserSettingsBottomSheet() {
     if (isSettingsSaveLocked()) return;
     const s = document.getElementById('user-settings-bottom-sheet');
     if (s) {
-        s.style.display = 'none';
         s.classList.add('hidden');
+        try { s.style.setProperty('display', 'none', 'important'); } catch (e) { s.style.display = 'none'; }
         s.setAttribute('aria-hidden', 'true');
     }
     try { document.body.style.overflow = ''; } catch (e) {}
@@ -3456,7 +3608,8 @@ function fillChipRowFromValues(rowId, values, onChipClick) {
 /** 初回モーダル用：setting-chip のまま（frm 専用） */
 function initFormChipRowsOnly() {
     const adultShoe = _reEyeHalfStepRange(23.0, 28.0);
-    const childShoe = _reEyeHalfStepRange(13.0, 21.0);
+    // functions/lib/user-settings.js の CHILD_SHOE 10.0–22.0 に合わせ、保存値とチップを一致させる
+    const childShoe = _reEyeHalfStepRange(10.0, 22.0);
     const childCloth = [];
     for (let n = 80; n <= 160; n += 10) childCloth.push(String(n));
     fillChipRowFromValues('frm-dial-shoe', adultShoe, (el) => { selectFrmChip('shoe', el); });
@@ -3529,7 +3682,7 @@ function initIndependentChips() {
         console.warn('[initIndependentChips] dial-adult-gender', e);
     }
     const childShoes = [];
-    for (let s = 13.0; s <= 21.0; s += 0.5) childShoes.push(s.toFixed(1));
+    for (let s = 10.0; s <= 22.0; s += 0.5) childShoes.push(s.toFixed(1));
     try {
         fill('dial-child-shoe', childShoes, 're_eye_child_shoe');
     } catch (e) {
@@ -3635,6 +3788,24 @@ function clearAllChipsInRow(rowId) {
     const row = document.getElementById(rowId);
     if (row) row.querySelectorAll('.setting-chip, .size-chip').forEach((i) => i.classList.remove('active'));
 }
+/** お子様（任意）の入力だけリセット。独身の誤タップ用。チップ + userProfile + 展開 state を戻す */
+function clearUserSettingsChildBlock() {
+    if (isSettingsSaveLocked()) return;
+    clearAllChipsInRow('dial-child-gender');
+    clearAllChipsInRow('dial-child-shoe');
+    clearAllChipsInRow('dial-child-cloth');
+    userProfile.childGender = '';
+    userProfile.childClothSize = '';
+    userProfile.childShoeSize = '';
+    userProfile.hasChildren = false;
+    try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
+    try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+    syncChildSettingsVisibility();
+    syncScoutTargetToggleUI();
+    try { syncUserSettingSummaryDisplays(); } catch (e) {}
+    saveUserSettings();
+    try { if (typeof refreshLucideIcons === 'function') refreshLucideIcons(); } catch (e) {}
+}
 /** 空なら行クリア、値があれば act（act は空を無視するため巻き戻し専用） */
 function setChipRowFromSnapshotValue(rowId, val) {
     if (val != null && val !== '') {
@@ -3720,16 +3891,18 @@ async function loadUserSettingsFromServerAndApply() {
         userProfile.hasChildren = !!userProfile.childGender;
         try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
         restoreDialUI(userProfile);
-        const cta2 = document.getElementById('home-setting-unconfigured-cta');
-        if (isUserConfigured()) {
-            const se0 = document.getElementById('home-setting-summary-text');
-            const sw0 = document.getElementById('home-setting-summary-wrap');
-            if (se0) se0.textContent = buildHomeSettingSummary();
-            if (sw0) sw0.style.display = 'block';
-            if (cta2) cta2.style.display = 'none';
-        }
+        syncUserSettingSummaryDisplays();
         syncScoutTargetToggleUI();
         syncMonitorScoutCockpitChrome();
+        // シートを先に開いていた場合、上の restore は空プロフィールで流れがち。GET 完了後にチップ再生成＋再復元
+        try {
+            const sh = document.getElementById('user-settings-bottom-sheet');
+            if (sh && sh.getAttribute('aria-hidden') === 'false') {
+                if (typeof initIndependentChips === 'function') initIndependentChips();
+                restoreDialUI(userProfile);
+                if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
+            }
+        } catch (e2) {}
     } catch (e) {}
 }
 function saveUserSettings(explicit) {
@@ -3737,18 +3910,22 @@ function saveUserSettings(explicit) {
         (async () => {
             if (isSettingsSaveLocked()) return;
             setSettingsSaveLock(true);
+            let prevP;
+            let prevPr;
+            let snapP;
+            let snapPr;
             try {
                 // DOM を先に正へ反映し、その状態を巻き戻し用に取る（デバウンス前の「保存」でもチップを失わない）
-                const prevP = JSON.parse(JSON.stringify(userProfile));
-                const prevPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
+                prevP = JSON.parse(JSON.stringify(userProfile));
+                prevPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
                 readProfileFromDials();
                 if (!String(userProfile.prefecture || '').trim() || !String(userProfile.gender || '').trim()) {
                     applyUserSettingsSnapshot(prevP, prevPr);
                     alert('お届け先と自分の性別は必須です。');
                     return;
                 }
-                const snapP = JSON.parse(JSON.stringify(userProfile));
-                const snapPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
+                snapP = JSON.parse(JSON.stringify(userProfile));
+                snapPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
                 let r;
                 try {
                     r = await postUserSettingsToRedis();
@@ -3762,13 +3939,7 @@ function saveUserSettings(explicit) {
                 }
                 // Redis 永続 + localStorage 反映済み。以降の /api/search・/api/scout（userId 付き）は新しい靴 cm / 服を参照する
                 updateBannerAdContent(lastMonitorKeyword);
-                const st = buildHomeSettingSummary();
-                const se = document.getElementById('home-setting-summary-text');
-                const sw = document.getElementById('home-setting-summary-wrap');
-                if (se) se.textContent = st;
-                if (sw) sw.style.display = 'block';
-                const cta = document.getElementById('home-setting-unconfigured-cta');
-                if (cta) cta.style.display = 'none';
+                syncUserSettingSummaryDisplays();
                 closeUserSettingsBottomSheet();
                 const mb = document.getElementById('monitor-section-body');
                 if (mb) mb.classList.remove('monitor-locked');
@@ -3778,7 +3949,11 @@ function saveUserSettings(explicit) {
                 applyChildRevealedStateFromProfile();
                 alert('設定を保存しました。');
             } catch (e) {
-                applyUserSettingsSnapshot(snapP, snapPr);
+                const fallP = snapP != null ? snapP : prevP;
+                const fallPr = snapPr != null ? snapPr : prevPr;
+                if (fallP) {
+                    try { applyUserSettingsSnapshot(fallP, fallPr != null ? fallPr : ''); } catch (e2) {}
+                }
                 alert('設定をサーバに保存できませんでした。通信を確認のうえ、もう一度お試しください。');
             } finally {
                 setSettingsSaveLock(false);
@@ -3900,7 +4075,8 @@ function triggerInsightScout(){
 }
 
 // ── 初回起動 ─────────────────────────────────────────────────
-let _frmProfile={gender:'',cloth:'',shoe:'',childGender:'',childCloth:'',childShoe:''};
+let _frmProfile = { prefecture: '', gender: '', cloth: '', shoe: '', childGender: '', childCloth: '', childShoe: '' };
+function _frmSetPref(v) { _frmProfile.prefecture = v == null ? '' : String(v); }
 function checkFirstRun(){
     if(!localStorage.getItem('re_eye_setup_v1'))
         document.getElementById('first-run-modal').style.display='flex';
@@ -3913,9 +4089,18 @@ function selectFrmChip(field,el){
 }
 function completeFirstRun(){
     const err=document.getElementById('frm-error');
-    if(!_frmProfile.gender||!_frmProfile.cloth||!_frmProfile.shoe){
-        if(err){err.style.display='block';err.textContent='性別・服サイズ・靴サイズを選択してください';}return;
+    try {
+        const psel = document.getElementById('frm-dial-prefecture');
+        if (psel) _frmProfile.prefecture = psel.value || '';
+    } catch (e) {}
+    if (!String(_frmProfile.prefecture || '').trim() || !_frmProfile.gender || !_frmProfile.cloth || !_frmProfile.shoe) {
+        if (err) {
+            err.style.display = 'block';
+            err.textContent = '都道府県・性別・服サイズ・靴サイズを選んでください';
+        }
+        return;
     }
+    userProfile.prefecture = _frmProfile.prefecture;
     userProfile.gender=_frmProfile.gender; userProfile.clothSize=_frmProfile.cloth;
     userProfile.shoeSize=_frmProfile.shoe;
     userProfile.hasChildren=!!_frmProfile.childGender;
@@ -3926,7 +4111,10 @@ function completeFirstRun(){
     }
     try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
     try{localStorage.setItem('re_eye_setup_v1','1');}catch(e){}
-    restoreDialUI(); saveUserSettings();
+    restoreDialUI();
+    saveUserSettings();
+    void (async () => { try { await postUserSettingsToRedis(); } catch (e) {} })();
+    try { checkUserSetup(); } catch (e) {}
     document.getElementById('first-run-modal').style.display='none';
 }
 
@@ -4777,21 +4965,7 @@ function restoreDialUI(profile) {
         const prefSelect = document.getElementById('dial-prefecture');
         if (prefSelect) prefSelect.value = profile.prefecture || '';
     } catch (e) {}
-    try {
-        const cta = document.getElementById('home-setting-unconfigured-cta');
-        if (isUserConfigured()) {
-            const st = buildHomeSettingSummary();
-            const se = document.getElementById('home-setting-summary-text');
-            const sw = document.getElementById('home-setting-summary-wrap');
-            if (se) se.textContent = st;
-            if (sw) sw.style.display = 'block';
-            if (cta) cta.style.display = 'none';
-        } else {
-            if (cta) cta.style.display = 'block';
-            const sw0 = document.getElementById('home-setting-summary-wrap');
-            if (sw0) sw0.style.display = 'none';
-        }
-    } catch (e) {}
+    try { syncUserSettingSummaryDisplays(); } catch (e) {}
     try { syncScoutTargetToggleUI(); } catch (e) {}
     try { syncMonitorScoutCockpitChrome(); } catch (e) {}
     try { checkUserSetup(); } catch (e) {}
@@ -4840,10 +5014,10 @@ window.onload=()=>{
     setInterval(updateNightModeStatus,60*1000);
     updateBannerAdContent();
     startHistoryObserver();
-    initDials();
-    restoreDialUI();
+    try { initDials(); } catch (e) { console.warn('[onload] initDials', e); }
+    try { restoreDialUI(); } catch (e) { console.warn('[onload] restoreDialUI', e); }
     void loadUserSettingsFromServerAndApply();
-    initModeUI();
+    try { initModeUI(); } catch (e) { console.warn('[onload] initModeUI', e); }
 
     // Web Push 初期化（サイレント・ブロッキングなし）
     PushHybrid.initPush().catch(()=>{});
@@ -4878,8 +5052,8 @@ window.onload=()=>{
     }catch(e){}
 
     // 初回起動チェック
-    checkFirstRun();
-    applyChildRevealedStateFromProfile();
+    try { checkFirstRun(); } catch (e) { console.warn('[onload] checkFirstRun', e); }
+    try { applyChildRevealedStateFromProfile(); } catch (e) { console.warn('[onload] applyChildRevealedStateFromProfile', e); }
 
     // ── トレンドデータをクラウドから復元（localStorage → Redis 優先） ──
     loadTrendFromServer();
