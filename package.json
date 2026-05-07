@@ -2,6 +2,9 @@
   "name": "re-eye-hub-root",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "npm test --prefix functions"
+  },
   "engines": {
     "node": "20"
   },

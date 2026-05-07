@@ -18,7 +18,6 @@ export class YahooAdapter extends ShopAdapter {
   async search(keyword, options = {}) {
     const {
       maxResults = 20,
-      inStockOnly = false,
       mallPreserveTokens = [],
       yahooStart: startParam = 1,
     } = options;
@@ -27,9 +26,7 @@ export class YahooAdapter extends ShopAdapter {
       ? mallPreserveTokens.map((t) => String(t || '').trim()).filter(Boolean)
       : [];
 
-    let refinedKeyword = keyword
-      .replace(/[0-9]{2}(\.[0-9])?cm/g, '')
-      .replace(/国内正規品|メンズ|レディース|送料無料|新品|公式|ショップ|【.*?】|（.*?）/g, ' ')
+    let refinedKeyword = String(keyword ?? '')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -38,7 +35,7 @@ export class YahooAdapter extends ShopAdapter {
       refinedKeyword = `${anchor} ${refinedKeyword}`.replace(/\s+/g, ' ').trim();
     }
 
-    const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（サイズを除外しました）';
+    const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（クエリそのまま）';
     console.log(`[Reporting Officer] Yahoo・改善ワード: "${refinedKeyword}" ${preserveNote}`);
 
     const nRes = Math.min(maxResults, 50);
@@ -49,7 +46,6 @@ export class YahooAdapter extends ShopAdapter {
       start:     String(yahooStart),
       sort:      '+price',
       condition: 'new',
-      ...(inStockOnly ? { in_stock: 'true' } : {}),
     });
 
     const cli = process.env.RE_EYE_CLI === '1' || process.env.RE_EYE_CLI === 'true';

@@ -397,7 +397,7 @@ export default async function handler(req, res) {
     maxItemAgeMs: rssItemMaxAgeMs,
   });
 
-  // 爆速化：Google News の実 URL 解決は行わず、リンク＋タイトルのまま返す（クライアントで開く）
+  // レイテンシ短縮：Google News の実 URL 解決は行わず、リンク＋タイトルのまま返す（クライアントで開く）
   const cleanedItems = items.map((it) => ({ ...it, resolveOnClient: true }));
 
   // ── 冷徹フィルター：中古・オークション・禁止ドメインを全滅させる ──────────

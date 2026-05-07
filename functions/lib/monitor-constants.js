@@ -31,6 +31,20 @@ export function userPlanKey(userId) {
 }
 
 /**
+ * 同一ユーザー・同一モール行の短期通知重複抑止（10分 TTL）
+ * キー形式: notify:sent:{userId}:{itemSlot}（Redis キー長対策で item 側はハッシュ短縮）
+ * @param {string} userId
+ * @param {string} sourceId
+ * @param {string|number} itemId
+ */
+export function notifySentDedupeKey(userId, sourceId, itemId) {
+  const uid = String(userId ?? '').trim().slice(0, 48);
+  const slot = `${String(sourceId ?? '')}::${String(itemId ?? '')}`;
+  const h = createHash('sha256').update(slot).digest('hex').slice(0, 24);
+  return `notify:sent:${uid}:${h}`;
+}
+
+/**
  * 監視エントリ本体のキーか（SMEMBERS / KEYS のフィルタ用）
  * @param {string} k
  */

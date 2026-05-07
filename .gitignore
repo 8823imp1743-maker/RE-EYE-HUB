@@ -14,6 +14,8 @@ ui-debug.log
 .env.*.local
 *.secret.local
 .secret.local
+# Cursor / Claude Code のローカル上書き（APIキー等が入り得る）
+.claude/settings.local.json
 
 # ── ビルド成果物 ───────────────────────────────
 .vercel/
@@ -28,3 +30,6 @@ npm-debug.log*
 *.key
 *.p12
 *.pfx
+
+.vercel
+.env*.local

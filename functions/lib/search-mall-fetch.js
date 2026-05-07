@@ -28,10 +28,16 @@ export async function fetchMallPageSliceForKeywordList(kwList, mallPage, maxHits
   );
 
   const allItems = [];
+  const meta = { marketRaw: 0, noiseExcluded: 0 };
   shopResults.forEach((r) => {
-    if (r.status === 'fulfilled' && r.value?.items) allItems.push(...r.value.items);
+    if (r.status === 'fulfilled' && r.value) {
+      if (Array.isArray(r.value.items)) allItems.push(...r.value.items);
+      const s = r.value.rejectReasonSummary || {};
+      if (Number.isFinite(Number(s.marketRaw))) meta.marketRaw += Number(s.marketRaw) || 0;
+      if (Number.isFinite(Number(s.noiseExcluded))) meta.noiseExcluded += Number(s.noiseExcluded) || 0;
+    }
   });
-  return { allItems, shopResults };
+  return { allItems, shopResults, meta };
 }
 
 /**

@@ -1,26 +1,21 @@
+/**
+ * Vercel Serverless のエントリポイントのみ（レート制限・JSON 正規化）。
+ * 在庫検索の本体実装は {@link ../functions/api/search.js} のみ — 二重実装は行わない。
+ */
 import searchHandler from '../functions/api/search.js';
 import { attachExpressLikeResponse, ensureJsonBody, ensureQuery } from './_compat.js';
-
-function applyCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Max-Age', '86400');
-}
+import { guardVercelApi } from './_security.js';
+import { applySearchMemoryShield } from './_search-vercel-memory.js';
 
 export default async function handler(req, res) {
   attachExpressLikeResponse(res);
-  applyCors(res);
-
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
-    return res.end();
-  }
+  const gate = await guardVercelApi(req, res, { rateTier: 'search' });
+  if (gate !== 'ok') return;
 
   try {
     ensureQuery(req);
     await ensureJsonBody(req);
-    return await searchHandler(req, res);
+    return await applySearchMemoryShield(req, res, searchHandler);
   } catch (e) {
     console.error('[api/search]', e);
     if (res.writableEnded) return;

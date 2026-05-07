@@ -1,44 +1,496 @@
 /**
- * PDP（商品詳細）HTML を取得し、ユーザーの靴 cm が在庫として選べるか先回り判定する。
- * 一覧 API にサイズが載らない前提で、URL 先の在庫表・バリエーションを解析する。
+ * PDP 在庫（最終方針）
  *
- * 厳格方針のうえで救済1本: fetch 失敗でも URL にサイズが埋まっていれば通す（Yahoo 系）
- * 楽天: script/JSON 内の cm（本文 DOM に出ないケース向け）を生 HTML から別判定
- * その他: DOM＋厳格トークン（近傍在庫ありは精査済みの経路のみ）
+ * === チャット冒頭用お守り（このファイルに手を入れる会話の先頭に貼る） ===
+ * 「既存の no_size_but_buyable や getBodyStructuredText といった曖昧な文字列一致に頼る古い経路はすべて廃止・削除し、今回定義した hasStructuralSize（構造判定）をメインゲートとする新ロジックに一本化してください。」
+ * 回帰: リポジトリ直下で npm test（scripts/pdp-legacy-guard.mjs ＋ node --test による先祖返り／精度低下の即検知）
+ * ========================================================================
  *
- * 利用者のターゲット（靴 cm 等）・地域は **search 側**で Redis(settings) から解決し、
- * 本モジュールには **当該リクエストの rawCm 文字列** だけ渡る（値は常に user-settings 由来; ここにグローバルな固定 cm は無い）。都道府県は PDP 在庫判定には使わない（将来: 価格・送料）。
- *
- * 実行場所: **Vercel 等の Node**（JSDOM + fetch）。
- * スマホの CPU で動いているのではない — 「HTML を取得できるのは CORS 回避のためサーバ」、負荷は
- * リクエストを細かく分け（フロントの sequentialPdp 等）**積分サーバ時間**を小さくする、という意味で
- * 設計上「利用者の操作リズムに分散」する。timeoutMs は 1 本の PDP で serverless 上限（例 10s）内に収める。
- * 順次 1 件モードで search から **1 回当たり 1 回**しか呼ばれない想定（Vercel 無料枠向け YouTube 型）。
+ * 【廃止済み】no_size_but_buyable / getBodyStructuredText / 単体ボタン・aria のみでの購入判定 等は置かない。
+ * メインゲート: **選択可能 UI ノードのみ** option / button / li / [role="option"]
+ * と `data-size`（上記またはその子孫のみ）に `(?<![0-9.]){cm}(cm|㎝)`、同一ノード束に禁止語
+ * 「約／前後／〜／-」無し。そのノードの **同一 main|article|section|form（なければ商域根）コンテナ**
+ * に購入ホワイトリスト＋在庫否定無し。全文フラットだけでは通過しない。
  */
 
 import { JSDOM } from 'jsdom';
 import { itemCanonicalKey, sellerModelDedupeKey } from './stock-dedupe.js';
+import {
+  redisGetPdpCache,
+  redisSetPdpCache,
+  hydratePdpResultFromRedis,
+  PDP_CACHE_TTL_SEC,
+} from './pdp-redis-cache.js';
+import { optionallyLogPdpDecision } from './pdp-learn-log.js';
+import { opsJsonLog } from './notify-ops-log.js';
+
+// ── PDP URL+cm キャッシュ & 同時実行ロック ───────────────────────────────
+// 同一 URL を短時間で何度も叩かない（コスト削減）
+const pdpCache = new Map();
+const inFlight = new Map();
+/** fetch 失敗は短 TTL で再試行しやすくする（秒） */
+const PDP_FETCH_FAIL_CACHE_SEC = 15;
+
+/**
+ * @param {string} url
+ * @param {string|string[]} rawCm
+ */
+function getCacheKey(url, rawCm) {
+  const t =
+    Array.isArray(rawCm) ? [...rawCm].map(String).sort().join(',') : String(rawCm || '');
+  return `${String(url || '')}::${t}`;
+}
+
+/**
+ * @param {string|string[]|number[]|null|undefined} inp
+ * @returns {string[]}
+ */
+function coerceTargetCmStrings(inp) {
+  if (inp == null) return [];
+  if (Array.isArray(inp)) {
+    const out = [];
+    for (const x of inp) {
+      const s = String(x)
+        .replace(/cm$/i, '')
+        .trim();
+      if (/^\d{1,2}(?:\.\d)?$/.test(s)) {
+        const n = parseFloat(s);
+        if (Number.isFinite(n) && n >= 10 && n <= 35) out.push(s);
+      }
+    }
+    return [...new Set(out)].sort();
+  }
+  const st = String(inp).trim();
+  if (!st) return [];
+  if (st.includes(',')) return coerceTargetCmStrings(st.split(/[,、]/));
+  return coerceTargetCmStrings([st]);
+}
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const NEG_STOCK =
-  /在庫なし|品切れ|売り切れ|在庫がありません|購入できません|入荷待ち|お取り寄せ|取り寄せ|お取り寄せ商品|申し訳ございません/iu;
-/** 日本 EC: 残りわずか / 注文リード文 / カート＝購入可能のシグナル */
-const POS_STOCK =
-  /残り[わ少]|在庫あり|在庫がございます|カートに入れ|かごに追加|ショッピングカート|購入可能|即日|翌日|あすつく|在庫あります|お取り扱い|までの注文|最短.*届|本日.*届|12:\d{2}.*注文/iu;
+const PAGE_NOT_FOUND = /お探しの商品は見つかりません|商品が存在しません|指定された商品は/iu;
+
+/** 在庫・サイズ根拠に使わない: 2桁cm〜2桁cm、および罫囲いの広告レンジ */
+const RE_SIZE_RANGE_BANNED = /\d{2}\s*cm\s*[-〜~∼]\s*\d{2}\s*cm/iu;
+const RE_SIZE_RANGE_BANNED_BRACKET = /【\s*\d{2}\s*cm\s*[-〜~∼]\s*\d{2}\s*cm\s*】/giu;
+const RE_SIZE_RANGE_BANNED_BRACKET_ASCII = /【\d{2}\s*cm-\d{2}\s*cm】/giu;
+const RE_SIZE_RANGE_BANNED_BRACKET_TIGHT = /【\d{1,2}\s*cm-\d{1,2}\s*cm】/giu;
 
 /**
- * @param {string} url
+ * 在庫判定用テキストからレンジ表記を一時的に取り除く
+ * @param {string} t
+ */
+function stripBannedSizeRanges(t) {
+  if (!t) return '';
+  let s = String(t);
+  s = s.replace(RE_SIZE_RANGE_BANNED_BRACKET, ' ');
+  s = s.replace(RE_SIZE_RANGE_BANNED_BRACKET_ASCII, ' ');
+  s = s.replace(RE_SIZE_RANGE_BANNED_BRACKET_TIGHT, ' ');
+  s = s.replace(RE_SIZE_RANGE_BANNED, ' ');
+  return s;
+}
+
+/** 明示的セールス不可（positive 評価の前に必ず評価） */
+function pdpSignalsHardOutOfStock(s) {
+  return /品切れ|売り切れ|在庫なし|SOLD\s*OUT|ソールド\s*アウト|完売(?:です|いたしました)?|取扱(?:い)?終了|購入できません|ご購入いただけません|販売(?:は)?終了しました|準備中|停止中|入荷待ち/i.test(
+    String(s || ''),
+  );
+}
+
+/**
+ * header/footer/nav 除いた body クローン（商域テキストの根）
+ * @param {import('jsdom').Document} doc
+ */
+function getCommerceSubtreeClone(doc) {
+  if (!doc || !doc.body) return null;
+  try {
+    const clone = doc.body.cloneNode(true);
+    const strip = 'header, footer, nav, [role=banner], [role=contentinfo], [role=navigation]';
+    clone.querySelectorAll(strip).forEach((n) => n.remove());
+    return clone;
+  } catch {
+    return null;
+  }
+}
+
+/** ナビ除いた commerce に**これらの部分文字列のみ**あれば購入導線あり（ボタン存在・aria は見ない） */
+const PDP_BUY_PHRASES_STRICT =
+  /カートに入れる|購入手続きへ|今すぐ購入|購入する|Add to Cart|Buy Now/i;
+
+/** data-size は button / li / option / role=option 上（またはその内側）のみ */
+const PDP_SIZE_CLICK_HOST =
+  'button, li, option, [role="option"]';
+
+const PDP_SIZE_NODE_QUERY = 'option, button, li, [role="option"], [data-size]';
+
+function nodeBlobForbiddenForSizeUi(blob) {
+  const s = String(blob || '');
+  if (/約|前後|くらい|程度/.test(s)) return true;
+  if (/〜|~|∼|\u2013|\u2014/.test(s)) return true;
+  if (/-/.test(s)) return true;
+  return false;
+}
+
+/**
+ * @param {Element} el
+ */
+function isEligibleSelectableSizeNode(el) {
+  try {
+    if (el.matches?.(PDP_SIZE_CLICK_HOST)) return true;
+    if (el.hasAttribute?.('data-size') && el.closest(PDP_SIZE_CLICK_HOST)) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * @param {string} blob
+ * @param {string} rawCm
+ */
+function nodeBlobMatchesShoeCmStrict(blob, rawCm) {
+  if (!blob || !rawCm || nodeBlobForbiddenForSizeUi(blob)) return false;
+  const t = stripBannedSizeRanges(String(blob)).replace(/\s+/g, ' ');
+  if (!t) return false;
+  if (/(約|およそ|前後|くらい|程度)\s*\d{2}(?:\.\d)?\s*(?:cm|㎝)/iu.test(t)) return false;
+  if (/\d{2}(?:\.\d)?\s*(?:cm|㎝)\s*(?:前後|くらい|約)/iu.test(t)) return false;
+  const esc = String(rawCm).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![0-9.])${esc}(cm|㎝)`, 'iu').test(t);
+}
+
+/**
+ * 選択可能UIノードに cm があり、同一コンテナ内に購入ホワイトリストがあり、在庫否定なし
+ * @param {import('jsdom').Document} doc
+ * @param {string} rawCm
+ */
+function hasShoeSizeUiWithBuyInSameContainer(doc, rawCm) {
+  const commerceRoot = getCommerceSubtreeClone(doc);
+  if (!commerceRoot || !rawCm) return false;
+  try {
+    for (const el of commerceRoot.querySelectorAll(PDP_SIZE_NODE_QUERY)) {
+      if (!isEligibleSelectableSizeNode(el)) continue;
+      const blob = [
+        el.textContent,
+        el.getAttribute?.('data-size'),
+        el.getAttribute?.('value'),
+        el.getAttribute?.('title'),
+      ]
+        .filter(Boolean)
+        .join(' ');
+      if (!nodeBlobMatchesShoeCmStrict(blob, rawCm)) continue;
+
+      const container =
+        el.closest('main, article, [role="main"], section, form') ?? commerceRoot;
+      const cflat = stripBannedSizeRanges(String(container.textContent || '')).replace(/\s+/g, ' ');
+      if (!cflat) continue;
+      if (pdpSignalsHardOutOfStock(cflat)) continue;
+      if (!PDP_BUY_PHRASES_STRICT.test(cflat)) continue;
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/** 監視 SERP／完成仕様：S / M / L / XL のみ（XS/XXL・数値服は別経路へ載せない） */
+export const PDP_CLOTHING_ALPHAS = ['S', 'M', 'L', 'XL'];
+
+/** @param {string} rawAlpha */
+export function coerceTargetClothingAlpha(rawAlpha) {
+  const u = String(rawAlpha ?? '')
+    .trim()
+    .toUpperCase();
+  return PDP_CLOTHING_ALPHAS.includes(u) ? u : '';
+}
+
+function nodeBlobMatchesClothingAlphaStrict(blob, rawAlpha) {
+  if (!blob || !rawAlpha || nodeBlobForbiddenForSizeUi(blob)) return false;
+  const u = String(rawAlpha).toUpperCase().trim();
+  if (!PDP_CLOTHING_ALPHAS.includes(u)) return false;
+  const t = String(blob || '').replace(/\s+/g, ' ');
+  if (!t) return false;
+  const esc = u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (u === 'XL') {
+    return /(^|[\s\u3000/・])XL(?=[\s\u3000]|サイズ|$|[)）])/i.test(t);
+  }
+  const re = new RegExp(`(^|[\\s\\u3000/・])${esc}(?=[\\s\\u3000]|サイズ|$|[)）]])`, 'i');
+  return re.test(t);
+}
+
+/**
+ * @param {import('jsdom').Document} doc
+ * @param {string} rawAlpha S|M|L|XL
+ */
+function hasClothingSizeUiWithBuyInSameContainer(doc, rawAlpha) {
+  const commerceRoot = getCommerceSubtreeClone(doc);
+  if (!commerceRoot || !rawAlpha) return false;
+  try {
+    for (const el of commerceRoot.querySelectorAll(PDP_SIZE_NODE_QUERY)) {
+      if (!isEligibleSelectableSizeNode(el)) continue;
+      const blob = [
+        el.textContent,
+        el.getAttribute?.('data-size'),
+        el.getAttribute?.('value'),
+        el.getAttribute?.('title'),
+      ]
+        .filter(Boolean)
+        .join(' ');
+      if (!nodeBlobMatchesClothingAlphaStrict(blob, rawAlpha)) continue;
+
+      const container =
+        el.closest('main, article, [role="main"], section, form') ?? commerceRoot;
+      const cflat = stripBannedSizeRanges(String(container.textContent || '')).replace(/\s+/g, ' ');
+      if (!cflat) continue;
+      if (pdpSignalsHardOutOfStock(cflat)) continue;
+      if (!PDP_BUY_PHRASES_STRICT.test(cflat)) continue;
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * サイズ選択 UI を要さない PDP（シール・バッグ等）：商域内に購入ホワイトリストがあり同一コンテナに在庫否定なし。
+ * 単体 aria のみ・全文フラットのみでは通さない（靴／服と同系のコンテナ束ね）。
+ * @param {import('jsdom').Document} doc
+ */
+function hasGenericStructuralBuyInCommerce(doc) {
+  const commerceRoot = getCommerceSubtreeClone(doc);
+  if (!commerceRoot) return false;
+  const selectors = 'button, a[href], [role="button"], input[type="submit"], input[type="button"]';
+  try {
+    for (const el of commerceRoot.querySelectorAll(selectors)) {
+      const blob = [
+        el.textContent,
+        el.getAttribute?.('aria-label'),
+        el.getAttribute?.('value'),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 240);
+      if (!blob || !PDP_BUY_PHRASES_STRICT.test(blob)) continue;
+      const container =
+        el.closest('main, article, [role="main"], section, form') ?? commerceRoot;
+      const cflat = stripBannedSizeRanges(String(container.textContent || '')).replace(/\s+/g, ' ');
+      if (!cflat) continue;
+      if (pdpSignalsHardOutOfStock(cflat)) continue;
+      if (!PDP_BUY_PHRASES_STRICT.test(cflat)) continue;
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * v5.0：サイズなしカテゴリ／強制 PDP 用。reason=dom_structural のみ成功扱い。
+ * @param {string} html
+ * @param {string} [pdpUrl]
+ */
+export function analyzePdpHtmlForGenericStructuralBuy(html, pdpUrl = '') {
+  if (!html || String(html).length < 500) {
+    logPdpStrictReject('html_short', {
+      len: html ? String(html).length : 0,
+      pdpUrl,
+      kind: 'generic_struct',
+    });
+    return {
+      ok: false,
+      reason: 'fetch_fail_strict',
+      method: 'fetch',
+      pdpTentative: false,
+      retryable: true,
+    };
+  }
+
+  let doc;
+  try {
+    doc = new JSDOM(String(html), { contentType: 'text/html' }).window.document;
+  } catch {
+    return { ok: false, reason: 'parse_error', method: 'dom', pdpTentative: false };
+  }
+
+  const bodyText = getBodyTextFlat(doc);
+  const commerceText = getBodyTextMinusGlobalChrome(doc);
+
+  if (!bodyText || bodyText.length < 20) {
+    logPdpStrictReject('body_too_small', { pdpUrl, kind: 'generic_struct' });
+    return { ok: false, reason: 'no_structural_size', method: 'dom', pdpTentative: false };
+  }
+
+  if (PAGE_NOT_FOUND.test(bodyText)) {
+    return { ok: false, reason: 'pdp_page_error', method: 'none' };
+  }
+
+  const commerceStripped = stripBannedSizeRanges(commerceText);
+
+  if (pdpSignalsHardOutOfStock(commerceStripped)) {
+    logPdpStrictReject('hard_out_of_stock_commerce', { pdpUrl, kind: 'generic_struct' });
+    return {
+      ok: false,
+      reason: 'out_of_stock',
+      method: 'none',
+      pdpTentative: false,
+    };
+  }
+
+  if (!hasGenericStructuralBuyInCommerce(doc)) {
+    return { ok: false, reason: 'no_structural_size', method: 'dom', pdpTentative: false };
+  }
+
+  return {
+    ok: true,
+    reason: 'dom_structural',
+    method: 'structural',
+    pdpTentative: false,
+  };
+}
+
+export function analyzePdpHtmlForClothingAlpha(html, rawAlpha, pdpUrl = '') {
+  const alpha = coerceTargetClothingAlpha(rawAlpha);
+  if (!alpha) {
+    logPdpStrictReject('clothing_bad_alpha', { pdpUrl });
+    return { ok: false, reason: 'no_input', method: 'none' };
+  }
+  if (!html || String(html).length < 500) {
+    logPdpStrictReject('html_short', {
+      len: html ? String(html).length : 0,
+      pdpUrl,
+      targets: [alpha],
+    });
+    return {
+      ok: false,
+      reason: 'fetch_fail_strict',
+      method: 'fetch',
+      pdpTentative: false,
+      retryable: true,
+    };
+  }
+
+  let doc;
+  try {
+    doc = new JSDOM(String(html), { contentType: 'text/html' }).window.document;
+  } catch {
+    return { ok: false, reason: 'parse_error', method: 'dom', pdpTentative: false };
+  }
+
+  const bodyText = getBodyTextFlat(doc);
+  const commerceText = getBodyTextMinusGlobalChrome(doc);
+
+  if (!bodyText || bodyText.length < 20) {
+    logPdpStrictReject('body_too_small', { pdpUrl });
+    return { ok: false, reason: 'no_structural_size', method: 'dom', pdpTentative: false };
+  }
+
+  if (PAGE_NOT_FOUND.test(bodyText)) {
+    return { ok: false, reason: 'pdp_page_error', method: 'none' };
+  }
+
+  const commerceStripped = stripBannedSizeRanges(commerceText);
+
+  if (pdpSignalsHardOutOfStock(commerceStripped)) {
+    logPdpStrictReject('hard_out_of_stock_commerce', { pdpUrl });
+    return {
+      ok: false,
+      reason: 'out_of_stock',
+      method: 'none',
+      pdpTentative: false,
+    };
+  }
+
+  if (!hasClothingSizeUiWithBuyInSameContainer(doc, alpha)) {
+    return { ok: false, reason: 'no_structural_size', method: 'dom', targetCms: [alpha] };
+  }
+
+  return {
+    ok: true,
+    reason: 'dom_structural',
+    method: 'structural',
+    pdpTentative: false,
+    matchedCm: alpha,
+    targetCms: [alpha],
+  };
+}
+
+/**
+ * <body> の可視テキスト（head 完全除外）
+ * @param {import('jsdom').Document} doc
+ */
+function getBodyTextFlat(doc) {
+  if (!doc || !doc.body) return '';
+  return String(doc.body.textContent || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 400_000);
+}
+
+/**
+ * 全ヘッダ/フッタ/大域ナビを除いた本文
+ * @param {import('jsdom').Document} doc
+ */
+function getBodyTextMinusGlobalChrome(doc) {
+  if (!doc || !doc.body) return '';
+  try {
+    const clone = doc.body.cloneNode(true);
+    const strip = 'header, footer, nav, [role=banner], [role=contentinfo], [role=navigation]';
+    clone.querySelectorAll(strip).forEach((n) => n.remove());
+    return String(clone.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 400_000);
+  } catch {
+    return getBodyTextFlat(doc);
+  }
+}
+
+/**
+ * 楽天アフィリ（hb.afl.rakuten）→ 商品直 URL。fetch 直前に必ず通す。
+ * クエリのアフィ計測・追跡系は可能な範囲で除去してキャッシュキー安定化。
+ */
+export function normalizeRakutenUrl(url) {
+  try {
+    if (!url) return url;
+    const s = String(url);
+    if (s.includes('hb.afl.rakuten.co.jp')) {
+      const m = s.match(/[?&]pc=([^&]+)/);
+      if (m) return normalizeRakutenUrl(decodeURIComponent(m[1]));
+    }
+    if (!/^https?:\/\//i.test(s)) return s;
+    const u = new URL(s);
+    /** @param {string} k */
+    const dropParam = (k) =>
+      /^utm_/i.test(k) ||
+      /^(iclid|iwch|icid|scid|(?:s-)?afid|m|cbf|cbfaid|vos|vosid|rakuten_ad)$/.test(k);
+    for (const k of [...u.searchParams.keys()]) {
+      if (dropParam(k)) u.searchParams.delete(k);
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * 楽天アフィ中網はここで必ず正規化してから1回だけ fetch（リトライなし＝遅延抑制）。
+ * @param {string} url 生の item.url（中継URLのままでよい）
  * @param {number} [timeoutMs=8000]
  * @returns {Promise<string|null>}
  */
 export async function fetchPdpHtml(url, timeoutMs = 8000) {
-  if (!url || !/^https?:\/\//i.test(url)) return null;
+  const targetUrl = normalizeRakutenUrl(url);
+  const u = targetUrl != null ? String(targetUrl) : '';
+  if (!u || !/^https?:\/\//i.test(u)) return null;
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await fetch(u, {
       signal: ctrl.signal,
       redirect: 'follow',
       headers: {
@@ -47,231 +499,513 @@ export async function fetchPdpHtml(url, timeoutMs = 8000) {
         'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
       },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      opsJsonLog('pdp_fetch_http', {
+        stage: 'pdp_fetch',
+        url: u.slice(0, 200),
+        status: res.status,
+        ok: false,
+      });
+      return null;
+    }
     const txt = await res.text();
     return typeof txt === 'string' && txt.length > 500 ? txt : null;
-  } catch {
+  } catch (e) {
+    opsJsonLog('pdp_fetch_http', {
+      stage: 'pdp_fetch',
+      url: u.slice(0, 200),
+      status: 0,
+      ok: false,
+      error: e?.name || 'Error',
+      message: String(e?.message || e).slice(0, 240),
+    });
     return null;
   } finally {
-    clearTimeout(t);
+    clearTimeout(timer);
   }
 }
 
-/**
- * 商品 URL だけでサイズが固定されている店（Yahoo!等: -265.html=26.5 相当）
- * @param {string} [url]
- * @param {string} rawCm "26.5"
- */
-function urlImpliesThisShoeSize(url, rawCm) {
-  if (!url || !rawCm) return false;
-  const n = parseFloat(String(rawCm).replace(/cm$/i, '').trim());
-  if (!Number.isFinite(n) || n < 10 || n > 40) return false;
-  const dec = Math.round(n * 10) / 10;
-  const code3 = String(Math.round(dec * 10));
-  const u = String(url);
-  if (new RegExp(`[-_/]${code3}(?=[^0-9]|$)`, 'i').test(u)) return true;
-  if (u.includes(`size=${code3}`) || u.includes(`sz=${code3}`)) return true;
-  return false;
-}
-
-function isRakutenPdpUrl(url) {
-  return /rakuten\.co\.jp/i.test(String(url || ''));
-}
-
-/**
- * 楽天: サイズが JSON/script にのみ現れ、body 本文が薄いケース向け
- * @param {string} html
- * @param {string} rawCm
- */
-function checkRakutenSizeInScriptPayload(html, rawCm) {
-  if (!html || !rawCm) return false;
-  const safe = String(rawCm).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const sizeInPayload =
-    new RegExp(`["']${safe}["']`, 'i').test(html) || new RegExp(`[,:]\\s*${safe}\\s*[,\\]}]`, 'i').test(html);
-  if (!sizeInPayload) return false;
-  const afterSize = new RegExp(
-    `${safe}[^<]{0,300}(在庫あり|残り[わ少]|カート|かご|購入|cart|instock|stock|shopcart)`,
-    'i'
-  ).test(html);
-  const beforeChunk = new RegExp(`(在庫あり|残り[わ少]|カート|かご|購入|カートに入).{0,300}${safe}`, 'i').test(
-    html
-  );
-  return afterSize || beforeChunk;
-}
-
-/**
- * 行単位で cm の在庫スコアを付ける（-1=在庫なし系, 1=在庫あり系, 0=不明）
- * @param {string} line
- * @param {string} rawCm  "26.5" など
- */
-function lineContainsTargetShoeSize(line, rawCm) {
-  const t = String(line);
-  const safe = String(rawCm).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (new RegExp(`^\\s*${safe}\\s*(?:cm|ｃｍ|CM)?\\s*$`, 'i').test(t.trim())) return true;
-  return new RegExp(
-    `(?:^|[^0-9.])${safe}(?:\\s*(?:cm|ｃｍ|CM))?(?:$|\\D|[^0-9.])`,
-    'i'
-  ).test(t);
-}
-
-function scoreLineForCm(line, rawCm) {
-  if (!lineContainsTargetShoeSize(line, rawCm)) return 0;
-  const neg = NEG_STOCK.test(line);
-  const pos = POS_STOCK.test(line);
-  if (neg && !pos) return -1;
-  if (pos && !neg) return 1;
-  return 0;
-}
-
-/**
- * 圧縮本文のうち、対象 cm 付近（同一断片）に「買い可能」文脈（Rakuten Fashion 等）
- */
-function hasPositiveNearShoeSizeInText(flat, rawCm) {
-  const safe = String(rawCm).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const idx = flat.search(new RegExp(safe, 'i'));
-  if (idx < 0) return false;
-  const chunk = flat.slice(idx, Math.min(flat.length, idx + 200));
-  if (NEG_STOCK.test(chunk) && !POS_STOCK.test(chunk)) return false;
-  return /残り[わ少]|在庫あり|かごに追加|カートに入/.test(chunk);
-}
-
-/**
- * @param {string} html
- * @param {string} rawCm
- * @param {string} [pdpUrl] 検索 API の item.url（1 URL=1 サイズの店舗用）
- * @returns {{ ok: boolean, reason: string, method: string }}
- */
-export function analyzePdpHtmlForShoeCm(html, rawCm, pdpUrl = '') {
-  if (!html || !rawCm) return { ok: false, reason: 'no_input', method: 'none' };
-  if (String(html).length < 500) {
-    return { ok: false, reason: 'pdp_fetch_fail', method: 'parse' };
-  }
-
+/** @param {Record<string, unknown>} row */
+export function logPdpStrictReject(tag, row) {
   try {
-    const dom = new JSDOM(html);
-    const doc = dom.window.document;
-    const titleT = (doc.querySelector('title') && doc.querySelector('title').textContent) || '';
-    const titleHead = (titleT || '').trim().slice(0, 200);
-    if (/(^|\s)404(\s|[-|]|$)|お探しの商品は見つかりません|商品が存在しません|指定された商品は/iu.test(titleHead)) {
-      return { ok: false, reason: 'pdp_page_error', method: 'none' };
-    }
-
-    const rawEsc = String(rawCm).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (pdpUrl && isRakutenPdpUrl(pdpUrl) && checkRakutenSizeInScriptPayload(html, rawCm)) {
-      return { ok: true, reason: 'pdp_rakuten_script_match', method: 'rakuten_script' };
-    }
-
-    const lines = [];
-
-    const pushText = (s) => {
-      if (s && typeof s === 'string') {
-        const t = s.replace(/\s+/g, ' ').trim();
-        if (t.length > 2 && t.length < 500) lines.push(t);
-      }
-    };
-
-    doc.querySelectorAll('option, label, li, tr, td, th, button, [role="option"], span, p, div').forEach((el) => {
-      const tx = el.textContent;
-      if (tx) pushText(tx);
-    });
-
-    const bodyText = (doc.body && doc.body.textContent) || '';
-    bodyText.split(/\n|\r/).forEach((ln) => pushText(ln));
-
-    let bestNeg = false;
-    let bestPos = false;
-
-    doc.querySelectorAll('option').forEach((opt) => {
-      const tx = (opt.textContent || '').replace(/\s+/g, ' ');
-      const val = String(opt.value || '');
-      if (lineContainsTargetShoeSize(tx, rawCm) || (val && lineContainsTargetShoeSize(val, rawCm))) {
-        if (!opt.disabled) bestPos = true;
-        else bestNeg = true;
-      }
-      if (!new RegExp(rawEsc, 'i').test(tx) && !(val && new RegExp(rawEsc, 'i').test(val))) return;
-      if (opt.disabled) bestNeg = true;
-      if (scoreLineForCm(tx, rawCm) === 1) bestPos = true;
-      if (scoreLineForCm(tx, rawCm) === -1) bestNeg = true;
-    });
-
-    for (const line of lines) {
-      const sc = scoreLineForCm(line, rawCm);
-      if (sc === -1) bestNeg = true;
-      if (sc === 1) bestPos = true;
-    }
-
-    const flat = bodyText.replace(/\s+/g, ' ').slice(0, 400_000);
-    const near = new RegExp(`(.{0,60})${rawEsc}\\s*(?:cm|ｃｍ)?(.{0,120})`, 'i');
-    const m = flat.match(near);
-    if (m) {
-      const chunk = (m[1] || '') + (m[2] || '');
-      if (NEG_STOCK.test(chunk) && !POS_STOCK.test(chunk)) bestNeg = true;
-      if (POS_STOCK.test(chunk) && !NEG_STOCK.test(chunk)) bestPos = true;
-    }
-
-    if (pdpUrl && urlImpliesThisShoeSize(pdpUrl, rawCm) && POS_STOCK.test(flat)) {
-      return { ok: true, reason: 'pdp_yahoo_sku_confirmed', method: 'url_sku' };
-    }
-
-    const sizeTokenRe = new RegExp(`(^|[^\\d])${rawEsc}([^\\d]|$)`, 'i');
-    if (!sizeTokenRe.test(flat) && !sizeTokenRe.test((titleT || '').trim())) {
-      return { ok: false, reason: 'pdp_size_not_mentioned', method: 'none' };
-    }
-
-    if (bestPos && !bestNeg) {
-      return { ok: true, reason: 'pdp_positive', method: 'dom+regex' };
-    }
-    if (bestNeg && !bestPos) {
-      return { ok: false, reason: 'pdp_listed_out', method: 'dom+regex' };
-    }
-
-    if (hasPositiveNearShoeSizeInText(flat, rawCm)) {
-      return { ok: true, reason: 'pdp_fashion_proximity', method: 'proximity' };
-    }
-
-    return { ok: false, reason: 'pdp_size_out_of_stock', method: 'strict_filter' };
-  } catch (e) {
-    return { ok: false, reason: 'parse_error:' + (e && e.message), method: 'dom' };
+    console.log(`[PDP_STRICT][${tag}]`, JSON.stringify(row));
+  } catch {
+    console.log('[PDP_STRICT]', tag, row);
   }
+}
+
+export function analyzePdpHtmlForShoeCm(html, rawCm, pdpUrl = '') {
+  const targets = coerceTargetCmStrings(rawCm);
+  if (targets.length === 0) {
+    logPdpStrictReject('no_targets', { pdpUrl, rawCmPreview: String(rawCm).slice(0, 32) });
+    return { ok: false, reason: 'no_input', method: 'none' };
+  }
+  if (!html || String(html).length < 500) {
+    logPdpStrictReject('html_short', {
+      len: html ? String(html).length : 0,
+      pdpUrl,
+      targets,
+    });
+    return {
+      ok: false,
+      reason: 'fetch_fail_strict',
+      method: 'fetch',
+      pdpTentative: false,
+      retryable: true,
+    };
+  }
+
+  let doc;
+  try {
+    doc = new JSDOM(String(html), { contentType: 'text/html' }).window.document;
+  } catch (e) {
+    return { ok: false, reason: 'parse_error', method: 'dom', pdpTentative: false };
+  }
+
+  const bodyText = getBodyTextFlat(doc);
+  const commerceText = getBodyTextMinusGlobalChrome(doc);
+
+  if (!bodyText || bodyText.length < 20) {
+    logPdpStrictReject('body_too_small', { pdpUrl });
+    return { ok: false, reason: 'insufficient_body_strict', method: 'dom', pdpTentative: false };
+  }
+
+  if (PAGE_NOT_FOUND.test(bodyText)) {
+    return { ok: false, reason: 'pdp_page_error', method: 'none' };
+  }
+
+  const commerceStripped = stripBannedSizeRanges(commerceText);
+
+  if (pdpSignalsHardOutOfStock(commerceStripped)) {
+    logPdpStrictReject('hard_out_of_stock_commerce', { pdpUrl });
+    return {
+      ok: false,
+      reason: 'pdp_explicit_out_of_stock',
+      method: 'none',
+      pdpTentative: false,
+      targetCms: targets,
+    };
+  }
+
+  const structuralCmHit = targets.find((cm) => hasShoeSizeUiWithBuyInSameContainer(doc, cm));
+  if (!structuralCmHit) {
+    return { ok: false, reason: 'no_structural_size', method: 'dom', targetCms: targets };
+  }
+
+  return {
+    ok: true,
+    reason: 'dom_structural',
+    method: 'structural',
+    pdpTentative: false,
+    matchedCm: structuralCmHit,
+    targetCms: targets,
+  };
+}
+
+/** メモリ/Redis で再利用してよい PDP 結果（fail-close と矛盾する経路は保存しない／読まない） */
+const PDP_RESULTS_CACHE_ALLOWED = new Set(['dom_structural']);
+
+/**
+ * @param {{ ok?: boolean|null; reason?: string; pdpTentative?: boolean }|null|undefined} r
+ */
+function pdpVerificationResultStrictCacheable(r) {
+  return (
+    !!r &&
+    r.ok === true &&
+    !r.pdpTentative &&
+    PDP_RESULTS_CACHE_ALLOWED.has(String(r.reason || ''))
+  );
 }
 
 /**
  * @param {{ url?: string, sourceId?: string }} item
- * @param {string} rawCm 例 "26.5"
- * @returns {Promise<{ ok: boolean, reason: string, method: string, ms: number }>}
+ * @param {string|string[]} rawCm — 単一 cm 文字列または配列（ANY 一致）
  */
 export async function verifyShoeSizeOnPdp(item, rawCm) {
-  const t0 = Date.now();
   const url = item && item.url;
-  const html = await fetchPdpHtml(url, 9000);
-  if (!html) {
-    if (url && urlImpliesThisShoeSize(url, rawCm)) {
-      const out = {
-        ok: true,
-        reason: 'pdp_fetch_fail_but_url_match',
-        method: 'url_fallback',
-        pdpTentative: true,
+  const pdpUrl = normalizeRakutenUrl(url) || url || '';
+  const key = getCacheKey(pdpUrl || url || '', rawCm);
+  const now = Date.now();
+
+  const cached = pdpCache.get(key);
+  if (cached) {
+    const age = now - cached.ts;
+    const d = cached.data;
+    if (age < PDP_FETCH_FAIL_CACHE_SEC * 1000 && d?.ok === false && d?.reason === 'fetch_fail_strict' && d?.retryable) {
+      return d;
+    }
+    if (age < PDP_CACHE_TTL_SEC * 1000 && pdpVerificationResultStrictCacheable(d)) {
+      return d;
+    }
+  }
+
+  const redisHit = await redisGetPdpCache(pdpUrl, coerceTargetCmStrings(rawCm).join(',') || String(rawCm)).catch(
+    () => null
+  );
+  if (redisHit && typeof redisHit.ok !== 'undefined') {
+    const result = hydratePdpResultFromRedis(redisHit);
+    if (pdpVerificationResultStrictCacheable(result)) {
+      const rs = typeof redisHit.ts === 'number' ? redisHit.ts : now;
+      pdpCache.set(key, { ts: rs, data: result });
+      return result;
+    }
+    const recTs = typeof redisHit.ts === 'number' ? redisHit.ts : 0;
+    if (
+      result.ok === false &&
+      result.reason === 'fetch_fail_strict' &&
+      result.retryable &&
+      recTs > 0 &&
+      now - recTs < PDP_FETCH_FAIL_CACHE_SEC * 1000
+    ) {
+      return { ...result, ms: typeof result.ms === 'number' ? result.ms : 0 };
+    }
+  }
+
+  if (inFlight.has(key)) {
+    return await inFlight.get(key);
+  }
+
+  const promise = (async () => {
+    const t0 = Date.now();
+    const html = await fetchPdpHtml(url, 3000);
+
+    let result;
+    if (!html) {
+      result = {
+        ok: false,
+        reason: 'fetch_fail_strict',
+        method: 'fetch',
+        pdpTentative: false,
+        retryable: true,
         ms: Date.now() - t0,
       };
-      console.log('[PDP CHECK] fetch 失敗 → URL 埋め込み救済', { url, size: rawCm, result: out });
-      return out;
+      logPdpStrictReject('verify_fetch_failed', {
+        url: String(url || '').slice(0, 120),
+        pdpUrl,
+        size: rawCm,
+      });
+    } else {
+      /** fail-close: パース／DOM で例外でも通過させない */
+      let r;
+      try {
+        r = analyzePdpHtmlForShoeCm(html, rawCm, pdpUrl);
+      } catch (err) {
+        logPdpStrictReject('analyze_throw', {
+          pdpUrl,
+          msg: String(err && err.message ? err.message : err).slice(0, 200),
+        });
+        r = {
+          ok: false,
+          reason: 'analyze_throw_strict',
+          method: 'dom',
+          pdpTentative: false,
+        };
+      }
+      result = { ...r, ms: Date.now() - t0 };
+      console.log('[PDP CHECK]', { url, pdpUrl, size: rawCm, result });
     }
-    const out = { ok: false, reason: 'pdp_fetch_fail', method: 'fetch', ms: Date.now() - t0 };
-    console.log('[PDP CHECK] fetch 失敗 or 短い HTML', { url, size: rawCm, result: out });
-    return out;
+
+    const redisSuccess = pdpVerificationResultStrictCacheable(result);
+    const redisFetchFail =
+      result.ok === false &&
+      String(result.reason || '') === 'fetch_fail_strict' &&
+      result.retryable === true;
+
+    if (redisSuccess || redisFetchFail) {
+      pdpCache.set(key, { ts: now, data: result });
+      const ttl = redisFetchFail ? PDP_FETCH_FAIL_CACHE_SEC : PDP_CACHE_TTL_SEC;
+      await redisSetPdpCache(
+        pdpUrl,
+        coerceTargetCmStrings(rawCm).join(',') || String(rawCm),
+        {
+          ok: result.ok,
+          reason: result.reason,
+          method: result.method,
+          pdpTentative: !!result.pdpTentative,
+          retryable: !!result.retryable,
+          ms: result.ms ?? 0,
+          ts: now,
+        },
+        ttl,
+      ).catch(() => {});
+    }
+
+    opsJsonLog('pdp_result', {
+      ok: !!result.ok,
+      reason: result.reason,
+      retryable: !!result.retryable,
+      url: String(pdpUrl || '').slice(0, 120),
+    });
+    optionallyLogPdpDecision({ canonicalUrl: pdpUrl, rawCm, result }).catch(() => {});
+    return result;
+  })();
+
+  inFlight.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlight.delete(key);
   }
-  const r = analyzePdpHtmlForShoeCm(html, rawCm, url || '');
-  const full = { ...r, ms: Date.now() - t0 };
-  console.log('[PDP CHECK]', { url, size: rawCm, result: full });
-  return full;
 }
 
 /**
- * 並列数を抑えて PDP 検証（Vercel 時間内に収める）
+ * 服アルファサイズ（S/M/L/XL）のみ。靴 PDP とはキャッシュキー分離。
+ * @param {{ url?: string, sourceId?: string }} item
+ * @param {string} rawAlpha S|M|L|XL
+ */
+export async function verifyClothingSizeOnPdp(item, rawAlpha) {
+  const url = item && item.url;
+  const pdpUrl = normalizeRakutenUrl(url) || url || '';
+  const alpha = coerceTargetClothingAlpha(rawAlpha);
+  const cacheSlug = alpha ? `cloth:${alpha}` : 'cloth:_';
+  const key = getCacheKey(pdpUrl || url || '', cacheSlug);
+  const now = Date.now();
+
+  const cached = pdpCache.get(key);
+  if (cached) {
+    const age = now - cached.ts;
+    const d = cached.data;
+    if (age < PDP_FETCH_FAIL_CACHE_SEC * 1000 && d?.ok === false && d?.reason === 'fetch_fail_strict' && d?.retryable) {
+      return d;
+    }
+    if (age < PDP_CACHE_TTL_SEC * 1000 && pdpVerificationResultStrictCacheable(d)) {
+      return d;
+    }
+  }
+
+  const redisHit = await redisGetPdpCache(pdpUrl, cacheSlug).catch(() => null);
+  if (redisHit && typeof redisHit.ok !== 'undefined') {
+    const result = hydratePdpResultFromRedis(redisHit);
+    if (pdpVerificationResultStrictCacheable(result)) {
+      const rs = typeof redisHit.ts === 'number' ? redisHit.ts : now;
+      pdpCache.set(key, { ts: rs, data: result });
+      return result;
+    }
+    const recTs = typeof redisHit.ts === 'number' ? redisHit.ts : 0;
+    if (
+      result.ok === false &&
+      result.reason === 'fetch_fail_strict' &&
+      result.retryable &&
+      recTs > 0 &&
+      now - recTs < PDP_FETCH_FAIL_CACHE_SEC * 1000
+    ) {
+      return { ...result, ms: typeof result.ms === 'number' ? result.ms : 0 };
+    }
+  }
+
+  if (!alpha) {
+    return { ok: false, reason: 'no_input', method: 'none', pdpTentative: false, ms: 0 };
+  }
+
+  if (inFlight.has(key)) {
+    return await inFlight.get(key);
+  }
+
+  const promise = (async () => {
+    const t0 = Date.now();
+    const html = await fetchPdpHtml(url, 3000);
+
+    let result;
+    if (!html) {
+      result = {
+        ok: false,
+        reason: 'fetch_fail_strict',
+        method: 'fetch',
+        pdpTentative: false,
+        retryable: true,
+        ms: Date.now() - t0,
+      };
+      logPdpStrictReject('verify_fetch_failed_cloth', {
+        url: String(url || '').slice(0, 120),
+        pdpUrl,
+        size: alpha,
+      });
+    } else {
+      let r;
+      try {
+        r = analyzePdpHtmlForClothingAlpha(html, alpha, pdpUrl);
+      } catch (err) {
+        logPdpStrictReject('analyze_throw_cloth', {
+          pdpUrl,
+          msg: String(err && err.message ? err.message : err).slice(0, 200),
+        });
+        r = {
+          ok: false,
+          reason: 'analyze_throw_strict',
+          method: 'dom',
+          pdpTentative: false,
+        };
+      }
+      result = { ...r, ms: Date.now() - t0 };
+      console.log('[PDP CHECK CLOTH]', { url, pdpUrl, size: alpha, result });
+    }
+
+    const redisSuccess = pdpVerificationResultStrictCacheable(result);
+    const redisFetchFail =
+      result.ok === false &&
+      String(result.reason || '') === 'fetch_fail_strict' &&
+      result.retryable === true;
+
+    if (redisSuccess || redisFetchFail) {
+      pdpCache.set(key, { ts: now, data: result });
+      const ttl = redisFetchFail ? PDP_FETCH_FAIL_CACHE_SEC : PDP_CACHE_TTL_SEC;
+      await redisSetPdpCache(pdpUrl, cacheSlug, {
+        ok: result.ok,
+        reason: result.reason,
+        method: result.method,
+        pdpTentative: !!result.pdpTentative,
+        retryable: !!result.retryable,
+        ms: result.ms ?? 0,
+        ts: now,
+      }).catch(() => {});
+    }
+
+    opsJsonLog('pdp_result', {
+      ok: !!result.ok,
+      reason: result.reason,
+      retryable: !!result.retryable,
+      url: String(pdpUrl || '').slice(0, 120),
+      kind: 'cloth',
+    });
+    optionallyLogPdpDecision({ canonicalUrl: pdpUrl, rawCm: alpha, result }).catch(() => {});
+    return result;
+  })();
+
+  inFlight.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
+/**
+ * v5.0：サイズなし PDP（シール・化粧品・バッグ・強制 main）。キャッシュは URL＋固定スラッグ。
+ * @param {{ url?: string, sourceId?: string }} item
+ */
+export async function verifyGenericMainStructuralBuyOnPdp(item) {
+  const url = item && item.url;
+  const pdpUrl = normalizeRakutenUrl(url) || url || '';
+  const cacheSlug = 'generic:struct';
+  const key = getCacheKey(pdpUrl || url || '', cacheSlug);
+  const now = Date.now();
+
+  const cached = pdpCache.get(key);
+  if (cached) {
+    const age = now - cached.ts;
+    const d = cached.data;
+    if (age < PDP_FETCH_FAIL_CACHE_SEC * 1000 && d?.ok === false && d?.reason === 'fetch_fail_strict' && d?.retryable) {
+      return d;
+    }
+    if (age < PDP_CACHE_TTL_SEC * 1000 && pdpVerificationResultStrictCacheable(d)) {
+      return d;
+    }
+  }
+
+  const redisHit = await redisGetPdpCache(pdpUrl, cacheSlug).catch(() => null);
+  if (redisHit && typeof redisHit.ok !== 'undefined') {
+    const result = hydratePdpResultFromRedis(redisHit);
+    if (pdpVerificationResultStrictCacheable(result)) {
+      const rs = typeof redisHit.ts === 'number' ? redisHit.ts : now;
+      pdpCache.set(key, { ts: rs, data: result });
+      return result;
+    }
+    const recTs = typeof redisHit.ts === 'number' ? redisHit.ts : 0;
+    if (
+      result.ok === false &&
+      result.reason === 'fetch_fail_strict' &&
+      result.retryable &&
+      recTs > 0 &&
+      now - recTs < PDP_FETCH_FAIL_CACHE_SEC * 1000
+    ) {
+      return { ...result, ms: typeof result.ms === 'number' ? result.ms : 0 };
+    }
+  }
+
+  if (inFlight.has(key)) {
+    return await inFlight.get(key);
+  }
+
+  const promise = (async () => {
+    const t0 = Date.now();
+    const html = await fetchPdpHtml(url, 3000);
+
+    let result;
+    if (!html) {
+      result = {
+        ok: false,
+        reason: 'fetch_fail_strict',
+        method: 'fetch',
+        pdpTentative: false,
+        retryable: true,
+        ms: Date.now() - t0,
+      };
+      logPdpStrictReject('verify_fetch_failed_generic', {
+        url: String(url || '').slice(0, 120),
+        pdpUrl,
+      });
+    } else {
+      let r;
+      try {
+        r = analyzePdpHtmlForGenericStructuralBuy(html, pdpUrl);
+      } catch (err) {
+        logPdpStrictReject('analyze_throw_generic', {
+          pdpUrl,
+          msg: String(err && err.message ? err.message : err).slice(0, 200),
+        });
+        r = {
+          ok: false,
+          reason: 'analyze_throw_strict',
+          method: 'dom',
+          pdpTentative: false,
+        };
+      }
+      result = { ...r, ms: Date.now() - t0 };
+    }
+
+    const redisSuccess = pdpVerificationResultStrictCacheable(result);
+    const redisFetchFail =
+      result.ok === false &&
+      String(result.reason || '') === 'fetch_fail_strict' &&
+      result.retryable === true;
+
+    if (redisSuccess || redisFetchFail) {
+      pdpCache.set(key, { ts: now, data: result });
+      const ttl = redisFetchFail ? PDP_FETCH_FAIL_CACHE_SEC : PDP_CACHE_TTL_SEC;
+      await redisSetPdpCache(pdpUrl, cacheSlug, {
+        ok: result.ok,
+        reason: result.reason,
+        method: result.method,
+        pdpTentative: !!result.pdpTentative,
+        retryable: !!result.retryable,
+        ms: result.ms ?? 0,
+        ts: now,
+      }).catch(() => {});
+    }
+
+    opsJsonLog('pdp_result', {
+      ok: !!result.ok,
+      reason: result.reason,
+      retryable: !!result.retryable,
+      url: String(pdpUrl || '').slice(0, 120),
+      kind: 'generic_struct',
+    });
+    optionallyLogPdpDecision({ canonicalUrl: pdpUrl, rawCm: cacheSlug, result }).catch(() => {});
+    return result;
+  })();
+
+  inFlight.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
+/**
  * @param {object[]} items
  * @param {string} rawCm
  * @param {{ concurrency?: number, maxItems?: number }} [opts]
- * @returns {Promise<{ kept: object[], dropped: number, log: object[] }>}
  */
 export async function filterItemsByPdpShoeStock(items, rawCm, opts = {}) {
   const concurrency = Math.max(1, Math.min(opts.concurrency || 4, 8));
@@ -301,12 +1035,24 @@ export async function filterItemsByPdpShoeStock(items, rawCm, opts = {}) {
       ms: v.ms,
       tentative: !!v.pdpTentative,
     });
-    if (v.ok) {
+    const strictStructural =
+      v.ok === true &&
+      !v.pdpTentative &&
+      String(v.reason || '') === 'dom_structural';
+    if (strictStructural) {
       kept.push({
         ...item,
+        available: true,
         pdpSizeVerified: true,
-        pdpSizeTentative: !!v.pdpTentative,
-        pdpSizeCheck: { ok: true, reason: v.reason, ms: v.ms, tentative: !!v.pdpTentative },
+        pdpSizeTentative: false,
+        pdpSizeCheck: {
+          ok: true,
+          reason: v.reason,
+          ms: v.ms,
+          tentative: false,
+          scanned: true,
+          strictConfirmed: true,
+        },
       });
     }
   }
@@ -316,18 +1062,16 @@ export async function filterItemsByPdpShoeStock(items, rawCm, opts = {}) {
 }
 
 /**
- * プール内を先頭から走査し、除外・店舗+品番の重複を飛ばしつつ PDP で在庫確定するまで回す
- * @param {object[]} pool 検索用プール（順序固定）
+ * @param {object[]} pool
  * @param {string} rawCm
  * @param {{ prePdpScanIndex?: number, excludeKeys?: Set<string>, excludeSellerModelKeys?: Set<string>, targetCount?: number, maxPdpCalls?: number }} [opts]
- * @returns {Promise<{ items: object[], nextPrePdpScanIndex: number, hitPoolEnd: boolean, log: object[], pdpCalls: number }>}
  */
 export async function collectPdpShoeVerifies(pool, rawCm, opts = {}) {
   const prePdpScanIndex = Math.max(0, Math.floor(opts.prePdpScanIndex != null ? Number(opts.prePdpScanIndex) : 0));
   const excludeKeys = opts.excludeKeys instanceof Set ? opts.excludeKeys : new Set();
   const excludeSm = opts.excludeSellerModelKeys instanceof Set ? opts.excludeSellerModelKeys : new Set();
   const targetCount = Math.max(1, Math.min(30, Number(opts.targetCount) || 10));
-  const maxPdpCalls = Math.max(1, Math.min(120, Number(opts.maxPdpCalls) || 80));
+  const maxPdpCalls = Math.max(1, Math.min(120, Number(opts.maxPdpCalls) || 40));
 
   const items = [];
   const log = [];
@@ -355,13 +1099,24 @@ export async function collectPdpShoeVerifies(pool, rawCm, opts = {}) {
       reason: v.reason,
       ms: v.ms,
     });
-    if (v.ok) {
+    const strictStructural =
+      v.ok === true &&
+      !v.pdpTentative &&
+      String(v.reason || '') === 'dom_structural';
+    if (strictStructural) {
       usedSm.add(sm);
       items.push({
         ...item,
+        available: true,
         pdpSizeVerified: true,
-        pdpSizeTentative: !!v.pdpTentative,
-        pdpSizeCheck: { ok: true, reason: v.reason, ms: v.ms, tentative: !!v.pdpTentative },
+        pdpSizeTentative: false,
+        pdpSizeCheck: {
+          ok: true,
+          reason: v.reason,
+          ms: v.ms,
+          tentative: false,
+          strictConfirmed: true,
+        },
         dedupeSellerModel: sm,
         itemKey: key,
       });

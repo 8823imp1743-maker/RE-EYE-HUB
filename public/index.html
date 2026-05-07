@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-re-eye-build="2026-04-25T15:00:00Z-ui-close-removed-child-clear">
+<html lang="ja" data-re-eye-build="2026-05-03T00:00:00Z-search-ui-fetch-diagnostics">
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -7,11 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RE-EYE-HUB</title>
     <!-- `BUILD_STAMP` Vercel 強制認識用（デプロイのたびに日時を更新すること） -->
-    <!-- BUILD_STAMP: 2026-04-25T15:00:00Z no-close-btn-child-clear-btn -->
+    <!-- BUILD_STAMP: 2026-05-03T00:00:00Z search-fetch-diagnostics-force-ui -->
     
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
     <!-- Lucide Icons（ISC）— 商用可 / stroke は CSS で 1.5px 相当に統一 -->
-    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js?v=20260503" crossorigin="anonymous"></script>
     
     <!-- OneSignal Web SDK v16 — userId タグ付け用 -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
@@ -922,6 +922,11 @@
         .home-setting-change-btn:hover { border-color: var(--amethyst); box-shadow: 0 0 8px rgba(155,89,182,0.4); }
         /* 設定未完了時：見守りセクションをロック */
         .monitor-locked { opacity: 0.3; pointer-events: none; user-select: none; }
+        /* locked でも未設定ガイド内のボタンはタップ可能にする（親の pointer-events を上書き） */
+        #monitor-section-body.monitor-locked #user-setup-warning,
+        #monitor-section-body.monitor-locked #user-setup-warning * {
+            pointer-events: auto;
+        }
 
         /* ── マイサイズ：ボトムシート + カテゴリ切替 ── */
         /* body 直下。ビューポート全体を基準に fixed。flex は column + flex-end で下からせり上げ。パネル高さを明示（flex:1 の中身が潰れない） */
@@ -1212,25 +1217,7 @@
         .ctx-menu-item:hover { background: rgba(155,89,182,0.18); color: #fff; }
         .ctx-menu-sep { height: 1px; background: rgba(155,89,182,0.2); margin: 3px 0; }
 
-        /* ── コーチマーク（初回ガイド）── */
-        #coach-mark {
-            position: fixed;
-            bottom: calc(var(--nav-height) + 20px); right: 15px;
-            background: rgba(8,0,16,0.97);
-            border: 1px solid var(--amethyst); border-radius: 2px;
-            padding: 14px 16px; z-index: 9000;
-            max-width: 260px;
-            box-shadow: 0 0 18px rgba(155,89,182,0.4);
-            display: none;
-            animation: coach-in 0.3s ease;
-        }
-        @keyframes coach-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-        .coach-title { font-size: 12px; font-weight: bold; letter-spacing: 1.5px; color: var(--champagne-gold); margin-bottom: 8px; }
-        .coach-body { font-size: 11px; color: rgba(247,231,206,0.8); letter-spacing: 0.5px; line-height: 1.7; margin-bottom: 11px; }
-        .coach-btn-row { display: flex; gap: 8px; }
-        .coach-btn { flex: 1; font-size: 11px; letter-spacing: 1px; padding: 8px 4px; border-radius: 2px; cursor: pointer; text-align: center; }
-        .coach-btn-ok { background: var(--amethyst); border: 1px solid var(--amethyst); color: #fff; font-weight: bold; }
-        .coach-btn-close { background: none; border: 1px solid rgba(155,89,182,0.3); color: rgba(247,231,206,0.55); }
+        /* coach-mark（ZERO PASTE ガイド）は廃止 */
 
         /* ── ホーム インライン検索結果（戦場スロット）── */
         #home-inline-results {
@@ -1490,8 +1477,8 @@
                     </div>
                     <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
                     <div id="monitor-input-wrap" style="position:relative;">
-                        <input type="text" id="monitor-input" placeholder="例：商品名・品番を入力" onkeydown="if(event.key==='Enter')scoutAndShow()">
-                        <span class="monitor-search-icon-wrap" onclick="scoutAndShow()">
+                        <input type="text" id="monitor-input" placeholder="例：商品名・品番を入力" autocomplete="off" onkeydown="if(event.key==='Enter'&&!event.isComposing){ event.preventDefault(); scoutAndShow({immediate:true,force:true}); }">
+                        <span class="monitor-search-icon-wrap" role="button" tabindex="0" aria-label="検索" onclick="scoutAndShow({immediate:true,force:true})" onkeydown="if(event.key==='Enter'||event.key===' '){ event.preventDefault(); scoutAndShow({immediate:true,force:true}); }">
                             <i id="monitor-search-fa" data-lucide="search" class="lucide monitor-search-icon" aria-hidden="true"></i>
                             <span id="monitor-spinner"></span>
                         </span>
@@ -1500,6 +1487,17 @@
                         現在は<strong style="color:var(--champagne-gold);">楽天市場・Yahoo!ショッピング</strong>の入荷・在庫を最優先で監視しています（コスト最適化のため他モール横断検索は行いません）。<br>
                         ※ 色まで指定したい方は品番（ハイフン以降）まで入力してください<br>
                         <span style="color:rgba(155,89,182,0.7);">例：CW2288<strong style="color:var(--amethyst);">-111</strong>（-111 まで入力で白に固定）</span>
+                    </div>
+                    <div id="serp-filter-panel" class="transparent-box" style="margin-top:12px;padding:10px 12px;border-radius:2px;">
+                        <span class="gold-label" style="font-size:11px;display:block;margin-bottom:6px;">意味フィルター（SERP→LLM）</span>
+                        <p class="meta-11px" style="color:rgba(247,231,206,0.6);margin:0 0 8px;line-height:1.55;">FINAL v3.1: SERP10 → ローカルノイズ込みスコア → <strong style="color:var(--champagne-gold);">LLM バッチ1回</strong> → 性別補正 → スコア0.6以上 → <strong style="color:var(--champagne-gold);">PDP dom_structural</strong>（キーワードに単一靴cm／服S〜XLがあるときのみ）。<code class="meta-11px" style="color:var(--champagne-gold);">GEMINI_API_KEY</code> 推奨。</p>
+                        <div class="serp-filter-nav" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;">
+                            <button type="button" class="btn-purple" style="flex:1;min-width:120px;padding:10px 8px;font-size:11px;letter-spacing:2px;" onclick="runSerpFilterBrowse(true)">本体フィルター実行</button>
+                            <button type="button" class="section-manage-btn" style="border-radius:2px;padding:8px 12px;font-size:11px;" onclick="serpFilterGoPrev()">戻る</button>
+                            <button type="button" class="section-manage-btn" style="border-radius:2px;padding:8px 12px;font-size:11px;" onclick="serpFilterGoNext()">次へ</button>
+                        </div>
+                        <p id="serp-filter-status" class="meta-11px" style="color:var(--amethyst);margin:0 0 6px;min-height:1.2em;"></p>
+                        <div id="serp-filter-list" class="settings-stock-requests"></div>
                     </div>
                     <div id="scout-status-text"></div>
                     <div id="intel-badge"></div>
@@ -1601,20 +1599,6 @@
 
     <div id="settings" class="screen">
         <div class="screen-content">
-            <div class="transparent-box" id="settings-user-profile-box">
-                <span class="gold-label">ユーザー設定</span>
-                <p class="meta-11px" style="display:block;margin-top:8px;margin-bottom:10px;line-height:1.7;letter-spacing:0.5px;">在庫・送料目安用の都道府県とサイズ（靴・服）です。ホーム画面と同じ内容を共有します。</p>
-                <div id="settings-user-configured-block" style="display:none;">
-                    <div class="home-setting-summary" style="align-items:flex-start;">
-                        <span id="settings-user-summary-text" class="home-setting-summary-text" style="display:block;width:100%;"></span>
-                    </div>
-                    <button type="button" class="sync-hub-btn" style="margin-top:10px;" onclick="openUserSettingsFromSettingsTab()">地域・サイズを編集</button>
-                </div>
-                <div id="settings-user-unconfigured-block" style="display:none;">
-                    <span class="meta-11px" style="display:block;margin:4px 0 10px;color:var(--champagne-gold);line-height:1.7;">都道府県と性別が未登録です。登録するまで在庫検索の土台が揃いません。</span>
-                    <button type="button" class="sync-hub-btn" onclick="openUserSettingsFromSettingsTab()">設定を開く</button>
-                </div>
-            </div>
             <div class="transparent-box">
                 <span class="gold-label">見守りリスト</span>
                 <div id="settings-watch-list">
@@ -1860,16 +1844,6 @@
         <div class="ctx-menu-item" onclick="ctxCopyText()">テキストをコピー</div>
     </div>
 
-    <!-- 零式コーチマーク（初回のみ） -->
-    <div id="coach-mark">
-        <div class="coach-title">ZERO PASTE — 零式捕捉</div>
-        <div class="coach-body">記事のテキストをなぞって<br><strong style="color:var(--amethyst);">長押し（右クリック）</strong>するだけで<br>即座に見守り開始できます。</div>
-        <div class="coach-btn-row">
-            <button class="coach-btn coach-btn-ok" onclick="closeCoachMark(true)">わかった（二度と表示しない）</button>
-            <button class="coach-btn coach-btn-close" onclick="closeCoachMark(false)">閉じる</button>
-        </div>
-    </div>
-
     <!-- マイサイズ編集：body 直下（.screen overflow 内に置かない。id=home-setting-form は保存で参照） -->
     <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet hidden" style="display:none" aria-hidden="true">
         <div class="user-settings-bs-backdrop" onclick="if(!isSettingsSaveLocked())closeUserSettingsBottomSheet()"></div>
@@ -1880,7 +1854,6 @@
             <div class="user-settings-bs-body" id="home-setting-form">
                 <div class="settings-section">
                     <div class="section-title"><i data-lucide="map-pin" aria-hidden="true"></i> お届け先（都道府県）</div>
-                    <label class="chip-label-row" for="dial-prefecture">価格・送料の目安に使用します</label>
                     <select id="dial-prefecture" class="dial-pref-select" onchange="onPrefectureDialChange();">
                     <option value="">（未設定）</option>
                     <option value="北海道">北海道</option>
@@ -1972,7 +1945,7 @@
     </div>
 
     <script>
-// `BUILD_STAMP` 2026-04-25T15:00:00Z no-close-btn-child-clear-btn
+// `BUILD_STAMP` 2026-05-03T00:00:00Z search-fetch-diagnostics-force-ui
 // ════════════════════════════════════════════════
 //  RE-EYE-HUB CORE v2 — 5係合同改修・監督承認版
 //  10秒待機完全抹殺 / StateStore / Direct Access
@@ -1982,12 +1955,75 @@
 // ── UTC タイムエンジン ────────────────────────────────────────
 const TZ = 'Asia/Tokyo';
 // Firebase Hosting から Vercel API を直叩き（CORSはVercel側で許可）
+// DevTools Network では同一オリジンではなく「re-eye-hub.vercel.app」に POST される点に注意
 // この HTML を更新したら: firebase deploy --only hosting ／ API だけなら: vercel --prod
 const API_BASE = 'https://re-eye-hub.vercel.app';
-/** 304 防止: URL を毎回ユニークにし、fetch は no-store */
+/** 304 防止: URL を毎回ユニークにし、fetch は no-store（クエリのみ加工。本体は POST JSON＝Unicode 自動） */
 function fetchApi(path, init) {
     const bust = (String(path).indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
-    return fetch(API_BASE + path + bust, Object.assign({}, init, { cache: 'no-store' }));
+    const fullUrl = API_BASE + path + bust;
+    try {
+        console.log('RE-EYE: Fetching now...', String(path).split('?')[0], '→', API_BASE);
+    } catch (_) {}
+    var baseOpts = Object.assign({}, init || {}, { cache: 'no-store' });
+    if (baseOpts.body && baseOpts.headers) {
+        var ctHdr = String(baseOpts.headers['Content-Type'] || baseOpts.headers['content-type'] || '').toLowerCase();
+        if (ctHdr.indexOf('application/json') === 0 && ctHdr.indexOf('charset') < 0) {
+            baseOpts.headers = Object.assign({}, baseOpts.headers, { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+    }
+    var out = fetch(fullUrl, baseOpts);
+    try {
+        console.log('RE-EYE: Fetch sent');
+    } catch (_) {}
+    return out;
+}
+/** localStorage に re_eye_debug_search=1 でホーム検索のフローをログ（本番ユーザーには出さない） */
+function reEyeDebugSearch(phase, detail) {
+    try {
+        if (localStorage.getItem('re_eye_debug_search') !== '1') return;
+        console.log('[re-eye search]', phase, detail !== undefined ? detail : '');
+    } catch (_) {}
+}
+/** CTR: プッシュ文言テンプレのクリック計測 → Redis（[re_eye_ops] と突合せ） */
+function postCtrClickFromNotification(template, userId) {
+    if (!template) return;
+    fetchApi('/api/ctr-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            template: String(template).slice(0, 96),
+            userId: userId || ''
+        })
+    }).catch(function () { /* ignore */ });
+}
+const RE_EYE_PAYWALL_COPY = {
+    limit: '無料枠に到達しました\n→ 今すぐ通知を受け取るにはプレミアムへ',
+    miss: 'この商品はすでに売り切れました\n→ 次回は即通知で確実に',
+    hits: 'あなたに合う在庫が増えています\n→ 見逃さないためにプレミアムへ',
+    price: '¥300〜¥500 / 月'
+};
+function notifyReEyePremiumNudge(kind) {
+    var t = RE_EYE_PAYWALL_COPY[kind];
+    if (!t) return;
+    try { console.warn('[re_eye_ops]', JSON.stringify({ event: 'paywall_nudge', kind: kind })); } catch (_) {}
+    window.alert(t + '\n\n' + RE_EYE_PAYWALL_COPY.price);
+}
+window.notifyReEyePremiumNudge = notifyReEyePremiumNudge;
+async function refreshNotifyHealthHints() {
+    var uid = localStorage.getItem('re_eye_uid') || '';
+    if (!uid) return;
+    try {
+        var r = await fetchApi('/api/notify-health?userId=' + encodeURIComponent(uid));
+        var j = await r.json();
+        if (!j || !j.conversionHints) return;
+        var day = new Date().toDateString();
+        var k = 're_eye_paywall_limit_day';
+        if (j.conversionHints.dailyLimitReached && localStorage.getItem(k) !== day) {
+            localStorage.setItem(k, day);
+            notifyReEyePremiumNudge('limit');
+        }
+    } catch (_) { /* ignore */ }
 }
 function nowJP() {
     return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
@@ -2138,11 +2174,29 @@ function getUserId() {
 
 function getMonitoringIntervalMs() {
     const night = isNightJP();
-    const jitter = () => Math.floor((4 + Math.random() * 3) * 60 * 1000);
-    if (currentPlan === 'FREE')     return night ? 24*60*60*1000 : 60*60*1000;
+    const jitterMs = (baseMs, jitterSec) => {
+        const j = Math.max(0, Number(jitterSec) || 0) * 1000;
+        if (!j) return baseMs;
+        const delta = Math.floor(Math.random() * j * 2) - j;
+        return Math.max(0, baseMs + delta);
+    };
+    // サーバ側（functions/lib/plan-config.js）と同じ秒数に合わせる
+    if (currentPlan === 'FREE') {
+        if (!night) return 60*60*1000;
+        // nightInterval = null（スリープ）: 次の08:00まで待機
+        try {
+            const now = new Date();
+            const next = new Date(now);
+            next.setHours(8,0,0,0);
+            if (now.getHours() >= 19) next.setDate(next.getDate() + 1);
+            return Math.max(5*60*1000, next.getTime() - now.getTime());
+        } catch (e) {
+            return 12*60*60*1000;
+        }
+    }
     if (currentPlan === 'STANDARD') return night ? 60*60*1000 : 15*60*1000;
-    if (currentPlan === 'PRO')      return night ? 60*60*1000 : jitter();
-    if (currentPlan === 'VIP')      return jitter();
+    if (currentPlan === 'PRO')      return night ? 60*60*1000 : jitterMs(5*60*1000, 60);
+    if (currentPlan === 'VIP')      return jitterMs(5*60*1000, 60);
     return 15*60*1000;
 }
 
@@ -3557,8 +3611,8 @@ function openUserSettingsBottomSheet() {
     }
     try { if (typeof refreshLucideIcons === 'function') refreshLucideIcons(); } catch (e) {}
 }
-function closeUserSettingsBottomSheet() {
-    if (isSettingsSaveLocked()) return;
+function closeUserSettingsBottomSheet(force) {
+    if (!force && isSettingsSaveLocked()) return;
     const s = document.getElementById('user-settings-bottom-sheet');
     if (s) {
         s.classList.add('hidden');
@@ -3868,7 +3922,86 @@ async function postUserSettingsToRedis() {
         try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
     }
     try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+    try { syncOneSignalSizeTagsFromProfile(); } catch (eSz) {}
     return { ok: true, data };
+}
+/** cm を 20–35 の 0.5 刻みへ（サーバー lib/size-bucket-tags.js と一致させる） */
+function reEyeSnapCmToHalfStep(cm) {
+    var n = Number(cm);
+    if (!Number.isFinite(n)) return null;
+    var s = Math.round(n * 2) / 2;
+    if (s < 20 || s > 35) return null;
+    return s;
+}
+/** 26.5 → "26_5"、27 → "27" */
+function reEyeHalfStepToBucketSlug(snappedHalf) {
+    var n = Number(snappedHalf);
+    if (!Number.isFinite(n)) return null;
+    if (n % 1 === 0) return String(Math.round(n));
+    var whole = Math.floor(n);
+    return whole + '_5';
+}
+/** 通知タップ → /api/ctr-click（テンプレ別 CTR 集計） */
+function registerReEyeCtrClickTrackingOneSignal() {
+    if (!window.OneSignalDeferred) return;
+    OneSignalDeferred.push(async function (OneSignal) {
+        try {
+            if (!OneSignal.Notifications || typeof OneSignal.Notifications.addEventListener !== 'function') return;
+            OneSignal.Notifications.addEventListener('click', function (evt) {
+                try {
+                    var addl = {};
+                    var n = evt && evt.notification;
+                    if (n && n.additionalData) addl = n.additionalData;
+                    else if (evt && evt.additionalData) addl = evt.additionalData;
+                    var tpl = addl && (addl.ctrTemplate || addl.template);
+                    var uid = localStorage.getItem('re_eye_uid') || '';
+                    if (tpl) postCtrClickFromNotification(String(tpl), uid);
+                } catch (eCc) {
+                    console.warn('[OneSignal ctr-click]', eCc);
+                }
+            });
+        } catch (_) { /* ignore */ }
+    });
+}
+/** プロフィールの靴 cm から size_27 等を付与・差分削除（ターゲティング用） */
+function syncOneSignalSizeTagsFromProfile() {
+    if (!window.OneSignalDeferred || typeof userProfile !== 'object') return;
+    OneSignalDeferred.push(async function(OneSignal) {
+        try {
+            var uid = (typeof getUserId === 'function') ? getUserId() : '';
+            if (uid && OneSignal.User) OneSignal.User.addTag('userId', uid);
+            var prevRaw = localStorage.getItem('re_eye_size_tag_slugs_list');
+            var prevArr = [];
+            try { prevRaw = JSON.parse(prevRaw || '[]'); prevArr = Array.isArray(prevRaw) ? prevRaw : []; } catch (eP) {}
+            var next = [];
+            var raw = userProfile.shoeSize;
+            if (raw != null && String(raw).trim() !== '') {
+                var base = reEyeSnapCmToHalfStep(Number(String(raw).replace(/cm$/i, '').trim()));
+                var d;
+                if (base != null) {
+                    for (d = -0.5; d <= 0.501; d += 0.5) {
+                        var cm = base + d;
+                        if (cm < 20 || cm > 35) continue;
+                        var slug = reEyeHalfStepToBucketSlug(cm);
+                        if (slug) next.push('size_' + slug);
+                    }
+                    next = next.filter(function(k, i, a) { return a.indexOf(k) === i; });
+                }
+            }
+            if (OneSignal.User && typeof OneSignal.User.removeTag === 'function') {
+                var j;
+                for (j = 0; j < prevArr.length; j++) {
+                    if (next.indexOf(prevArr[j]) === -1) await OneSignal.User.removeTag(prevArr[j]);
+                }
+            }
+            for (var k = 0; k < next.length; k++) {
+                OneSignal.User.addTag(next[k], '1');
+            }
+            localStorage.setItem('re_eye_size_tag_slugs_list', JSON.stringify(next));
+        } catch (eTag) {
+            console.warn('[OneSignal] size tags sync:', eTag);
+        }
+    });
 }
 async function loadUserSettingsFromServerAndApply() {
     const uid = getUserId();
@@ -3903,6 +4036,7 @@ async function loadUserSettingsFromServerAndApply() {
                 if (typeof refreshLucideIcons === 'function') refreshLucideIcons();
             }
         } catch (e2) {}
+        try { syncOneSignalSizeTagsFromProfile(); } catch (e3) {}
     } catch (e) {}
 }
 function saveUserSettings(explicit) {
@@ -3940,7 +4074,7 @@ function saveUserSettings(explicit) {
                 // Redis 永続 + localStorage 反映済み。以降の /api/search・/api/scout（userId 付き）は新しい靴 cm / 服を参照する
                 updateBannerAdContent(lastMonitorKeyword);
                 syncUserSettingSummaryDisplays();
-                closeUserSettingsBottomSheet();
+                closeUserSettingsBottomSheet(true);
                 const mb = document.getElementById('monitor-section-body');
                 if (mb) mb.classList.remove('monitor-locked');
                 const uw = document.getElementById('user-setup-warning');
@@ -4166,9 +4300,13 @@ function buildSizeAwareKeyword(keyword,forChild){
 
 let _lastStockSearchContext = { keyword: '', forChild: false, displayKw: '' };
 /** 在庫「次へ」: サーバの prePdpScanIndex / listOffset と既出キー */
-let _stockPageState = { seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false };
+let _stockPageState = { seenKeys: new Set(), seenSm: new Set(), displayTripleKeys: new Set(), cursor: null, isPdp: false, loadingMore: false };
+/** 5+1: 1ページ目の表示件数。先頭5件＋6件目の有無で「次へ」を出す */
+let _stockCumulativeItemCount = 0;
 /** 在庫検索の世代。再検索で増やし、古い非同期の描画を捨てる */
 let _stockSearchGen = 0;
+/** 先読み（クライアント側キュー）。サーバ側は shopsearch キャッシュで相乗りする */
+let _stockPrefetch = { running: false, queue: [], seen: new Set(), nextOffset: 0 };
 /** /api/search 最新応答の userSettings（都道府県目安の表示用） */
 let _lastSearchUserSettings = {
     shoeCm: null, clothing: null, prefecture: null,
@@ -4258,19 +4396,781 @@ function hideIntelBadge(){
     if(b){b.style.display='none';b.textContent='';}
 }
 
-// ── scoutAndShow ──────────────────────────────────────────────
-function scoutAndShow(){
-    const input=document.getElementById('monitor-input');
-    const val=input?input.value.trim():'';
+// ── クライアント流量制御: triggerSearch → executeSearch（429は①②を抑止。③④はサーバ側） ──
+var _scoutDebounceTimer = null;
+var SCOUT_DEBOUNCE_MS = 500;
+var _reEyeIsSearching = false;
+/** @type {{ fingerprint:string, keyword:string, forChild:boolean, sk:string, pageState:any, bundle:any } | null} */
+var _reEyeStockClientCache = null;
+/** @type {{ fingerprint:string, items:any[], keyword:string } | null} */
+var _reEyeIntelClientCache = null;
+var _reEye429NotifiedAt = 0;
+
+function reEyeNotifySearch429() {
+    var now = Date.now();
+    if (now - _reEye429NotifiedAt < 5000) return;
+    _reEye429NotifiedAt = now;
+    try {
+        console.warn('[re-eye] Too Many Requests (429) — しばらく待ってから再試行してください');
+    } catch (_) {}
+    var st = document.getElementById('scout-status-text');
+    if (st) {
+        st.textContent = 'アクセスが集中しました（429）。約1分後に再度お試しください';
+        st.classList.add('visible');
+        setTimeout(function () {
+            try {
+                var s2 = document.getElementById('scout-status-text');
+                if (s2) {
+                    s2.textContent = '';
+                    s2.classList.remove('visible');
+                }
+            } catch (_) {}
+        }, 9000);
+    }
+    try {
+        window.alert('短時間のリクエストが多すぎます（429）。しばらく待ってから再試行してください');
+    } catch (_) {}
+}
+
+function reEyeClientSearchFingerprint(mode, keywordRaw, forChild) {
+    var k = String(keywordRaw || '').trim();
+    var uid = typeof getUserId === 'function' ? String(getUserId() || '') : '';
+    var up = typeof userProfile !== 'undefined' && userProfile ? userProfile : {};
+    return [
+        String(mode || ''),
+        k,
+        forChild ? '1' : '0',
+        uid,
+        String(up.shoeSize || ''),
+        String(up.clothSize || ''),
+        String(up.gender || ''),
+        String(up.prefecture || ''),
+        String(up.childShoeSize || ''),
+        String(up.childClothSize || ''),
+        String(up.childGender || ''),
+    ].join('\x1f');
+}
+
+function reEyeFreezeStockPageState() {
+    return {
+        seenKeys: Array.from(_stockPageState.seenKeys || []),
+        seenSm: Array.from(_stockPageState.seenSm || []),
+        displayTripleKeys: Array.from(_stockPageState.displayTripleKeys || []),
+        cursor: _stockPageState.cursor ? JSON.parse(JSON.stringify(_stockPageState.cursor)) : null,
+        isPdp: !!_stockPageState.isPdp,
+        loadingMore: !!_stockPageState.loadingMore,
+    };
+}
+
+function reEyeRestoreStockPageState(fr) {
+    if (!fr) return;
+    _stockPageState.seenKeys = new Set(fr.seenKeys || []);
+    _stockPageState.seenSm = new Set(fr.seenSm || []);
+    _stockPageState.displayTripleKeys = new Set(fr.displayTripleKeys || []);
+    _stockPageState.cursor = fr.cursor;
+    _stockPageState.isPdp = !!fr.isPdp;
+    _stockPageState.loadingMore = !!fr.loadingMore;
+}
+
+function reEyeFinalizeStockPrimaryCache(cond) {
+    if (!cond || !cond.fingerprint || !cond.bundle) return;
+    try {
+        if (typeof cond.gen === 'number' && cond.gen !== _stockSearchGen) return;
+        _reEyeStockClientCache = {
+            fingerprint: cond.fingerprint,
+            keyword: cond.keyword,
+            forChild: !!cond.forChild,
+            sk: cond.sk,
+            pageState: cond.pageState ? JSON.parse(JSON.stringify(cond.pageState)) : null,
+            bundle: JSON.parse(JSON.stringify(cond.bundle)),
+        };
+        reEyeDebugSearch('stock cache saved', cond.fingerprint);
+    } catch (e) {
+        try {
+            console.warn('[re-eye] stock cache save skipped', e && e.message);
+        } catch (_) {}
+    }
+}
+
+function reEyeReplayStockClientCache() {
+    var c = _reEyeStockClientCache;
+    if (!c || !c.bundle || !Array.isArray(c.bundle.items)) return;
+    reEyeDebugSearch('stock cache replay', c.fingerprint);
+    _stockSearchGen++;
+    var ir = document.getElementById('home-inline-results');
+    var hdr = document.getElementById('home-slot-header');
+    if (hdr) hdr.innerHTML = '';
+    _lastStockSearchContext = { keyword: c.keyword, forChild: c.forChild, displayKw: c.sk };
+    reEyeRestoreStockPageState(c.pageState);
+    _stockCumulativeItemCount = Number(c.bundle.stockCumulativeN) || c.bundle.items.length;
+    try {
+        _stockPrefetch = { running: false, queue: [], seen: new Set(), tripleSeen: new Set(), nextOffset: 0 };
+    } catch (_) {}
+    renderStockResults(c.bundle.items, c.bundle.sk, c.bundle.nkw, c.bundle.mergedErrs || [], {
+        append: false,
+        searchCursor: c.bundle.mergedC || { hasMore: false },
+        fromLoadMoreBatch: false,
+        stockCumulativeN: _stockCumulativeItemCount,
+    });
+    var sst = document.getElementById('scout-status-text');
+    if (sst) {
+        sst.textContent = '';
+        sst.classList.remove('visible');
+    }
+    if (ir) ir.style.display = 'block';
+}
+
+/** クライアント側検索実行（fetch は runStockSearch / runIntelScout に集約済み）。@param {{immediate?:boolean, force?:boolean}} [opts] */
+async function executeSearch(opts) {
+    opts = opts || {};
+    reEyeDebugSearch('executeSearch:start');
+    var input = document.getElementById('monitor-input');
+    var val = input ? input.value.trim() : '';
     hideIntelBadge();
-    const st=document.getElementById('scout-status-text');
-    if(st){st.textContent='';st.classList.remove('visible');}
-    const ir=document.getElementById('home-inline-results');
-    if(ir)ir.style.display='none';
-    if(!val) return;
-    lastMonitorKeyword=val;
-    if(_currentMode==='stock') runStockSearch(val, getEffectiveScoutForChild());
-    else runIntelScout(val,false,true,getEffectiveScoutForChild());
+    var st0 = document.getElementById('scout-status-text');
+    if (st0) {
+        st0.textContent = '';
+        st0.classList.remove('visible');
+    }
+    var ir0 = document.getElementById('home-inline-results');
+    if (ir0) ir0.style.display = 'none';
+    if (!val) {
+        reEyeDebugSearch('abort', 'empty keyword');
+        try { console.log('RE-EYE: search aborted (empty keyword)'); } catch (_) {}
+        return;
+    }
+    lastMonitorKeyword = val;
+    var forChild = getEffectiveScoutForChild();
+    reEyeDebugSearch('keyword', val);
+
+    if (_currentMode === 'stock') {
+        var fpStock = reEyeClientSearchFingerprint('stock', val, forChild);
+        reEyeDebugSearch('mode', 'stock → /api/search');
+        if (!opts.force && _reEyeStockClientCache && _reEyeStockClientCache.fingerprint === fpStock) {
+            try { console.log('RE-EYE: stock client cache replay (no network); use force:true for fresh fetch'); } catch (_) {}
+            reEyeReplayStockClientCache();
+            return;
+        }
+        if (_reEyeIsSearching) {
+            reEyeDebugSearch('blocked', 'isSearching (stock)');
+            try { console.warn('RE-EYE: search skipped (_reEyeIsSearching)'); } catch (_) {}
+            return;
+        }
+        _reEyeIsSearching = true;
+        try {
+            await runStockSearch(val, forChild, false);
+        } catch (err) {
+            console.error('[executeSearch]', err && err.message, err);
+        } finally {
+            _reEyeIsSearching = false;
+        }
+        return;
+    }
+
+    var fpIntel = reEyeClientSearchFingerprint('intel', val, forChild);
+    reEyeDebugSearch('mode', 'intel → /api/scout');
+    if (!opts.force && _reEyeIntelClientCache && _reEyeIntelClientCache.fingerprint === fpIntel && Array.isArray(_reEyeIntelClientCache.items)) {
+        try {
+            renderHomeInlineResults(JSON.parse(JSON.stringify(_reEyeIntelClientCache.items)), val);
+        } catch (e4) {
+            renderHomeInlineResults((_reEyeIntelClientCache.items || []).slice(), val);
+        }
+        return;
+    }
+    if (_reEyeIsSearching) {
+        reEyeDebugSearch('blocked', 'isSearching (intel)');
+        try { console.warn('RE-EYE: search skipped (_reEyeIsSearching, intel)'); } catch (_) {}
+        return;
+    }
+    _reEyeIsSearching = true;
+    try {
+        var intelOk = await runIntelScout(val, false, true, forChild);
+        if (intelOk) {
+            _reEyeIntelClientCache = {
+                fingerprint: fpIntel,
+                items: JSON.parse(JSON.stringify(typeof _homeInlineItems !== 'undefined' ? (_homeInlineItems || []) : [])),
+                keyword: val,
+            };
+            reEyeDebugSearch('intel cache saved', fpIntel);
+        }
+    } catch (err2) {
+        console.error('[executeSearch intel]', err2 && err2.message, err2);
+    } finally {
+        _reEyeIsSearching = false;
+    }
+}
+
+function triggerSearch(opts) {
+    opts = opts || {};
+    if (opts.immediate) {
+        try {
+            if (_scoutDebounceTimer) {
+                clearTimeout(_scoutDebounceTimer);
+                _scoutDebounceTimer = null;
+            }
+        } catch (_) {}
+        return void executeSearch(opts).catch(function (e) {
+            console.error('[executeSearch]', e);
+        });
+    }
+    try {
+        if (_scoutDebounceTimer) clearTimeout(_scoutDebounceTimer);
+    } catch (_) {}
+    _scoutDebounceTimer = setTimeout(function () {
+        _scoutDebounceTimer = null;
+        executeSearch(opts).catch(function (e) {
+            console.error('[executeSearch]', e);
+        });
+    }, SCOUT_DEBOUNCE_MS);
+}
+
+window.triggerSearch = triggerSearch;
+window.executeSearch = executeSearch;
+window.scoutAndShow = triggerSearch;
+window.scoutAndShowImmediate = function (o) {
+    return triggerSearch(Object.assign({ immediate: true }, o || {}));
+};
+
+var _serpFilterState = { page: 0, lastKw: '', hasMore: false, loading: false };
+function _serpFilterProfileGenderParam() {
+    try {
+        if (typeof _scoutTargetForChild !== 'undefined' && _scoutTargetForChild && userProfile && userProfile.childGender) {
+            if (userProfile.childGender === 'boy') return 'male';
+            if (userProfile.childGender === 'girl') return 'female';
+        }
+        if (userProfile && userProfile.gender === 'male') return 'male';
+        if (userProfile && userProfile.gender === 'female') return 'female';
+    } catch (e) {}
+    return 'unknown';
+}
+function renderSerpFilterList(rows) {
+    var el = document.getElementById('serp-filter-list');
+    if (!el) return;
+    el.innerHTML = '';
+    var list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+        var p = document.createElement('p');
+        p.className = 'meta-11px';
+        p.style.cssText = 'color:rgba(247,231,206,0.45);margin:4px 0;';
+        p.textContent = 'このページに表示する採用行はありません（スコア不足または候補終端）。';
+        el.appendChild(p);
+        return;
+    }
+    list.forEach(function (row) {
+        var d = document.createElement('div');
+        d.className = 'transparent-box';
+        d.style.cssText = 'margin-bottom:8px;padding:8px 10px;border-radius:2px;';
+        var t = document.createElement('div');
+        t.className = 'item-meta';
+        t.style.cssText = 'font-size:11px;color:var(--champagne-gold);line-height:1.45;';
+        t.textContent = (row.title || '').slice(0, 140);
+        var m = document.createElement('div');
+        m.className = 'meta-11px';
+        m.style.cssText = 'margin-top:4px;color:var(--amethyst);opacity:0.95;';
+        m.textContent =
+            'score ' +
+            String(row.score) +
+            ' · ' +
+            String(row.category || '') +
+            ' · ' +
+            String(row.product_role || '') +
+            ' · ¥' +
+            (Number(row.price) || 0).toLocaleString();
+        d.appendChild(t);
+        d.appendChild(m);
+        if (row.pdpReason != null || row.pdpStructural != null) {
+            var pd = document.createElement('div');
+            pd.className = 'meta-11px';
+            pd.style.cssText = 'margin-top:4px;color:rgba(247,231,206,0.75);';
+            if (row.pdpSkipped) {
+                pd.textContent = 'PDP: スキップ（' + String(row.pdpReason || '') + '）';
+            } else {
+                var pdpTxt =
+                    'PDP: ' +
+                    (row.pdpStructural ? 'dom_structural（在庫あり）' : '非構造 / ' + String(row.pdpReason || ''));
+                if (row.ceStatus === 'reject' && row.ceReason) {
+                    pdpTxt += ' · CE却下: ' + String(row.ceReason);
+                } else if (row.finalAdopted === false && row.pdpStructural) {
+                    pdpTxt += ' · CE: 最終不採用';
+                }
+                pd.textContent = pdpTxt;
+            }
+            d.appendChild(pd);
+        }
+        if (row.url) {
+            var a = document.createElement('a');
+            a.href = row.url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.className = 'meta-11px';
+            a.style.cssText = 'display:inline-block;margin-top:4px;color:var(--amethyst);text-decoration:underline;';
+            a.textContent = '商品ページを開く';
+            d.appendChild(a);
+        }
+        el.appendChild(d);
+    });
+}
+async function runSerpFilterBrowse(resetPage) {
+    if (_serpFilterState.loading) return;
+    var uid = typeof getUserId === 'function' ? getUserId() : '';
+    if (!uid) {
+        try {
+            alert('ユーザーIDがありません。設定から ID を確認してください。');
+        } catch (e) {}
+        return;
+    }
+    var input = document.getElementById('monitor-input');
+    var keyword = input ? String(input.value || '').trim() : '';
+    if (!keyword) {
+        try {
+            alert('キーワードを入力してください。');
+        } catch (e2) {}
+        return;
+    }
+    if (resetPage) _serpFilterState.page = 0;
+    if (keyword !== _serpFilterState.lastKw) _serpFilterState.page = 0;
+    _serpFilterState.lastKw = keyword;
+    var st = document.getElementById('serp-filter-status');
+    if (st) st.textContent = '取得・分類中…';
+    _serpFilterState.loading = true;
+    try {
+        var qs =
+            '/api/monitor?userId=' +
+            encodeURIComponent(uid) +
+            '&serpFilter=1&keyword=' +
+            encodeURIComponent(keyword) +
+            '&page=' +
+            encodeURIComponent(String(_serpFilterState.page)) +
+            '&limit=10&gender=' +
+            encodeURIComponent(_serpFilterProfileGenderParam());
+        var res = await fetchApi(qs);
+        var j = await res.json().catch(function () {
+            return {};
+        });
+        if (!res.ok) {
+            throw new Error(j.error || j.detail || 'HTTP ' + res.status);
+        }
+        _serpFilterState.hasMore = !!j.hasMore;
+        renderSerpFilterList(j.items || []);
+        if (st) {
+            st.textContent =
+                (j.classifier || '?') +
+                ' · page ' +
+                String(j.page != null ? j.page : _serpFilterState.page) +
+                ' · 採用 ' +
+                String(j.total != null ? j.total : (j.items || []).length) +
+                ' 件 / SERP ' +
+                String(j.serpCount != null ? j.serpCount : '?') +
+                ' 件';
+        }
+    } catch (err) {
+        if (st) st.textContent = '失敗: ' + (err && err.message ? err.message : String(err));
+    } finally {
+        _serpFilterState.loading = false;
+    }
+}
+function serpFilterGoPrev() {
+    if (_serpFilterState.page <= 0) return;
+    _serpFilterState.page--;
+    runSerpFilterBrowse(false);
+}
+function serpFilterGoNext() {
+    if (!_serpFilterState.hasMore) return;
+    _serpFilterState.page++;
+    runSerpFilterBrowse(false);
+}
+window.runSerpFilterBrowse = runSerpFilterBrowse;
+window.serpFilterGoPrev = serpFilterGoPrev;
+window.serpFilterGoNext = serpFilterGoNext;
+
+// ── 在庫検索: 補助（初回6スロット並列用）────────────────────────────────
+function isTreatShoeKeywordForStock(k) {
+    const keyword = (k || '').trim();
+    if (!keyword) return false;
+    const kl = keyword.toLowerCase();
+    return SHOE_KW.some((w) => kl.includes(w.toLowerCase())) || SNEAKER_MODEL_HINT_RE.test(keyword) || SHOE_SKU_HINT_RE.test(keyword);
+}
+/** 同時実行した各 /api/search の searchCursor から、最も進んだページング位置のものを採用 */
+function mergeFurthestSearchCursor(cursors) {
+    const arr = (cursors || []).filter(Boolean);
+    if (!arr.length) return { hasMore: false };
+    let best = arr[0];
+    let bestV = -1;
+    for (const c of arr) {
+        const v = (c.prePdpScanIndex != null)
+            ? (Number(c.prePdpScanIndex) || 0)
+            : (Number(c.listOffset) || 0);
+        if (v > bestV) {
+            bestV = v;
+            best = c;
+        }
+    }
+    return best;
+}
+
+/** 検索カード「色・タグ」からプロファイル由来の性別・服/靴サイズ・地域表記を除去するための針集合 */
+function profileLeakNeedlesForStockTags() {
+    const set = new Set();
+    const add = (s) => {
+        const t = (s != null && String(s).trim()) ? String(s).trim().toLowerCase() : '';
+        if (t.length >= 2) { set.add(t); }
+    };
+    add('男性'); add('女性'); add('メンズ'); add('レディース'); add('mens'); add('womens'); add("men's"); add("women's");
+    add('male'); add('female'); add('男の子'); add('女の子'); add('boys'); add('girls');
+    if (typeof userProfile !== 'undefined' && userProfile) {
+        if (userProfile.gender === 'male') { add('男性'); add('メンズ'); }
+        else if (userProfile.gender === 'female') { add('女性'); add('レディース'); }
+        if (userProfile.prefecture) {
+            try { add(formatPrefLabel(userProfile.prefecture)); } catch (e) { add(String(userProfile.prefecture)); }
+            add(String(userProfile.prefecture));
+        }
+        if (userProfile.clothSize) { add(String(userProfile.clothSize)); }
+        if (userProfile.shoeSize) {
+            const raw = String(userProfile.shoeSize).trim();
+            add(raw);
+            const n = raw.replace(/cm$/i, '').trim();
+            if (n) { add(n + 'cm'); add(n); }
+        }
+        if (userProfile.hasChildren) {
+            if (userProfile.childGender === 'boy') { add('男の子'); add('boys'); }
+            if (userProfile.childGender === 'girl') { add('女の子'); add('girls'); }
+            if (userProfile.childClothSize) { add(String(userProfile.childClothSize)); }
+            if (userProfile.childShoeSize) {
+                const r2 = String(userProfile.childShoeSize).trim();
+                add(r2);
+                const n2 = r2.replace(/cm$/i, '').trim();
+                if (n2) { add(n2 + 'cm'); add(n2); }
+            }
+        }
+    }
+    return Array.from(set);
+}
+function stripProfileLeakFromTagText(tag, needles) {
+    let t = String(tag || '').trim();
+    if (!t) { return ''; }
+    let tl = t.toLowerCase();
+    for (const n of needles) {
+        if (!n || n.length < 2) { continue; }
+        if (tl === n) { return ''; }
+        const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        t = t.replace(new RegExp(esc, 'gi'), ' ').replace(/\s+/g, ' ').trim();
+        tl = t.toLowerCase();
+    }
+    return t.replace(/^[/\s,|·•]+|[/\s,|·•]+$/g, '').trim();
+}
+/** 在庫検索中: 先に汎用文言のみ（TTFB を待たせない印象）。サイズ照合はカード出現後に行われる。 */
+function stockSearchPoliteLoadingLine(forChild) {
+    return '楽天・Yahoo!で検索中…';
+}
+/** 商品カード用: colorLabel / tags からプロファイル漏れを落とす */
+function filterTagsForStockCard(item) {
+    const needles = profileLeakNeedlesForStockTags();
+    const colorLabel = stripProfileLeakFromTagText(item && item.colorLabel, needles);
+    const tagsIn = Array.isArray(item && item.tags) ? item.tags : [];
+    const tagsOut = [];
+    for (let i = 0; i < tagsIn.length; i++) {
+        const cleaned = stripProfileLeakFromTagText(tagsIn[i], needles);
+        if (cleaned) { tagsOut.push(cleaned); }
+    }
+    return { colorLabel: colorLabel || '', tags: tagsOut };
+}
+
+// ── RE_EYE 最終完成版（サイズ＋色＋表示上限／次へ暴走防止・UIのみ） ─────────────
+var RE_EYE_LIMIT = 30;
+var RE_EYE_CM_LO = 20;
+var RE_EYE_CM_HI = 35;
+/** 検索クエリ由来の色推定に使う JP（長い語を優先して照合順を固定） */
+var RE_EYE_JP_COLORS_LR = (
+    'ロイヤルブルー,ライトブルー,スカイブルー,ダークブルー,ダークグリーン,ライトグレー,' +
+    'ライトグリーン,バーガンディー,シャンパンゴールド,' +
+    'ピンク,ホワイト,ブラック,レッド,ブルー,グリーン,イエロー,' +
+    'パープル,オレンジ,ベージュ,グレー,ネイビー,ブラウン,' +
+    'シルバー,ゴールド,アイボリー,クリーム,チャコール,ワイン,' +
+    'カーキ,オリーブ,ライム,コーラル,サーモン,ラベンダー,ミント,ターコイズ,' +
+    'エクルー,サンド,マスタード,アクア,インディゴ,スレート,' +
+    '白,黒,赤,青,緑,黄,紫,' +
+    '水色,茶色,桃色'
+).split(',').sort(function (a, b) { return b.length - a.length; });
+var RE_EYE_EN_COLORS_LR = (
+    'lightblue,skyblue,royalblue,darkblue,mint,green,yellow,white,black,red,blue,purple,orange,pink,' +
+    'beige,grey,gray,navy,brown,silver,gold,cream,ivory,coral,salmon,burgundy,khaki,olive,turquoise,charcoal,lavender,celeste,teal,indigo,slate'
+).split(',').sort(function (a, b) { return b.length - a.length; });
+function reEyeNormalize(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/[０-９]/g, function (s) { return String.fromCharCode(s.charCodeAt(0) - 0xFEE0); })
+        .replace(/\uFF0E|[\uFF0C,.]/g, '.')
+        .toUpperCase()
+        .trim();
+}
+function reEyeExtractCm(title) {
+    var text = reEyeNormalize(title).replace(/\s+/g, '');
+    var regex = /(^|[^0-9])([0-9]{2}(?:\.[0-9])?)(cm)?([^0-9]|$)/g;
+    var out = [];
+    var m;
+    while ((m = regex.exec(text)) !== null) {
+        var v = parseFloat(m[2]);
+        if (v >= RE_EYE_CM_LO && v <= RE_EYE_CM_HI) out.push(v);
+    }
+    return out;
+}
+function reEyeUsToCm(us) {
+    var t = {
+        7: 25, 7.5: 25.5, 8: 26, 8.5: 26.5,
+        9: 27, 9.5: 27.5, 10: 28, 10.5: 28.5, 11: 29
+    };
+    return Object.prototype.hasOwnProperty.call(t, us) ? t[us] : null;
+}
+function reEyeEuToCm(eu) {
+    var r = {
+        40: 25, 41: 26, 42: 26.5,
+        43: 27.5, 44: 28, 45: 29
+    };
+    return Object.prototype.hasOwnProperty.call(r, eu) ? r[eu] : null;
+}
+function reEyeExtractIntl(title) {
+    var text = reEyeNormalize(title);
+    var arr = [];
+    var us = text.match(/US\s?([0-9]+(\.[0-9])?)/);
+    if (us) {
+        var cm = reEyeUsToCm(parseFloat(us[1]));
+        if (cm != null) arr.push(cm);
+    }
+    var eu = text.match(/EU\s?([0-9]+)/);
+    if (eu) {
+        var cm2 = reEyeEuToCm(parseFloat(eu[1]));
+        if (cm2 != null) arr.push(cm2);
+    }
+    return arr;
+}
+function reEyeExtractClothing(title) {
+    var text = reEyeNormalize(title);
+    var regex = /(^|[\s\/\-\(\[（])(XS|S|M|L|XL|XXL|XXXL|LL|2XL|3XL)([\s\/\-\)\]）]|$|[\/|,·])/gi;
+    var out = [];
+    var m;
+    var seen = {};
+    while ((m = regex.exec(text)) !== null) {
+        var tok = String(m[2] || '').toUpperCase();
+        if (tok && !seen[tok]) { seen[tok] = true; out.push(tok); }
+    }
+    return out;
+}
+function reEyeExtractNumericClothing(title) {
+    var text = reEyeNormalize(title);
+    var regex = /SIZE\s?([0-9]{2})/gi;
+    var out = [];
+    var m;
+    while ((m = regex.exec(text)) !== null) {
+        out.push(parseInt(m[1], 10));
+    }
+    return out;
+}
+function reEyeFloatNear(a, b) {
+    return Math.abs(Number(a) - Number(b)) <= 0.21;
+}
+function reEyeMatchNumericSizeDetail(item, title, t) {
+    var j;
+    if (item && item.sizes && item.sizes.length) {
+        for (j = 0; j < item.sizes.length; j++) {
+            if (reEyeFloatNear(item.sizes[j], t)) return true;
+        }
+    }
+    var cm = reEyeExtractCm(title);
+    for (j = 0; j < cm.length; j++) {
+        if (reEyeFloatNear(cm[j], t)) return true;
+    }
+    var intl = reEyeExtractIntl(title);
+    for (j = 0; j < intl.length; j++) {
+        if (reEyeFloatNear(intl[j], t)) return true;
+    }
+    var nums = reEyeExtractNumericClothing(title);
+    for (j = 0; j < nums.length; j++) {
+        if (Math.abs(nums[j] - t) < 0.01) return true;
+    }
+    return false;
+}
+function reEyeMatchSize(item, target) {
+    if (!target) return true;
+    var title = item && item.title ? item.title : '';
+    if (!isNaN(target)) {
+        var tNum = typeof target === 'number' ? target : parseFloat(String(target));
+        if (!isNaN(tNum)) return reEyeMatchNumericSizeDetail(item, title, tNum);
+    }
+    var ts = String(target).trim();
+    if (/^[\d.]+$/.test(ts)) {
+        return reEyeMatchNumericSizeDetail(item, title, parseFloat(ts));
+    }
+    var up = ts.toUpperCase();
+    var arr = reEyeExtractClothing(title);
+    return arr.indexOf(up) >= 0;
+}
+/**
+ * 表示・REPORT 用の「目標サイズ」解決。検索クエリに cm 数値があれば最優先、無ければプロフィール（服→靴）。
+ * @param {object} [userProfileOpt]
+ * @param {boolean} forChild
+ * @param {string} [searchKeywordOpt] 検索キーワード（例: エアマックス 26.5）
+ */
+function reEyeGetTarget(userProfileOpt, forChild, searchKeywordOpt) {
+    var kw = searchKeywordOpt != null ? String(searchKeywordOpt) : '';
+    if (kw) {
+        var qcm = reEyeExtractCm(kw);
+        if (qcm.length) {
+            return qcm[0];
+        }
+    }
+    var p =
+        userProfileOpt != null && typeof userProfileOpt === 'object'
+            ? userProfileOpt
+            : typeof userProfile !== 'undefined'
+              ? userProfile
+              : {};
+    if (!p) return '';
+    var clothingRaw = forChild
+        ? (p.childClothSize != null ? p.childClothSize : p.childClothingSize)
+        : (p.clothingSize != null ? p.clothingSize : p.clothSize);
+    if (clothingRaw != null && String(clothingRaw).trim() !== '') {
+        return String(clothingRaw).trim();
+    }
+    var shoe = forChild ? p.childShoeSize : p.shoeSize;
+    if (shoe != null && String(shoe).trim() !== '') {
+        var n = parseFloat(String(shoe).replace(/cm$/i, '').trim());
+        if (!isNaN(n)) return n;
+    }
+    return '';
+}
+/** ユーザーが明示入力した色チップのみ（キーワードからの自動推定は含めない） */
+function reEyeExplicitColorTokens(userSettings) {
+    var explicit = userSettings != null && userSettings.color != null ? String(userSettings.color).trim() : '';
+    if (!explicit) return [];
+    return explicit.split(/\s+/).filter(Boolean);
+}
+function reEyeInkColorsJpFromKeyword(q) {
+    if (!q) return [];
+    var s = String(q);
+    var got = [];
+    var i;
+    for (i = 0; i < RE_EYE_JP_COLORS_LR.length; i++) {
+        var w = RE_EYE_JP_COLORS_LR[i];
+        if (!w) continue;
+        if (s.indexOf(w) >= 0) got.push(w);
+    }
+    return got;
+}
+function reEyeInkColorsEnFromKeyword(q) {
+    if (!q) return [];
+    var s = String(q).toLowerCase();
+    var got = [];
+    var i;
+    for (i = 0; i < RE_EYE_EN_COLORS_LR.length; i++) {
+        var w = RE_EYE_EN_COLORS_LR[i];
+        if (!w) continue;
+        if (s.indexOf(w) >= 0) got.push(w);
+    }
+    return got;
+}
+function reEyeColorRequirements(userSettings, searchKeywordFallback) {
+    var us = userSettings || {};
+    var explicit = (us.color != null ? String(us.color).trim() : '') || '';
+    if (explicit) {
+        var parts = explicit.split(/\s+/).filter(Boolean);
+        if (parts.length) return parts;
+        return [];
+    }
+    var q =
+        searchKeywordFallback != null && String(searchKeywordFallback).trim() !== ''
+            ? String(searchKeywordFallback)
+            : ((_lastStockSearchContext && _lastStockSearchContext.keyword) || '');
+    return reEyeInkColorsJpFromKeyword(q).concat(reEyeInkColorsEnFromKeyword(q));
+}
+function reEyeHaystackForColors(item) {
+    var parts = [(item && item.title) || '', item && item.colorLabel ? item.colorLabel : ''];
+    var tg = Array.isArray(item && item.tags) ? item.tags : [];
+    var i;
+    for (i = 0; i < tg.length; i++) {
+        parts.push(tg[i]);
+    }
+    return parts.join('\n');
+}
+function reEyeMatchColorsAll(item, tokens) {
+    if (!tokens || !tokens.length) return true;
+    var hay = reEyeHaystackForColors(item);
+    var hayU = hay;
+    var hayL = hay.toLowerCase();
+    var j;
+    for (j = 0; j < tokens.length; j++) {
+        var tok = tokens[j];
+        var isLatin = /^[a-z]+$/i.test(tok);
+        if (isLatin) {
+            if (hayL.indexOf(String(tok).toLowerCase()) < 0) return false;
+        } else if (hayU.indexOf(tok) < 0) {
+            return false;
+        }
+    }
+    return true;
+}
+function reEyeSingleColorLoose(item, color) {
+    if (!color) return true;
+    return reEyeHaystackForColors(item).toUpperCase().indexOf(String(color).toUpperCase()) >= 0;
+}
+function reEyeMatchColor(item, colorPhrase) {
+    if (!colorPhrase) return true;
+    var parts = String(colorPhrase).split(/\s+/).filter(Boolean);
+    if (!parts.length) return true;
+    if (parts.length === 1) return reEyeSingleColorLoose(item, parts[0]);
+    var i;
+    for (i = 0; i < parts.length; i++) {
+        if (!reEyeSingleColorLoose(item, parts[i])) return false;
+    }
+    return true;
+}
+/** P0: サイズ判定・サイズ加点禁止。色のみ。 */
+function reEyeScoreItem(item, context) {
+    var score = 0;
+    if (context && context.colors && context.colors.length > 0) {
+        var hayRaw = reEyeHaystackForColors(item);
+        var hayL = hayRaw.toLowerCase();
+        var matchCount = 0;
+        context.colors.forEach(function (c) {
+            var tok = String(c);
+            if (/^[a-z]+$/i.test(tok)) {
+                if (hayL.indexOf(tok.toLowerCase()) !== -1) matchCount++;
+            } else if (hayRaw.indexOf(tok) !== -1) matchCount++;
+        });
+        score += matchCount * 20;
+    }
+    return score;
+}
+function reEyeTakeRemaining(rows, alreadyShown) {
+    return (rows || []).slice(0, Math.max(0, RE_EYE_LIMIT - (alreadyShown | 0)));
+}
+/* reEyeFilterSlices / reEyeFilter は廃止済み — 在庫カード並びは reEyeBuildDisplayItems のスコアリングのみ（件数維持） */
+/** クエリ側の総件数目安と RE_EYE_LIMIT を同時判定（total 省略時は上限のみ） */
+function reEyeHasNext(index, total) {
+    return index < RE_EYE_LIMIT && (total === undefined || total === null || index < total);
+}
+function reEyeDisplayedStockCards() {
+    var el = typeof document !== 'undefined' ? document.getElementById('home-inline-list') : null;
+    return el ? el.querySelectorAll('.home-result-card').length : 0;
+}
+function reEyeBuildDisplayItems(allItems, userSettings, forChild, keywordForColorInference) {
+    var colors = reEyeExplicitColorTokens(userSettings || {});
+    var _inLen = Array.isArray(allItems) ? allItems.length : 0;
+    var scored = (allItems || []).map(function (item) {
+        return {
+            item: item,
+            score: reEyeScoreItem(item, { colors: colors }),
+        };
+    });
+    scored.sort(function (a, b) {
+        return b.score - a.score;
+    });
+    var _out = scored.map(function (x) {
+        return x.item;
+    });
+    try {
+        console.log('[RE_EYE_TRACE][stock:reEyeBuildDisplayItems]', JSON.stringify({ before: _inLen, after: _out.length, mode: 'color_score_only', forChild: !!forChild, explicitColors: colors.length }));
+    } catch (_) {}
+    return _out;
 }
 
 // ── 在庫検索（デザイン維持・ロジック直結版） ────────────────────────────────
@@ -4291,14 +5191,19 @@ async function runStockSearch(keyword, forChild, loadMore) {
     if (!append) {
         if (hdr) hdr.innerHTML = '';
         if (list) list.innerHTML = '';
-        _stockPageState = { seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false };
+        _stockPageState = { seenKeys: new Set(), seenSm: new Set(), displayTripleKeys: new Set(), cursor: null, isPdp: false, loadingMore: false };
+        _stockPrefetch = { running: false, queue: [], seen: new Set(), tripleSeen: new Set(), nextOffset: 0 };
+        _stockCumulativeItemCount = 0;
+        const sst0 = document.getElementById('scout-status-text');
+        if (sst0) { sst0.textContent = stockSearchPoliteLoadingLine(!!forChild); sst0.classList.add('visible'); }
     }
 
     function isSeqPdpCursor(c) {
         return c && c.staged && c.staged.sequentialPdp;
     }
-    // 1 当たり 1 品＋1 PDP 往復（YouTube 型ポン出し; サーバは searchMeta.carrier=sequential-one-pdp）
-    const baseBody = { keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 1, sequentialPdp: true };
+    // 在庫検索は常に limit:1 のみ（初回はスロット0〜5を連続、append・先読みも同様）
+    const STOCK_SEARCH_SINGLE_LIMIT = 1;
+    const baseBody = { keyword: sk, userId: getUserId(), forChild: !!forChild, limit: STOCK_SEARCH_SINGLE_LIMIT, sequentialPdp: true };
     if (append) {
         baseBody.excludeKeys = Array.from(_stockPageState.seenKeys);
         baseBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
@@ -4314,155 +5219,374 @@ async function runStockSearch(keyword, forChild, loadMore) {
 
     try {
         const runOneSearch = async (reqBody) => {
-            const res = await fetchApi('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqBody) });
+            reEyeDebugSearch('POST /api/search', { kw: reqBody.keyword && String(reqBody.keyword).slice(0, 64) });
+            const res = await fetchApi('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(reqBody) });
+            if (res.status === 429) {
+                try {
+                    console.warn('[re-eye] POST /api/search HTTP 429');
+                } catch (_) {}
+                try {
+                    if (typeof reEyeNotifySearch429 === 'function') reEyeNotifySearch429();
+                } catch (_) {}
+            }
             let data = {};
             try { data = await res.json(); } catch (e) {}
+            try {
+                var itemsArr = data && Array.isArray(data.items) ? data.items : null;
+                console.log('[RE_EYE_TRACE][stock:api-json]', JSON.stringify({
+                    httpOk: !!(res && res.ok),
+                    status: res && res.status,
+                    apiItemsLen: itemsArr ? itemsArr.length : (data && data.items == null ? 0 : -1),
+                    prePdpScanIndex: reqBody.prePdpScanIndex,
+                    offset: reqBody.offset,
+                    append: !!append,
+                    cached: !!(data && data.cached),
+                    found: !!(data && data.found),
+                }));
+            } catch (_) {}
             return { res, data };
         };
 
-        let first = true;
-        let displayedInBatch = 0;
-        const maxSeqSteps = 24;
-        const maxPerPage = 10;
         if (!append) {
             if (hdr) hdr.innerHTML = '';
-        }
-
-        for (let step = 0; step < maxSeqSteps; step++) {
-            const reqBody = { ...baseBody, sequentialPdp: true };
-            reqBody.excludeKeys = Array.from(_stockPageState.seenKeys);
-            reqBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
-            if (_stockPageState.isPdp) {
-                const cur = _stockPageState.cursor || {};
-                const n = cur.prePdpScanIndex != null ? cur.prePdpScanIndex : 0;
-                reqBody.prePdpScanIndex = n;
-                reqBody.offset = n;
-            } else if (append) {
-                const cur = _stockPageState.cursor || {};
-                reqBody.offset = cur.listOffset != null ? cur.listOffset : 0;
-            }
-            const { res, data } = await runOneSearch(reqBody);
-            if (myGen !== _stockSearchGen) return;
-            if (data && data.userSettings) {
-                const us = data.userSettings;
-                _lastSearchUserSettings = {
-                    shoeCm: us.shoeCm != null ? us.shoeCm : null,
-                    clothing: us.clothing != null ? us.clothing : null,
-                    prefecture: us.prefecture != null ? us.prefecture : null,
-                    childGender: us.childGender != null ? us.childGender : null,
-                    childClothSize: us.childClothSize != null ? us.childClothSize : null,
-                    childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
-                };
-            }
-            if (!res.ok) {
-                if (!append && first) {
-                    const errText = (data.msg && String(data.msg).trim()) ? String(data.msg) : (String((data && data.error) || '').slice(0, 120) || '不明なエラー');
-                    list.innerHTML = '<div class="stock-not-found meta-11px">通信エラー (HTTP ' + res.status + '): ' + errText + '</div>';
+            // 初回: 3 スロット並列（6 だと同時 PDP 負荷で全体が遅延しやすい）
+            // 各レスは .then で逐次再描画（Promise.all は最終合流用のみ）
+            const isShT = isTreatShoeKeywordForStock(sk);
+            const PAR = 3;
+            const itemBuf = new Map();
+            const slotData = new Array(PAR).fill(null);
+            const slotCursors = new Array(PAR).fill(null);
+            let nkw = sk;
+            let firstItemPainted = false;
+            const sstR = document.getElementById('scout-status-text');
+            const clearScoutStatusOnFirst = () => {
+                if (firstItemPainted) { return; }
+                firstItemPainted = true;
+                if (sstR) { sstR.textContent = ''; sstR.classList.remove('visible'); }
+            };
+            const buildBodyForSlot = (slot) => {
+                const body0 = { keyword: sk, userId: getUserId(), forChild: !!forChild, limit: STOCK_SEARCH_SINGLE_LIMIT, sequentialPdp: true, excludeKeys: [], excludeSellerModelKeys: [] };
+                body0.offset = slot;
+                if (isShT) { body0.prePdpScanIndex = slot; }
+                return body0;
+            };
+            const applyOneSlot = (slot, res, data) => {
+                if (myGen !== _stockSearchGen) { return; }
+                try {
+                    var d0 = data || {};
+                    var it0len = Array.isArray(d0.items) ? d0.items.length : -1;
+                    console.log('[RE_EYE_TRACE][stock:applyOneSlot]', JSON.stringify({ slot, gen: myGen, httpOk: !!(res && res.ok), status: res && res.status, apiItemsLen: it0len, found: !!d0.found }));
+                } catch (_) {}
+                slotData[slot] = { res, data };
+                if (data && data.searchCursor) { slotCursors[slot] = data.searchCursor; }
+                if (data && data.userSettings) {
+                    const us = data.userSettings;
+                    _lastSearchUserSettings = {
+                        shoeCm: us.shoeCm != null ? us.shoeCm : null,
+                        clothing: us.clothing != null ? us.clothing : null,
+                        prefecture: us.prefecture != null ? us.prefecture : null,
+                        childGender: us.childGender != null ? us.childGender : null,
+                        childClothSize: us.childClothSize != null ? us.childClothSize : null,
+                        childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
+                    };
                 }
-                if (ir) ir.style.display = 'block';
+                if (res.ok && data && data.normalizedKeyword) { nkw = data.normalizedKeyword; }
+                if (res.ok && data && data.searchMeta && data.searchMeta.pdpShoe) { _stockPageState.isPdp = true; }
+                if (res.ok) {
+                    const d = data;
+                    if (d.nextStartingItem) {
+                        const b = d.nextStartingItem;
+                        if (b.itemKey) { _stockPageState.seenKeys.add(String(b.itemKey)); }
+                        if (b.dedupeSellerModel) { _stockPageState.seenSm.add(String(b.dedupeSellerModel)); }
+                    }
+                    const it0 = (d.items && d.items[0]) ? d.items[0] : null;
+                    if (it0) {
+                        if (it0.itemKey) { _stockPageState.seenKeys.add(String(it0.itemKey)); }
+                        if (it0.dedupeSellerModel) { _stockPageState.seenSm.add(String(it0.dedupeSellerModel)); }
+                        const tKey = stockDisplayTripleKey(it0);
+                        if (!itemBuf.has(tKey)) { itemBuf.set(tKey, it0); }
+                        if (sp) { sp.style.display = 'none'; }
+                        if (ic) { ic.style.display = ''; }
+                        clearScoutStatusOnFirst();
+                    }
+                    const top5 = sortByPriceAscLocal(filterStockItemsUniqueDisplayTriple([...itemBuf.values()])).slice(
+                        0,
+                        Math.min(5, RE_EYE_LIMIT)
+                    );
+                    _stockCumulativeItemCount = top5.length;
+                    const errs = d.errors || [];
+                    renderStockResults(top5, sk, nkw, errs, { append: false, searchCursor: { hasMore: false }, stockCumulativeN: _stockCumulativeItemCount, fromLoadMoreBatch: false });
+                }
+            };
+            await Promise.all(
+                Array.from({ length: PAR }, (_, slot) => {
+                    return runOneSearch(buildBodyForSlot(slot))
+                        .then((out) => {
+                            applyOneSlot(slot, out.res, out.data);
+                            return { slot, res: out.res, data: out.data };
+                        })
+                        .catch((e) => {
+                            if (myGen !== _stockSearchGen) { return { slot, res: { ok: false, status: 0 }, data: { msg: String((e && e.message) || e) } }; }
+                            const res = { ok: false, status: 0 };
+                            const data = { msg: String((e && e.message) || e) };
+                            slotData[slot] = { res, data };
+                            return { slot, res, data };
+                        });
+                })
+            );
+            if (myGen !== _stockSearchGen) { return; }
+            try {
+                var slotSummary = [];
+                for (var si = 0; si < PAR; si++) {
+                    var oo = slotData[si];
+                    var di = oo && oo.data ? oo.data : {};
+                    slotSummary.push({ slot: si, ok: !!(oo && oo.res && oo.res.ok), apiItemsLen: Array.isArray(di.items) ? di.items.length : -1 });
+                }
+                console.log('[RE_EYE_TRACE][stock:parallel-batch]', JSON.stringify({ gen: myGen, append: !!append, slots: slotSummary, itemBufSize: typeof itemBuf !== 'undefined' && itemBuf && itemBuf.size != null ? itemBuf.size : -1 }));
+            } catch (_) {}
+            let anyHttpOk = false;
+            for (let i = 0; i < PAR; i++) {
+                if (slotData[i] && slotData[i].res && slotData[i].res.ok) { anyHttpOk = true; break; }
+            }
+            if (!anyHttpOk) {
+                const f = slotData[0] || { res: { ok: false, status: 0 }, data: {} };
+                const d = f.data || {};
+                const errText = (d.msg && String(d.msg).trim()) ? String(d.msg) : (String((d && d.error) || '').slice(0, 120) || '不明なエラー');
+                const st = f.res && f.res.status != null ? f.res.status : '?';
+                if (list) { list.innerHTML = '<div class="stock-not-found meta-11px">通信エラー (HTTP ' + st + '): ' + errText + '</div>'; }
+                if (ir) { ir.style.display = 'block'; }
                 return;
             }
-            const apiErrs = data.errors && data.errors.length;
-            if (apiErrs && (!data.items || data.items.length === 0) && (data.debug && (data.debug.handlerError || data.debug.wrapperError))) {
-                if (!append && first) {
-                    list.innerHTML = '<div class="stock-not-found meta-11px">検索サービスに一時的に接続できませんでした。しばらくしてから再度お試しください。</div>';
-                }
-                if (ir) ir.style.display = 'block';
+            const isWrapperBlock = (d) => d && d.errors && d.errors.length && (!d.items || d.items.length === 0) && d.debug && (d.debug.handlerError || d.debug.wrapperError);
+            let allWrapperEmpty = anyHttpOk;
+            for (let i = 0; i < PAR; i++) {
+                const o = slotData[i];
+                if (!o || !o.res || !o.res.ok) { continue; }
+                const d = o.data;
+                if (d && d.items && d.items.length > 0) { allWrapperEmpty = false; break; }
+                if (!isWrapperBlock(d)) { allWrapperEmpty = false; break; }
+            }
+            if (allWrapperEmpty) {
+                if (list) { list.innerHTML = '<div class="stock-not-found meta-11px">検索サービスに一時的に接続できませんでした。しばらくしてから再度お試しください。</div>'; }
+                if (ir) { ir.style.display = 'block'; }
                 return;
             }
-            if (data.debug) {
-                if (data.debug.searchKeywordsTried) {
-                    console.log('[RE-EYE search] 楽天・Yahoo 検索デバッグ', {
-                        apiKeywords: data.debug.searchKeywordsTried,
-                        color条件: data.debug.colorKeywords,
-                        色フィルタ厳格: data.debug.colorFilterStrict,
-                        trimmed: data.debug.trimmed
-                    });
+            for (let i = 0; i < PAR; i++) {
+                const o = slotData[i];
+                if (!o || !o.res || !o.res.ok) { continue; }
+                const d = o.data;
+                for (const it of (d.items || [])) {
+                    if (it.itemKey) { _stockPageState.seenKeys.add(String(it.itemKey)); }
+                    if (it.dedupeSellerModel) { _stockPageState.seenSm.add(String(it.dedupeSellerModel)); }
+                }
+                if (d.nextStartingItem) {
+                    const b = d.nextStartingItem;
+                    if (b.itemKey) { _stockPageState.seenKeys.add(String(b.itemKey)); }
+                    if (b.dedupeSellerModel) { _stockPageState.seenSm.add(String(b.dedupeSellerModel)); }
+                }
+            }
+            const mergedC = mergeFurthestSearchCursor(slotCursors);
+            const top5f = sortByPriceAscLocal(filterStockItemsUniqueDisplayTriple([...itemBuf.values()])).slice(
+                0,
+                Math.min(5, RE_EYE_LIMIT)
+            );
+            const refData = (() => { for (let i = 0; i < PAR; i++) { const o = slotData[i]; if (o && o.data) { return o.data; } } return {}; })();
+            const mergedErrs = [];
+            for (let i = 0; i < PAR; i++) {
+                const o = slotData[i];
+                if (o && o.data && o.data.errors) { mergedErrs.push.apply(mergedErrs, o.data.errors || []); }
+            }
+            if (refData && refData.normalizedKeyword) { nkw = refData.normalizedKeyword; }
+            if (itemBuf.size === 0) {
+                if (list) { list.innerHTML = ''; }
+                if (refData) {
+                    const d0 = refData;
+                    if (d0 && d0.userSettings) {
+                        const us = d0.userSettings;
+                        _lastSearchUserSettings = {
+                            shoeCm: us.shoeCm != null ? us.shoeCm : null,
+                            clothing: us.clothing != null ? us.clothing : null,
+                            prefecture: us.prefecture != null ? us.prefecture : null,
+                            childGender: us.childGender != null ? us.childGender : null,
+                            childClothSize: us.childClothSize != null ? us.childClothSize : null,
+                            childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
+                        };
+                    }
+                }
+                const d = refData;
+                if (d && d.msg && String(d.msg).trim() && d.inventoryRuleNoHits) {
+                    const p = document.createElement('p');
+                    p.className = 'meta-11px';
+                    p.textContent = String(d.msg);
+                    if (list) { list.appendChild(p); }
                 } else {
-                    console.log('[RE-EYE search] profileFromRedis', data.debug.profileFromRedis, 'stopReason', data.debug.stopReason);
-                }
-            } else {
-                console.log('[RE-EYE search] keyword=', sk, 'normalized=', data.normalizedKeyword);
-            }
-
-            const seq = isSeqPdpCursor(data.searchCursor);
-            if (data.items && data.items[0] && data.items[0].pdpSizeVerified) _stockPageState.isPdp = true;
-            if (!data.items || data.items.length === 0) {
-                if (first && !append) {
-                    list.innerHTML = '';
                     const nf = document.createElement('div');
                     nf.className = 'stock-not-found';
                     const p = document.createElement('p');
-                    p.textContent = (data.msg && String(data.msg).trim())
-                        ? String(data.msg)
-                        : (data.inventoryRuleNoHits
-                            ? '条件に合う在庫が見つかりませんでした。'
-                            : '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。');
-                    const btn = document.createElement('button');
-                    btn.className = 'btn-purple';
-                    btn.style.marginTop = '10px';
-                    btn.textContent = 'この条件で「再入荷」を監視する';
-                    const manualId = 'manual_' + Date.now();
-                    const dispTitle = data.normalizedKeyword || sk;
-                    btn.onclick = () => watchStockItem({
-                        itemId: manualId, sourceId: 'manual', title: dispTitle,
-                        price: 0, available: false, url: '', shopName: 'キーワード監視'
-                    }, sk, btn);
+                    const marketHasNew = (d.marketNewFound === true) || (Number(d.marketNewCount) > 0);
+                    const marketNoNew = (d.marketNewFound === false) || (d.marketNewCount === 0);
+                    p.textContent = (d.msg && String(d.msg).trim())
+                        ? String(d.msg)
+                        : (marketHasNew
+                            ? '新品候補は見つかりましたが、あなたの条件（色・サイズ等）に合う在庫が見つかりませんでした。'
+                            : (d.inventoryRuleNoHits
+                                ? '条件に合う在庫が見つかりませんでした。'
+                                : '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。'));
+                    if (marketNoNew) {
+                        const rs = (d && d.rejectReasonSummary) ? d.rejectReasonSummary : {};
+                        const marketRaw = Number(rs.marketRaw) || 0;
+                        const noiseEx = Number(rs.noiseExcluded) || 0;
+                        const sizeEx = Number(rs.clothSizeMismatch) || 0;
+                        const colorEx = Number(rs.colorMismatch) || 0;
+                        const modelEx = Number(rs.modelMismatch) || 0;
+                        const kwEx = Number(rs.keywordMismatch) || 0;
+                        const pdpEx = Number(rs.pdpRejected) || 0;
+                        const dropped = noiseEx + sizeEx + colorEx + modelEx + kwEx + pdpEx;
+                        if (marketRaw > 0 || dropped > 0) {
+                            const memo = document.createElement('div');
+                            memo.className = 'meta-11px';
+                            memo.style.cssText = 'margin-top:8px;color:rgba(247,231,206,0.75);line-height:1.45;';
+                            const parts = [];
+                            if (noiseEx) { parts.push('中古/難あり除外: ' + noiseEx + '件'); }
+                            if (pdpEx) { parts.push('サイズPDP不一致: ' + pdpEx + '件'); }
+                            if (sizeEx) { parts.push('サイズ不一致: ' + sizeEx + '件'); }
+                            if (colorEx) { parts.push('色不一致: ' + colorEx + '件'); }
+                            if (modelEx) { parts.push('品番不一致: ' + modelEx + '件'); }
+                            if (kwEx) { parts.push('商品名不一致: ' + kwEx + '件'); }
+                            const head = marketRaw ? (marketRaw + '件ヒット') : (dropped + '件ヒット');
+                            memo.textContent = head + 'しましたが、' + (parts.length ? parts.join(' / ') : '条件により除外されました') + '。';
+                            nf.appendChild(memo);
+                        }
+                        const btn = document.createElement('button');
+                        btn.className = 'btn-purple';
+                        btn.style.marginTop = '10px';
+                        btn.textContent = 'この条件で「再入荷」を監視する';
+                        const manualId = 'manual_' + Date.now();
+                        const dispTitle = d.normalizedKeyword || sk;
+                        btn.onclick = () => watchStockItem({
+                            itemId: manualId, sourceId: 'manual', title: dispTitle,
+                            price: 0, available: false, url: '', shopName: 'キーワード監視',
+                        }, sk, btn);
+                        nf.appendChild(btn);
+                    }
                     nf.appendChild(p);
-                    nf.appendChild(btn);
-                    list.appendChild(nf);
+                    if (list) { list.appendChild(nf); }
                 }
-                _stockPageState.cursor = data.searchCursor || null;
-                if (ir) ir.style.display = 'block';
-                const oldB0 = document.getElementById('stock-load-more-wrap');
-                if (oldB0) oldB0.remove();
-                if (!seq || !data.searchCursor || !data.searchCursor.hasMore) {
-                    if (ir) ir.style.display = 'block';
+                _stockPageState.cursor = (d && d.searchCursor) || mergedC;
+                if (ir) { ir.style.display = 'block'; }
+                return;
+            }
+            _stockPageState.cursor = mergedC;
+            _stockCumulativeItemCount = top5f.length;
+            renderStockResults(top5f, sk, nkw, mergedErrs, {
+                append: false,
+                searchCursor: mergedC || { hasMore: false },
+                fromLoadMoreBatch: false,
+                stockCumulativeN: _stockCumulativeItemCount,
+            });
+            try {
+                reEyeFinalizeStockPrimaryCache({
+                    fingerprint: reEyeClientSearchFingerprint('stock', keyword, forChild),
+                    keyword: keyword,
+                    forChild: forChild,
+                    sk: sk,
+                    gen: myGen,
+                    pageState: reEyeFreezeStockPageState(),
+                    bundle: {
+                        items: JSON.parse(JSON.stringify(top5f)),
+                        sk: sk,
+                        nkw: nkw,
+                        mergedErrs: JSON.parse(JSON.stringify(mergedErrs || [])),
+                        mergedC: mergedC ? JSON.parse(JSON.stringify(mergedC)) : { hasMore: false },
+                        stockCumulativeN: _stockCumulativeItemCount,
+                    },
+                });
+            } catch (_) {}
+            setTimeout(() => { try { prefetchStockNextPages(); } catch (e) {} }, 80);
+        } else {
+            if (hdr) { hdr.innerHTML = ''; }
+            const APPEND_BATCH_TARGET = 5;
+            const APPEND_MAX_STEPS = 48;
+            let added = 0;
+            for (let step = 0; step < APPEND_MAX_STEPS && added < APPEND_BATCH_TARGET; step++) {
+                if (reEyeDisplayedStockCards() >= RE_EYE_LIMIT) break;
+                const reqBody = { ...baseBody, sequentialPdp: true };
+                reqBody.excludeKeys = Array.from(_stockPageState.seenKeys);
+                reqBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
+                if (_stockPageState.isPdp) {
+                    const cur = _stockPageState.cursor || {};
+                    const n = cur.prePdpScanIndex != null ? cur.prePdpScanIndex : 0;
+                    reqBody.prePdpScanIndex = n;
+                    reqBody.offset = n;
+                } else {
+                    const cur = _stockPageState.cursor || {};
+                    reqBody.offset = cur.listOffset != null ? cur.listOffset : 0;
+                }
+                const { res, data } = await runOneSearch(reqBody);
+                if (myGen !== _stockSearchGen) { return; }
+                if (data && data.userSettings) {
+                    const us = data.userSettings;
+                    _lastSearchUserSettings = {
+                        shoeCm: us.shoeCm != null ? us.shoeCm : null,
+                        clothing: us.clothing != null ? us.clothing : null,
+                        prefecture: us.prefecture != null ? us.prefecture : null,
+                        childGender: us.childGender != null ? us.childGender : null,
+                        childClothSize: us.childClothSize != null ? us.childClothSize : null,
+                        childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
+                    };
+                }
+                if (!res.ok) {
+                    try {
+                        if (res.status === 429 && typeof reEyeNotifySearch429 === 'function') reEyeNotifySearch429();
+                    } catch (_) {}
+                    if (ir) { ir.style.display = 'block'; }
                     return;
                 }
-                first = false;
-                continue;
-            }
-
-            for (const it of data.items) {
-                if (it.itemKey) _stockPageState.seenKeys.add(String(it.itemKey));
-                if (it.dedupeSellerModel) _stockPageState.seenSm.add(String(it.dedupeSellerModel));
-            }
-            if (data.nextStartingItem) {
-                const b = data.nextStartingItem;
-                if (b.itemKey) _stockPageState.seenKeys.add(String(b.itemKey));
-                if (b.dedupeSellerModel) _stockPageState.seenSm.add(String(b.dedupeSellerModel));
-            }
-            _stockPageState.cursor = data.searchCursor || null;
-            if (myGen !== _stockSearchGen) return;
-            const pdpItem = (data.items || [])[0] && (data.items || [])[0].pdpSizeVerified;
-            if (!append && pdpItem && seq) {
-                (data.items || []).forEach((it, j) => {
-                    if (myGen !== _stockSearchGen) return;
-                    renderStockResults([it], sk, data.normalizedKeyword || sk, data.errors || [], { append: !(first && j === 0), searchCursor: data.searchCursor });
+                const apiErrs = data.errors && data.errors.length;
+                if (apiErrs && (!data.items || data.items.length === 0) && (data.debug && (data.debug.handlerError || data.debug.wrapperError))) {
+                    if (ir) { ir.style.display = 'block'; }
+                    return;
+                }
+                const seq = isSeqPdpCursor(data.searchCursor);
+                if (data.searchMeta && data.searchMeta.pdpShoe) { _stockPageState.isPdp = true; }
+                if (!data.items || data.items.length === 0) {
+                    _stockPageState.cursor = data.searchCursor || null;
+                    if (!seq || !data.searchCursor || !data.searchCursor.hasMore) {
+                        const oldB0 = document.getElementById('stock-load-more-wrap');
+                        if (oldB0) { oldB0.remove(); }
+                        if (ir) { ir.style.display = 'block'; }
+                        return;
+                    }
+                    continue;
+                }
+                for (const it of data.items) {
+                    if (it.itemKey) { _stockPageState.seenKeys.add(String(it.itemKey)); }
+                    if (it.dedupeSellerModel) { _stockPageState.seenSm.add(String(it.dedupeSellerModel)); }
+                }
+                if (data.nextStartingItem) {
+                    const b = data.nextStartingItem;
+                    if (b.itemKey) { _stockPageState.seenKeys.add(String(b.itemKey)); }
+                    if (b.dedupeSellerModel) { _stockPageState.seenSm.add(String(b.dedupeSellerModel)); }
+                }
+                _stockPageState.cursor = data.searchCursor || null;
+                const pdpItem = data.searchMeta && data.searchMeta.pdpShoe;
+                await renderStockResultsStaggered(data.items || [], sk, data.normalizedKeyword || sk, data.errors || [], {
+                    append: true,
+                    searchCursor: data.searchCursor || { hasMore: false },
+                    fromLoadMoreBatch: true,
+                    isSeqPdp: !!(pdpItem && seq),
                 });
-            } else {
-                renderStockResults(data.items, sk, data.normalizedKeyword || sk, data.errors || [], { append: !first && !append, searchCursor: data.searchCursor });
+                added += (data.items || []).length;
+                if (added >= APPEND_BATCH_TARGET) {
+                    break;
+                }
+                if (!data.searchCursor || !data.searchCursor.hasMore) {
+                    break;
+                }
             }
-            if (seq && pdpItem && myGen === _stockSearchGen) {
-                await new Promise((resolve) => setTimeout(resolve, 0));
-            }
-            displayedInBatch += (data.items || []).length;
-            if (!(seq && pdpItem)) {
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            if (displayedInBatch >= maxPerPage) {
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            if (!data.searchCursor || !data.searchCursor.hasMore) {
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            first = false;
+            setTimeout(() => { try { prefetchStockNextPages(); } catch (e) {} }, 80);
+            if (ir) { ir.style.display = 'block'; }
         }
-        if (ir) ir.style.display = 'block';
     } catch (e) {
         if (myGen !== _stockSearchGen) return;
         if (!append) {
@@ -4474,11 +5598,35 @@ async function runStockSearch(keyword, forChild, loadMore) {
             if (ic) ic.style.display = '';
             if (ir) ir.style.display = 'block';
         }
+        const sstE = document.getElementById('scout-status-text');
+        if (sstE) { sstE.textContent = ''; sstE.classList.remove('visible'); }
     }
 }
 async function loadMoreStockResults() {
     if (_stockPageState.loadingMore) return;
     if (!_lastStockSearchContext.keyword) return;
+    if (reEyeDisplayedStockCards() >= RE_EYE_LIMIT) return;
+    // 先読みキューがあれば即描画（裏でさらに先読み）
+    if (_stockPrefetch.queue.length > 0) {
+        _stockPageState.loadingMore = true;
+        try {
+            var _roomLm = Math.max(0, RE_EYE_LIMIT - reEyeDisplayedStockCards());
+            const take = _stockPrefetch.queue.splice(0, Math.min(5, _roomLm));
+            if (take.length) {
+                await renderStockResultsStaggered(take, _lastStockSearchContext.displayKw, _lastStockSearchContext.displayKw, [], {
+                    append: true,
+                    searchCursor: _stockPageState.cursor,
+                    stockCumulativeN: _stockCumulativeItemCount,
+                    fromLoadMoreBatch: true,
+                });
+            }
+            // 次の先読みを継続
+            setTimeout(() => { try { prefetchStockNextPages(); } catch (e) {} }, 50);
+        } finally {
+            _stockPageState.loadingMore = false;
+        }
+        return;
+    }
     if (!_stockPageState.cursor || !_stockPageState.cursor.hasMore) return;
     _stockPageState.loadingMore = true;
     const btn = document.getElementById('stock-load-more-btn');
@@ -4487,7 +5635,214 @@ async function loadMoreStockResults() {
         await runStockSearch(_lastStockSearchContext.keyword, _lastStockSearchContext.forChild, true);
     } finally {
         _stockPageState.loadingMore = false;
-        if (btn) { btn.disabled = false; btn.textContent = 'さらに10件の在庫を確認する'; }
+        if (btn) { btn.disabled = false; btn.textContent = '次へ（さらに索敵）'; }
+    }
+}
+
+function mallLabelForItem(it) {
+    const s = String((it && (it.sourceId || it.source)) || '').toLowerCase();
+    if (s.includes('rakuten')) return '楽天';
+    if (s.includes('yahoo')) return 'Yahoo';
+    if (s.includes('google')) return 'Google';
+    return 'MALL';
+}
+
+function sortByPriceAscLocal(items) {
+    const arr = Array.isArray(items) ? [...items] : [];
+    arr.sort((a,b)=> (Number(a&&a.price)||0) - (Number(b&&b.price)||0));
+    return arr;
+}
+
+// ── 在庫カード：鉄の掟 — 店舗＋品名（揺れ吸収）＋価格が同一なら1枠だけ（URL・itemId の違いは無視）
+function stockDisplayYenKey(item) {
+    const p = Number(item && item.price);
+    if (!Number.isFinite(p)) { return '—'; }
+    return String(Math.round(p));
+}
+function stockDisplayTitleNorm(s) {
+    if (!s) { return ''; }
+    let t = String(s).normalize('NFKC');
+    t = t.replace(/[\u200b\ufeff\u00a0]/g, '');
+    t = t.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    t = t.toLowerCase();
+    t = t.replace(/[\r\n\t]+/g, ' ').replace(/[\s\u3000]+/g, ' ');
+    t = t.replace(/(ＢＯＸ|ボックス|boxes)/g, 'box');
+    t = t.replace(/(\d+)\s*box(?:es|分|個|枚)?/gi, '$1box');
+    t = t.replace(/(\d+)\s*pack(?:s|分)?/gi, '$1pack');
+    t = t.replace(/[\s\u3000]+/g, ' ').trim();
+    return t.slice(0, 200);
+}
+function stockDisplayShopKey(item) {
+    if (!item) { return '::'; }
+    const sid = String(item.sourceId || item.source || '').toLowerCase().replace(/\s+/g, '') || 'mall';
+    let shop = (item.sellerName || item.shopName || '').trim();
+    if (!shop && item.url) {
+        try { shop = new URL(String(item.url)).hostname; } catch (e) { /* */ }
+    }
+    shop = String(shop).normalize('NFKC').toLowerCase();
+    shop = shop.replace(/(yahoo!|yahoo|ショッピング|!店|店舗|公式)/g, ' ');
+    shop = shop.replace(/[\s\u3000]+/g, ' ').trim() || '—';
+    return sid + '::' + shop.slice(0, 100);
+}
+function stockDisplayTripleKey(item) {
+    return stockDisplayShopKey(item) + '\u0001' + stockDisplayTitleNorm(item && item.title) + '\u0001' + stockDisplayYenKey(item);
+}
+function filterStockItemsUniqueDisplayTriple(items) {
+    const seen = new Set();
+    const out = [];
+    for (const it of (items || [])) {
+        const k = stockDisplayTripleKey(it);
+        if (seen.has(k)) { continue; }
+        seen.add(k);
+        out.push(it);
+    }
+    return out;
+}
+
+async function renderStockResultsStaggered(items, keyword, displayKw, apiErrors, opts) {
+    var rawArr = sortByPriceAscLocal(filterStockItemsUniqueDisplayTriple(items || []));
+    var _kwSt = (_lastStockSearchContext && _lastStockSearchContext.keyword) ? _lastStockSearchContext.keyword : '';
+    rawArr = reEyeBuildDisplayItems(
+        rawArr,
+        typeof userProfile !== 'undefined' ? userProfile : {},
+        !!(_lastStockSearchContext && _lastStockSearchContext.forChild),
+        _kwSt
+    );
+    var existingN = reEyeDisplayedStockCards();
+    var roomSt = Math.max(0, RE_EYE_LIMIT - existingN);
+    const arr = rawArr.slice(0, Math.min(5, roomSt));
+    if (!arr.length) return;
+    const delayMs = 85;
+    for (let i = 0; i < arr.length; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, delayMs));
+        const sc0 = (opts && opts.searchCursor) ? opts.searchCursor : null;
+        const isLast = i === arr.length - 1;
+        const sc = (sc0 && typeof sc0 === 'object')
+            ? (isLast ? sc0 : Object.assign({}, sc0, { hasMore: false }))
+            : (isLast ? sc0 : { hasMore: false });
+        renderStockResults([arr[i]], keyword, displayKw, apiErrors, Object.assign({}, opts || {}, {
+            append: (opts && opts.append) || i > 0,
+            searchCursor: sc,
+            stockCumulativeN: _stockCumulativeItemCount,
+        }));
+    }
+}
+
+async function prefetchStockNextPages() {
+    if (_stockPrefetch.running) return;
+    if (!_lastStockSearchContext.keyword) return;
+    if (!_stockPageState.cursor || !_stockPageState.cursor.hasMore) return;
+    if (reEyeDisplayedStockCards() >= RE_EYE_LIMIT) return;
+    _stockPrefetch.running = true;
+    try {
+        var _capRemain = Math.max(0, RE_EYE_LIMIT - reEyeDisplayedStockCards());
+        var PREFETCH_TARGET = Math.min(12, _capRemain);
+        if (PREFETCH_TARGET <= 0) return;
+        const PREFETCH_MAX_STEPS = 24;
+        for (let s = 0; s < PREFETCH_MAX_STEPS && _stockPrefetch.queue.length < PREFETCH_TARGET; s++) {
+            if (!_stockPageState.cursor || !_stockPageState.cursor.hasMore) break;
+            const baseBody = {
+                keyword: _lastStockSearchContext.displayKw,
+                userId: getUserId(),
+                forChild: !!_lastStockSearchContext.forChild,
+                limit: 1,
+                sequentialPdp: true,
+                excludeKeys: Array.from(_stockPageState.seenKeys),
+                excludeSellerModelKeys: Array.from(_stockPageState.seenSm),
+            };
+            const cur = _stockPageState.cursor || {};
+            if (_stockPageState.isPdp) {
+                const n = cur.prePdpScanIndex != null ? cur.prePdpScanIndex : 0;
+                baseBody.prePdpScanIndex = n;
+                baseBody.offset = n;
+            } else {
+                baseBody.offset = cur.listOffset != null ? cur.listOffset : 0;
+            }
+            const res = await fetchApi('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(baseBody) });
+            if (!res.ok) break;
+            const data = await res.json().catch(()=>({}));
+            try {
+                var prefetchRawLen = Array.isArray(data.items) ? data.items.length : 0;
+                console.log('[RE_EYE_TRACE][stock:prefetch]', JSON.stringify({ step: s, httpOk: res.ok, prefetchApiItemsLen: prefetchRawLen, queuedBefore: _stockPrefetch.queue.length, cursorHasMore: !!(data.searchCursor && data.searchCursor.hasMore) }));
+            } catch (_) {}
+            const items = reEyeBuildDisplayItems(
+                Array.isArray(data.items) ? data.items : [],
+                typeof userProfile !== 'undefined' ? userProfile : {},
+                !!(_lastStockSearchContext && _lastStockSearchContext.forChild),
+                (_lastStockSearchContext && _lastStockSearchContext.keyword) ? _lastStockSearchContext.keyword : ''
+            );
+            try {
+                console.log('[RE_EYE_TRACE][stock:prefetch]', JSON.stringify({ step: s, phase: 'after-display-filter', passItemsLen: items.length }));
+            } catch (_) {}
+            _stockPageState.cursor = data.searchCursor || _stockPageState.cursor;
+            if (!items.length) {
+                if (!data.searchCursor || !data.searchCursor.hasMore) break;
+                continue;
+            }
+            for (const it of items) {
+                const tdk = stockDisplayTripleKey(it);
+                if (_stockPageState.displayTripleKeys && _stockPageState.displayTripleKeys.has(tdk)) { continue; }
+                if (!_stockPrefetch.tripleSeen) { _stockPrefetch.tripleSeen = new Set(); }
+                if (_stockPrefetch.tripleSeen.has(tdk)) { continue; }
+                _stockPrefetch.tripleSeen.add(tdk);
+                const k = it && it.itemKey ? String(it.itemKey) : '';
+                if (k && _stockPrefetch.seen.has(k)) continue;
+                if (k) { _stockPrefetch.seen.add(k); }
+                _stockPrefetch.queue.push(it);
+            }
+        }
+    } catch (e) {
+    } finally {
+        _stockPrefetch.running = false;
+    }
+}
+
+// ── REPORT（検索品質監視・自己修復の入口）──────────────────────────────────────
+// 差分(excluded)はフロントで作らない。サーバー側で必ず再現して計算する。
+var _lastReEyeReportCtx = null;
+function reEyeReportStableId(it) {
+    if (!it) return '';
+    const sourceId = String(it.sourceId || it.source || '').trim();
+    const itemId = String(it.itemId || '').trim();
+    const title = String(it.title || '').trim().slice(0, 160);
+    const price = String(it.price || '').trim();
+    const shop = String(it.shopName || it.sellerName || '').trim().slice(0, 80);
+    return ('f:' + [sourceId, itemId, title, price, shop].join('|')).slice(0, 420);
+}
+function buildReportPayload(ctx) {
+    var c = ctx || {};
+    var apiItems = Array.isArray(c.apiItems) ? c.apiItems : [];
+    var displayItemIds = Array.isArray(c.displayItemIds) ? c.displayItemIds : [];
+    return {
+        query: c.query || '',
+        userProfile: (typeof userProfile !== 'undefined' ? userProfile : {}) || {},
+        targetSize: c.targetSize || '',
+        color: c.color || '',
+        apiItems: apiItems,
+        displayItemIds: displayItemIds,
+        sourceApi: c.sourceApi || 'rakuten_yahoo_rule_based',
+        userId: (typeof getUserId === 'function') ? getUserId() : '',
+    };
+}
+async function postReEyeReportFromLast(btn) {
+    if (!_lastReEyeReportCtx) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'REPORT中...'; }
+    try {
+        var payload = buildReportPayload(_lastReEyeReportCtx);
+        var res = await fetchApi('/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        var data = {};
+        try { data = await res.json(); } catch (e) {}
+        if (btn) {
+            if (res && res.ok) {
+                var sev = (data && data.analysis && data.analysis.severity) ? String(data.analysis.severity) : 'ok';
+                btn.textContent = 'REPORTED (' + sev + ')';
+            } else {
+                btn.textContent = 'REPORT失敗';
+                btn.disabled = false;
+            }
+        }
+    } catch (e) {
+        if (btn) { btn.textContent = 'REPORT失敗'; btn.disabled = false; }
     }
 }
 
@@ -4499,60 +5854,101 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
     const list = document.getElementById('home-inline-list');
     const hdr = document.getElementById('home-slot-header');
     if (!wrap || !list) return;
+    let listItems = items || [];
     if (!append) {
+        listItems = filterStockItemsUniqueDisplayTriple(listItems);
+        if (!_stockPageState.displayTripleKeys) { _stockPageState.displayTripleKeys = new Set(); }
+        _stockPageState.displayTripleKeys = new Set((listItems || []).map((it) => stockDisplayTripleKey(it)));
         list.innerHTML = '';
+    } else {
+        if (!_stockPageState.displayTripleKeys) { _stockPageState.displayTripleKeys = new Set(); }
+        const next = [];
+        for (const it of listItems) {
+            const tdk = stockDisplayTripleKey(it);
+            if (_stockPageState.displayTripleKeys.has(tdk)) { continue; }
+            _stockPageState.displayTripleKeys.add(tdk);
+            next.push(it);
+        }
+        listItems = next;
+        if (listItems.length === 0) { return; }
     }
+
+    var kwInf = (_lastStockSearchContext && _lastStockSearchContext.keyword) ? _lastStockSearchContext.keyword : '';
+    var existingCards = append ? list.querySelectorAll('.home-result-card').length : 0;
+
+    var apiItemsForReport = listItems || [];
+    try {
+        console.log('[RE_EYE_TRACE][stock:renderStockResults]', JSON.stringify({ phase: 'pre-reEyeBuildDisplayItems', append: !!append, apiItemsLen: (listItems || []).length }));
+    } catch (_) {}
+    listItems = reEyeBuildDisplayItems(
+        listItems || [],
+        typeof userProfile !== 'undefined' ? userProfile : {},
+        !!(_lastStockSearchContext && _lastStockSearchContext.forChild),
+        kwInf
+    );
+    try {
+        console.log('[RE_EYE_TRACE][stock:renderStockResults]', JSON.stringify({ phase: 'post-reEyeBuildDisplayItems', append: !!append, displayLen: (listItems || []).length }));
+    } catch (_) {}
+    listItems = reEyeTakeRemaining(listItems, existingCards);
+    if (listItems.length === 0) { return; }
 
     if (hdr && !append) {
-        hdr.innerHTML = `<span class="gold-label" style="font-size:11px;">検索結果 — ${displayKw}</span>`;
-    }
+        hdr.innerHTML = '';
+        var headWrap = document.createElement('div');
+        headWrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;';
+        var label = document.createElement('span');
+        label.className = 'gold-label';
+        label.style.fontSize = '11px';
+        label.textContent = `検索結果 — ${displayKw}`;
+        headWrap.appendChild(label);
+        var repBtn = document.createElement('button');
+        repBtn.type = 'button';
+        repBtn.className = 'btn-purple';
+        repBtn.style.cssText = 'padding:8px 12px;font-size:11px;letter-spacing:2.5px;min-width:120px;';
+        repBtn.textContent = 'REPORT';
+        repBtn.onclick = function () { postReEyeReportFromLast(repBtn); };
+        headWrap.appendChild(repBtn);
+        hdr.appendChild(headWrap);
 
-    if (!append) {
-        const aiBanner = document.createElement('div');
-        aiBanner.className = 'meta-11px';
-        aiBanner.setAttribute('role', 'status');
-        aiBanner.style.cssText =
-            'margin-bottom:14px;padding:12px 14px;line-height:1.55;letter-spacing:0.4px;' +
-            'color:var(--champagne-gold);font-weight:600;font-size:12px;' +
-            'border:1px solid rgba(155,89,182,0.55);border-radius:2px;' +
-            'background:rgba(155,89,182,0.12);box-shadow:0 0 18px rgba(155,89,182,0.15);';
-        const pref = _lastSearchUserSettings && _lastSearchUserSettings.prefecture;
-        const prefLine = pref
-            ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
-            : '価格・送料の目安は各店舗条件により異なります。';
-        aiBanner.textContent =
-            'AI判定：在庫の可能性があります。表示価格は「目安」です（送料・最安は保証しません）。詳細はリンク先で確認してください。' +
-            ' ' +
-            prefLine;
-        list.appendChild(aiBanner);
+        try {
+            var us0 = (typeof userProfile !== 'undefined' ? userProfile : {}) || {};
+            var forChild0 = !!(_lastStockSearchContext && _lastStockSearchContext.forChild);
+            var targetSize0 = reEyeGetTarget(us0, forChild0, kwInf);
+            var color0 = reEyeExplicitColorTokens(us0).join(' ');
+            _lastReEyeReportCtx = {
+                query: displayKw || keyword || '',
+                targetSize: targetSize0 || '',
+                color: color0 || '',
+                sourceApi: 'rakuten_yahoo_rule_based',
+                apiItems: apiItemsForReport || [],
+                displayItemIds: (listItems || []).map(reEyeReportStableId).filter(Boolean),
+            };
+        } catch (e) {
+            _lastReEyeReportCtx = null;
+        }
     }
 
     const oldMore = document.getElementById('stock-load-more-wrap');
     if (oldMore) oldMore.remove();
 
-    (items || []).forEach(item => {
+    var projectedShown = existingCards + listItems.length;
+    const canShowLoadMore = !!(sc && sc.hasMore) && reEyeHasNext(projectedShown);
+
+    (listItems || []).forEach((item) => {
         const card = document.createElement('div');
         card.className = 'home-result-card';
         
         const t = document.createElement('div');
         t.className = 'item-title';
         t.textContent = item.title || keyword;
-        const wm = buildWatchMetaLine(_lastStockSearchContext.forChild);
-        if (wm) {
-            const wx = document.createElement('div');
-            wx.className = 'meta-11px';
-            wx.style.cssText = 'color:var(--amethyst);opacity:0.95;margin-top:4px;';
-            wx.textContent = wm;
-            card.appendChild(t);
-            card.appendChild(wx);
-        } else {
-            card.appendChild(t);
-        }
+        card.appendChild(t);
         const m = document.createElement('div');
         m.className = 'stock-shop-meta';
-        m.textContent = `${item.shopName || ''}${item.price ? '  ¥' + Number(item.price).toLocaleString() : ''}`;
+        const mall = mallLabelForItem(item);
+        m.textContent = `[${mall}] ${(item.shopName || '')}${item.price ? '  ¥' + Number(item.price).toLocaleString() : ''}`;
         card.appendChild(m);
-        const colorBits = [item.colorLabel, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean);
+        const ft = filterTagsForStockCard(item);
+        const colorBits = [ft.colorLabel, ...ft.tags].filter(Boolean);
         if (colorBits.length) {
             const col = document.createElement('div');
             col.className = 'meta-11px';
@@ -4564,26 +5960,50 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
         const actionArea = document.createElement('div');
         actionArea.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px;';
 
+        const pdc = item.pdpSizeCheck;
+        const showInStockBlock = pdc && pdc.ok !== false;
+        if (showInStockBlock) {
+            const st = document.createElement('div');
+            st.className = 'meta-11px';
+            st.style.cssText = 'color:rgba(247,231,206,0.9);margin-bottom:4px;letter-spacing:0.5px;';
+            if (pdc.ok == null) {
+                st.textContent = '在庫: 確認中';
+            } else if (pdc.ok && item.pdpSizeTentative) {
+                st.textContent = '在庫: 確認中';
+            } else if (pdc.ok) {
+                st.textContent = '在庫: 在庫あり';
+            }
+            actionArea.appendChild(st);
+        }
+        if (pdc && pdc.ok === true && item.pdpSizeTentative && item.url) {
+            const n = document.createElement('div');
+            n.className = 'meta-11px';
+            n.style.cssText = 'color:rgba(247,231,206,0.75);margin-bottom:2px;line-height:1.45;';
+            n.textContent = 'ページ上で在庫を最終確認してください。';
+            actionArea.appendChild(n);
+        }
+
         if (item.available) {
             const buyBtn = document.createElement('button');
             buyBtn.className = 'stock-buy-btn';
-            buyBtn.textContent = '購入ページへ（現在在庫あり）';
+            const buyTent = (pdc && pdc.ok == null) || (pdc && pdc.ok && item.pdpSizeTentative);
+            buyBtn.textContent = buyTent ? '購入ページへ（確認中）' : '購入ページへ（在庫あり）';
             buyBtn.onclick = (e) => { e.stopPropagation(); openSafeUrl(item.url); };
             actionArea.appendChild(buyBtn);
+        } else {
+            const watchBtn = document.createElement('button');
+            watchBtn.className = 'home-result-watch-btn';
+            watchBtn.style.cssText = 'width: 100%; padding: 10px; font-size: 11px;';
+            watchBtn.textContent = 'この商品を「零式監視」に追加';
+            watchBtn.onclick = (e) => { e.stopPropagation(); watchStockItem(item, keyword, watchBtn); };
+            actionArea.appendChild(watchBtn);
         }
-
-        const watchBtn = document.createElement('button');
-        watchBtn.className = 'home-result-watch-btn';
-        watchBtn.style.cssText = 'width: 100%; padding: 10px; font-size: 11px;';
-        watchBtn.textContent = 'この商品を「零式監視」に追加';
-        watchBtn.onclick = (e) => { e.stopPropagation(); watchStockItem(item, keyword, watchBtn); };
-        actionArea.appendChild(watchBtn);
 
         card.appendChild(actionArea);
         list.appendChild(card);
     });
 
-    if (sc && sc.hasMore) {
+    if (canShowLoadMore) {
         const moreWrap = document.createElement('div');
         moreWrap.id = 'stock-load-more-wrap';
         moreWrap.style.cssText = 'margin-top:18px;padding-top:14px;border-top:1px solid rgba(247,231,206,0.12);text-align:center;';
@@ -4592,13 +6012,14 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
         moreBtn.type = 'button';
         moreBtn.className = 'btn-purple';
         moreBtn.style.cssText = 'min-width:260px;padding:12px 18px;font-size:12px;letter-spacing:0.5px;';
-        moreBtn.textContent = 'さらに10件の在庫を確認する';
+        moreBtn.textContent = '次へ（さらに索敵）';
         moreBtn.onclick = () => loadMoreStockResults();
         moreWrap.appendChild(moreBtn);
         list.appendChild(moreWrap);
     }
 
     wrap.style.display = 'block';
+    _stockCumulativeItemCount = list.querySelectorAll('.home-result-card').length;
 }
 function watchKeyword(kw,btn){
     watchStockItem({itemId:'kw_'+Date.now(),sourceId:'keyword',title:kw,price:0,available:false,url:'',shopName:'監視キーワード'},kw,btn);
@@ -4665,7 +6086,7 @@ async function watchStockItem(item,keyword,btn){
             setTimeout(()=>{
                 const sb=document.querySelector('.nav-item[onclick*="\'settings\'"]');
                 if(sb) show('settings', sb);
-            },400);
+            },250);
 
         } else {
             const errText = await res.text();
@@ -4801,6 +6222,11 @@ async function runIntelScout(forceKeyword,autoNavigate,homeInline,forChildScout)
                 keywords:[forceKeyword],mode:mode,limit:15,bypassDedup:true,userId:uid||undefined,
                 forChild:!!forChildScout
             })});
+        if (res.status===429){
+            try{console.warn('[re-eye] POST /api/scout HTTP 429');}catch(_){}
+            if (typeof reEyeNotifySearch429==='function') reEyeNotifySearch429();
+            return false;
+        }
         const data=await res.json();
         let raw=(data.items||[]).sort((a,b)=>{
             const da=a.pubDate?new Date(a.pubDate).getTime():(a.lastCheckedAt||0);
@@ -4830,9 +6256,11 @@ async function runIntelScout(forceKeyword,autoNavigate,homeInline,forChildScout)
                 setTimeout(()=>st.classList.remove('visible'),6000);
             }
         }
+        return true;
     }catch(e){console.error('[intel-scout]:',e);
         const st=document.getElementById('insight-scout-status');
         if(st&&!homeInline){st.textContent='スキャンに失敗しました。再試行してください';st.classList.add('visible');setTimeout(()=>st.classList.remove('visible'),4000);}
+        return false;
     }
     finally{setScoutLoading(false);setInsightLoading(false);}
 }
@@ -4909,21 +6337,11 @@ function ctxAddToWatch(){
     onModeChange('stock');
     const hb=document.querySelector('.nav-item[onclick*="\'home\'"]');
     if(hb)show('home',hb);
-    setTimeout(()=>scoutAndShow(),300);
+    setTimeout(()=>scoutAndShow({immediate:true}),300);
 }
 function ctxCopyText(){
     const m=document.getElementById('ctx-menu'); if(m)m.style.display='none';
     if(_ctxSelectedText&&navigator.clipboard)navigator.clipboard.writeText(_ctxSelectedText).catch(()=>{});
-}
-
-// ── コーチマーク ──────────────────────────────────────────────
-function showCoachMark(){
-    if(localStorage.getItem('re_eye_coach_done')==='1') return;
-    const m=document.getElementById('coach-mark'); if(m)m.style.display='block';
-}
-function closeCoachMark(permanent){
-    const m=document.getElementById('coach-mark'); if(m)m.style.display='none';
-    if(permanent)localStorage.setItem('re_eye_coach_done','1');
 }
 
 // ── ダイアルUI復元（要素欠損・例外でボトムシート全体を止めない） ───
@@ -5021,6 +6439,8 @@ window.onload=()=>{
 
     // Web Push 初期化（サイレント・ブロッキングなし）
     PushHybrid.initPush().catch(()=>{});
+    try { registerReEyeCtrClickTrackingOneSignal(); } catch (e) { console.warn('[onload] ctr-click', e); }
+    try { setTimeout(refreshNotifyHealthHints, 2500); } catch (e) { /* ignore */ }
 
     // OneSignal: 通知許可後に userId タグを付与（狙い撃ち通知を有効化）
     if (window.OneSignalDeferred) {
@@ -5030,6 +6450,7 @@ window.onload=()=>{
           const uid = getUserId();
           OneSignal.User.addTag("userId", uid);
           console.log("[OneSignal] userId タグ付与（onload）:", uid);
+          try { syncOneSignalSizeTagsFromProfile(); } catch (es0) {}
         } catch(e) { /* サイレント — 通知拒否時はスキップ */ }
       });
     }
@@ -5038,9 +6459,6 @@ window.onload=()=>{
     PushHybrid.startDateWatcher(()=>historyItems);
 
     requestAnimationFrame(()=>updateSb(getActiveScreen()));
-
-    // コーチマーク（3秒後・UXブロックしない）
-    setTimeout(showCoachMark, 3000);
 
     // セッション引き継ぎ復元
     try{
@@ -5068,6 +6486,7 @@ window.onload=()=>{
     // ── 10秒待機（setTimeout(runIntelScout,10000)）は完全抹殺済み ──
     // スカウトは検索実行時（scoutAndShow/triggerInsightScout）にのみ発火する
 };
-</script>    
+</script>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

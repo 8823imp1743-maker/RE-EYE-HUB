@@ -20,6 +20,7 @@ import { createHash } from 'crypto';
 import { searchAllCached } from '../lib/shop-search-cache.js';
 import { getRedis, markSeen, isSeen, withRedisRetry } from '../lib/redis.js';
 import { shouldExclude, getNotificationCategory } from '../lib/filters.js';
+import { extractSizeFromKeyword } from '../lib/cross-validator.js';
 import { sendOneSignalNotification } from '../lib/notification.js';
 import {
   sanitizeUserId,
@@ -31,6 +32,27 @@ import {
   applyUserSizesToKeywordFromSettings,
   getUserMallPreserveTokens,
 } from '../lib/user-size.js';
+import { shoeProfileAllowsListing } from '../lib/shoe-size-gate.js';
+import { listingCmFromSizeInfo, sizeTagKeysForListingTolerance } from '../lib/size-bucket-tags.js';
+import {
+  allowUserPushPerMinute,
+  allowUserPushPer5Min,
+  allowUserPushPerDay,
+} from '../lib/push-rate-limit.js';
+import { enqueueDigestItem } from '../lib/digest.js';
+import { userPlanKey } from '../lib/monitor-constants.js';
+import {
+  digestPathForPlan,
+  coercePlanTier,
+  isPaidPlan,
+} from '../lib/notify-plan-policy.js';
+import { getTimeScoreJst, getJstHour } from '../lib/notify-time-jst.js';
+import { computeCtrBoostScore } from '../lib/notify-ctr-boost.js';
+import { allowFreePushMinGap } from '../lib/notify-min-gap.js';
+import { opsJsonLog } from '../lib/notify-ops-log.js';
+import { ctrVariant, buildStockMonitorCtr } from '../lib/notify-ctr.js';
+import { computeLtqScore, shouldSkipLtqFree } from '../lib/notify-ltv.js';
+import { freeDailyCapPreSend } from '../lib/free-user-daily-cap.js';
 
 // プラン別の検索件数上限
 const PLAN_MAX_RESULTS = {
@@ -47,6 +69,18 @@ const CACHE_TTL = {
   PRO:      60,    // 1分
   VIP:      60,
 };
+
+async function resolvePollNotifyPlan(r, bodyPlan, uid) {
+  try {
+    const raw = await withRedisRetry(() => r.get(userPlanKey(uid)), {
+      label: 'poll:user-plan',
+    });
+    if (raw) return coercePlanTier(raw);
+  } catch {
+    /* ignore */
+  }
+  return coercePlanTier(bodyPlan);
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -147,21 +181,209 @@ export default async function handler(req, res) {
     sortedFilteredNew = filteredNew;
   }
 
-  // 4. 在庫ありの新着アイテムがあれば OneSignal でプッシュ通知
+  // 4. 在庫ありの新着アイテムがあれば OneSignal でプッシュ通知（ユーザー狙い撃ち）
   const inStockNew = sortedFilteredNew.filter(i => i.available);
-  if (inStockNew.length > 0) {
+  if (inStockNew.length > 0 && safeUserId) {
     try {
       const top = inStockNew[0];
-      const { category, isImportant } = getNotificationCategory(top.title, top.title);
-      const prefix = isImportant ? '[重要] ' : '';
-      await sendOneSignalNotification({
-        title:    `${prefix}${top.shopName}で在庫あり`,
-        message:  `${top.title} / ¥${top.price.toLocaleString()}`,
-        url:      top.url,
-        category,
-      });
+      const topPrice = Number(top.price) || 0;
+      const kwSz = extractSizeFromKeyword(baseKw);
+      const prof =
+        typeof storedUserSettings === 'object' && storedUserSettings
+          ? storedUserSettings
+          : null;
+
+      const rBurst = getRedis();
+      const notifyPlan = await resolvePollNotifyPlan(rBurst, plan, safeUserId);
+      const useDigest = digestPathForPlan(notifyPlan) === 'digest';
+
+      if (!shoeProfileAllowsListing(prof, kwSz)) {
+        opsJsonLog('size_gate_skip', {
+          source: 'poll',
+          userId: String(safeUserId).slice(0, 10),
+        });
+      } else {
+        const minLtqRaw = Number(process.env.RE_EYE_LTV_MIN_SCORE_FREE);
+        const minLtq = Number.isFinite(minLtqRaw) ? minLtqRaw : 0;
+        const ltqScore = computeLtqScore({
+          available: top.available !== false,
+          price: topPrice,
+          listPrice: 0,
+          title: top.title || '',
+        });
+        const skipLtq =
+          shouldSkipLtqFree({
+            plan: notifyPlan,
+            score: ltqScore,
+            minScore: minLtq,
+            skipPaidLtq: true,
+          });
+        if (skipLtq) {
+          opsJsonLog('notification_skip_ltq', { source: 'poll', score: ltqScore, min: minLtq });
+        } else {
+          const boostMinRaw = Number(process.env.RE_EYE_CTR_BOOST_MIN_SCORE_FREE ?? '0');
+          const boostMin = Number.isFinite(boostMinRaw) ? boostMinRaw : 0;
+          const boostScore = computeCtrBoostScore({
+            shoeRaw: kwSz?.type === 'shoe' ? kwSz.raw : '',
+            title: top.title || '',
+            keyword: baseKw,
+          });
+          if (boostMin > 0 && !isPaidPlan(notifyPlan) && boostScore < boostMin) {
+            opsJsonLog('ctr_boost_skip', {
+              source: 'poll',
+              score: boostScore,
+              min: boostMin,
+            });
+          } else {
+            const dc = await freeDailyCapPreSend(rBurst, safeUserId, notifyPlan);
+            if (!dc.ok) {
+              opsJsonLog('notification_skip_daily_cap_free', {
+                cap: dc.cap,
+                cur: dc.cur,
+              });
+            } else {
+              const burstOk =
+                (await allowUserPushPerMinute(rBurst, safeUserId, {
+                  label: 'poll-push-u1m',
+                })) &&
+                (await allowUserPushPer5Min(rBurst, safeUserId, {
+                  label: 'poll-push-u5m',
+                })) &&
+                (await allowUserPushPerDay(rBurst, safeUserId, {
+                  label: 'poll-push-u1d',
+                }));
+
+              if (!burstOk) {
+                opsJsonLog('rate_limit_skip', { source: 'poll' });
+              } else {
+                const freePeakDefer =
+                  process.env.RE_EYE_FREE_PEAK_DEFER === '1' ||
+                  process.env.RE_EYE_FREE_PEAK_DEFER === 'true';
+                if (
+                  freePeakDefer &&
+                  notifyPlan === 'FREE' &&
+                  !useDigest &&
+                  getTimeScoreJst() < 1.0
+                ) {
+                  opsJsonLog('notify_defer_offpeak', {
+                    source: 'poll',
+                    userId: String(safeUserId).slice(0, 10),
+                    jstHour: getJstHour(),
+                  });
+                } else if (!(await allowFreePushMinGap(rBurst, safeUserId, notifyPlan))) {
+                  opsJsonLog('notify_skip_min_gap', { source: 'poll' });
+                } else {
+                  const { category, isImportant } = getNotificationCategory(top.title, top.title);
+                  const prefix = isImportant ? '[重要] ' : '';
+
+                  let sizeTagKeysPoll;
+                  if (kwSz && kwSz.type === 'shoe') {
+                    const lcm = listingCmFromSizeInfo(kwSz);
+                    if (lcm != null) {
+                      const ks = sizeTagKeysForListingTolerance(lcm);
+                      if (ks.length) sizeTagKeysPoll = ks;
+                    }
+                  }
+
+                  const variant = ctrVariant(safeUserId);
+                  const ctrPack = buildStockMonitorCtr({
+                    itemTitle: top.title,
+                    keywordLabel: `${prefix}${top.shopName || 'ショップ'}在庫`,
+                    shoeRaw: kwSz?.type === 'shoe' ? kwSz.raw : undefined,
+                    price: topPrice,
+                    listPrice: 0,
+                    variant,
+                    stockHint: 'ok',
+                  });
+                  let titleOut = ctrPack.title;
+                  if (isImportant) titleOut = `[重要] ${titleOut}`.slice(0, 90);
+
+                  if (useDigest) {
+                    await enqueueDigestItem(rBurst, {
+                      target: safeUserId,
+                      item: {
+                        type: 'poll_in_stock',
+                        displayTitle: titleOut,
+                        displayMessage: ctrPack.message,
+                        title: `${prefix}${top.shopName}で在庫あり`,
+                        url: top.url,
+                        category,
+                        userId: safeUserId,
+                        itemId: top.itemId,
+                        sourceId: top.sourceId,
+                        keyword: baseKw,
+                        ctrTemplate: ctrPack.templateId,
+                        opsPlan: notifyPlan,
+                        ...(sizeTagKeysPoll ? { sizeTagKeys: sizeTagKeysPoll } : {}),
+                      },
+                      onFlush: async ({ target, stamp, items }) => {
+                        if (!items || items.length === 0) return;
+                        const first = items[0] || {};
+                        const count = items.length;
+                        const ttl =
+                          first.displayTitle || `[まとめ通知] 新着 ${count}件`;
+                        const m =
+                          first.displayMessage ||
+                          `${(first.title || '新着').slice(0, 110)}${
+                            count > 1 ? ` ほか${count - 1}件` : ''
+                          }`;
+                        const tmplDig =
+                          typeof first.ctrTemplate === 'string'
+                            ? first.ctrTemplate
+                            : count > 1
+                              ? 'digest_multi'
+                              : 'digest_single';
+                        await sendOneSignalNotification({
+                          title: ttl,
+                          message: m,
+                          url: first.url || '',
+                          category: first.category || undefined,
+                          data: {
+                            type: 'digest',
+                            userId: target,
+                            digestStamp: stamp,
+                            digestCount: count,
+                            ctrTemplate: tmplDig,
+                            opsPlan: first.opsPlan || 'FREE',
+                            opsSource: 'poll_digest',
+                            ...(Array.isArray(first.sizeTagKeys)
+                              ? { sizeTagKeys: first.sizeTagKeys }
+                              : {}),
+                          },
+                        });
+                      },
+                    });
+                  } else {
+                    await sendOneSignalNotification({
+                      title: titleOut,
+                      message: ctrPack.message,
+                      url: top.url,
+                      category,
+                      data: {
+                        type: 'poll_in_stock',
+                        userId: safeUserId,
+                        opsPlan: notifyPlan,
+                        opsSource: 'poll_in_stock',
+                        ctrVariant: variant,
+                        ctrTemplate: ctrPack.templateId,
+                        itemId: top.itemId,
+                        sourceId: top.sourceId,
+                        keyword: baseKw,
+                        ...(sizeTagKeysPoll ? { sizeTagKeys: sizeTagKeysPoll } : {}),
+                      },
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     } catch (e) {
-      // 通知失敗はログのみ（ポーリング結果は返す）
+      opsJsonLog('notification_send_fail', {
+        source: 'poll',
+        message: e instanceof Error ? e.message : String(e),
+      });
       console.error('OneSignal push failed:', e.message);
     }
   }

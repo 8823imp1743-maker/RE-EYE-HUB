@@ -10,6 +10,7 @@
  */
 
 import { getRedis } from '../lib/redis.js';
+import { userPlanKey } from '../lib/monitor-constants.js';
 
 /** ブラウザ・CDN が 304 / 古いボディを返さないようにする */
 function setNoStore(res) {
@@ -18,8 +19,32 @@ function setNoStore(res) {
   res.setHeader('Expires', '0');
 }
 
-const TREND_TTL       = 60 * 60 * 24 * 90; // 90日
-const TREND_MAX_SLOTS = 10;                  // バックエンド側の絶対上限
+const TREND_TTL = 60 * 60 * 24 * 90; // 90日
+
+const PLAN_TREND_SLOTS = {
+  FREE: 3,
+  STANDARD: 5,
+  PRO: 5,
+  VIP: 10,
+};
+
+/** 最終防衛ライン（想定外 plan / バグでも増えすぎないように） */
+const TREND_MAX_SLOTS_ABSOLUTE = 10;
+
+function normalizePlan(p) {
+  const v = String(p || '').trim().toUpperCase();
+  return PLAN_TREND_SLOTS[v] ? v : null;
+}
+
+async function resolveUserPlan(r, userId) {
+  try {
+    const raw = await r.get(userPlanKey(userId));
+    const p = normalizePlan(raw);
+    return p || 'FREE';
+  } catch {
+    return 'FREE';
+  }
+}
 
 function sanitizeUserId(uid) {
   if (!uid || typeof uid !== 'string') return null;
@@ -74,16 +99,20 @@ async function handlePost(req, res) {
   if (!userId) return res.status(400).json({ error: 'valid userId required' });
 
   const rawItems = Array.isArray(body.items) ? body.items : [];
-  const items = rawItems
+  const itemsSanitized = rawItems
     .map(sanitizeItem)
     .filter(Boolean)
-    .slice(0, TREND_MAX_SLOTS); // 上限を超えたら切り捨て
+    .slice(0, TREND_MAX_SLOTS_ABSOLUTE);
 
   try {
     const r = getRedis();
+    const plan = await resolveUserPlan(r, userId);
+    const cap = PLAN_TREND_SLOTS[plan] || PLAN_TREND_SLOTS.FREE;
+    const items = itemsSanitized.slice(0, Math.min(cap, TREND_MAX_SLOTS_ABSOLUTE));
+
     await r.set(`user:trend:items:${userId}`, JSON.stringify(items), { ex: TREND_TTL });
     setNoStore(res);
-    return res.status(200).json({ saved: true, count: items.length });
+    return res.status(200).json({ saved: true, count: items.length, plan, cap });
   } catch(e) {
     console.error('[trend] POST 失敗:', e.message);
     return res.status(500).json({ error: 'internal error' });

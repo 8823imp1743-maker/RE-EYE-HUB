@@ -1,7 +1,16 @@
 {
-  "functions": {
-    "source": "functions"
-  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-adminsdk-*.json"
+      ]
+    }
+  ],
   "hosting": {
     "public": "public",
     "ignore": [
@@ -10,6 +19,10 @@
       "**/node_modules/**"
     ],
     "rewrites": [
+      {
+        "source": "/api/**",
+        "function": { "functionId": "api", "region": "asia-northeast1" }
+      },
       {
         "source": "**",
         "destination": "/index.html"

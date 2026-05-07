@@ -18,10 +18,10 @@ export const CURRENT_PLAN = 'VIP';
 export const DEFAULT_MONITOR_INTERVAL_SEC = 0;
 
 export const STOCK_CONFIG = {
-  FREE:     { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
-  STANDARD: { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
-  PRO:      { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
-  VIP:      { dayInterval: 0, nightInterval: 0, jitterSec: 0 },
+  FREE:     { dayInterval: 3600, nightInterval: null,  jitterSec: 0  },
+  STANDARD: { dayInterval: 900,  nightInterval: 3600,  jitterSec: 0  },
+  PRO:      { dayInterval: 300,  nightInterval: 3600,  jitterSec: 60 },
+  VIP:      { dayInterval: 300,  nightInterval: 300,   jitterSec: 60 },
 };
 
 // ── Scout ────────────────────────────────────────────────────

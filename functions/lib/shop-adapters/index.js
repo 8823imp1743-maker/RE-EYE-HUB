@@ -8,7 +8,8 @@ const REGISTRY = [
 ];
 
 export function getActiveAdapters() {
-  return REGISTRY.filter((a) => a.isConfigured());
+  // 新品救済の網羅性を最優先。設定未完のアダプターも含めて並列に回す（各アダプター側で未設定は空配列にする）
+  return [...REGISTRY];
 }
 
 function isRunCli() {
@@ -67,11 +68,19 @@ export async function searchAll(keyword, options = {}) {
 
   // ── 事後検閲：中古・オークション・禁止ドメインを全滅させる ──
   const cleanItems = filterNoise(items);
+  const noiseDropped = Math.max(0, items.length - cleanItems.length);
   if (items.length !== cleanItems.length) {
-    console.log('[AUDIT][searchAll] filterNoise 除外', items.length - cleanItems.length, '件');
+    console.log('[AUDIT][searchAll] filterNoise 除外', noiseDropped, '件');
   }
 
-  return { items: cleanItems, errors };
+  return {
+    items: cleanItems,
+    errors,
+    rejectReasonSummary: {
+      noiseExcluded: noiseDropped,
+      marketRaw: items.length,
+    },
+  };
 }
 
 export function getAdapterInfo() {

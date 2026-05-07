@@ -7,20 +7,62 @@
  */
 
 import { getRedis, withRedisRetry } from '../lib/redis.js';
-import { isNoise } from '../lib/noise-filter.js';
+import { analyzeNoise } from '../lib/noise-filter.js';
 import { extractModelNumbers, extractSizeFromKeyword } from '../lib/cross-validator.js';
-import {
-  extractColorKeywords,
-  expandColorQuery,
-  buildSerpPlainTextHaystack,
-} from '../lib/color-filter.js';
-import { serpItemMatchesRule } from '../lib/serp-item-rule.js';
+import { extractColorKeywords } from '../lib/color-filter.js';
 import { searchAllCached } from '../lib/shop-search-cache.js';
-import { getUserMallPreserveTokens, loadUserSettings } from '../lib/user-size.js';
+import { loadUserSettings } from '../lib/user-size.js';
+import { sanitizeUserId } from '../lib/user-settings.js';
+import { browseCacheKey } from '../lib/serp-product-classifier.js';
+import {
+  userGenderForSerpV5,
+  classifyAndScoreSerpItemsV5,
+  resolveSerpV5PdpTask,
+  runSerpV5PdpVerify,
+  buildSerpFilterAdoptedList,
+  isSerpV5PdpDomStructuralOn,
+  isSerpV5FinalStockOn,
+  serpV5AnchorProgramMatch,
+  buildSerpV5OfficialUrlPdpTask,
+} from '../lib/serp-v5-pipeline.js';
+import { evaluateContradictionEngine } from '../lib/contradiction-engine.js';
+import { recordCeRejectionSafe, ceFeedbackUrlHost } from '../lib/ce-feedback.js';
 import { sendOneSignalNotification } from '../lib/notification.js';
+import { shoeProfileAllowsListing } from '../lib/shoe-size-gate.js';
+import { normalizeRakutenUrl } from '../lib/pdp-shoe-stock.js';
+import {
+  listingCmFromSizeInfo,
+  sizeTagKeysForListingTolerance,
+} from '../lib/size-bucket-tags.js';
+import {
+  allowUserPushPerMinute,
+  allowUserPushPer5Min,
+  allowUserPushPerDay,
+} from '../lib/push-rate-limit.js';
+import { enqueueDigestItem } from '../lib/digest.js';
+import { opsJsonLog } from '../lib/notify-ops-log.js';
+
+/** fetch 失敗等 retryable PDP はログのみ（キュー・リトライ用 Redis フラグは持たない） */
+function scheduleRetry(item, meta = {}) {
+  opsJsonLog('scheduleRetry', {
+    ...meta,
+    url: String(item?.url || '').slice(0, 120),
+  });
+}
+import {
+  digestPathForPlan,
+  coercePlanTier,
+  isPaidPlan,
+} from '../lib/notify-plan-policy.js';
+import { getTimeScoreJst, getJstHour } from '../lib/notify-time-jst.js';
+import { computeCtrBoostScore } from '../lib/notify-ctr-boost.js';
+import { allowFreePushMinGap } from '../lib/notify-min-gap.js';
+import { computeHeatSignals } from '../lib/notify-heat.js';
+import { ctrVariant, buildStockMonitorCtr } from '../lib/notify-ctr.js';
+import { computeLtqScore, shouldSkipLtqFree } from '../lib/notify-ltv.js';
+import { freeDailyCapPreSend } from '../lib/free-user-daily-cap.js';
 import { getAuctionMinPrice } from '../lib/auction-checker.js';
 import { getStockInterval, getStockIntervalForPlan, CURRENT_PLAN, STOCK_CONFIG } from '../lib/plan-config.js';
-import { checkStock } from '../lib/stock-checker.js';
 import {
   MONITOR_SCHEMA_VERSION,
   WATCH_TTL,
@@ -29,12 +71,47 @@ import {
   watchKey,
   userWatchIndexKey,
   userPlanKey,
+  notifySentDedupeKey,
   itemHashKey,
   parseMonitorEntriesFromMget,
   isMonitorEntryRedisKey,
   monitorEntryKeysGlobPattern,
   monitorUserEntryKeysPattern,
 } from '../lib/monitor-constants.js';
+
+const PLAN_STOCK_LIMIT = {
+  FREE: 3,
+  STANDARD: 5,
+  PRO: 10,
+  VIP: 10,
+};
+
+function normalizePlan(p) {
+  const v = String(p || '').trim().toUpperCase();
+  return PLAN_STOCK_LIMIT[v] ? v : null;
+}
+
+async function resolveUserPlanForLimits(r, userId, requestPlan) {
+  const rp = normalizePlan(requestPlan);
+  if (rp) return rp;
+  try {
+    const raw = await r.get(userPlanKey(userId));
+    const p = normalizePlan(raw);
+    return p || 'FREE';
+  } catch {
+    return 'FREE';
+  }
+}
+
+/** 通知スコープ用プラン（登録値が無ければ FREE） */
+async function resolveNotifyPlan(r, userId) {
+  try {
+    const raw = await r.get(userPlanKey(userId));
+    return coercePlanTier(raw);
+  } catch {
+    return 'FREE';
+  }
+}
 
 /** node run-cli.mjs からのみ詳細進捗ログ（動的 import 前に RE_EYE_CLI=1 をセット） */
 function isRunCli() {
@@ -44,8 +121,80 @@ function cliLog(...args) {
   if (isRunCli()) console.log(...args);
 }
 
-/** テスト中: 新着 URL だけでなく、今回の検索ヒット全件に serpItemMatchesRule を適用し合格なら通知。本番前に false へ。 */
-const SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST = true;
+async function allowMonitorUserPushBurst(r, userId) {
+  const ok1 = await allowUserPushPerMinute(r, userId, { label: 'monitor-push-u1m' });
+  if (!ok1) return false;
+  const ok5 = await allowUserPushPer5Min(r, userId, { label: 'monitor-push-u5m' });
+  if (!ok5) return false;
+  const okd = await allowUserPushPerDay(r, userId, { label: 'monitor-push-u1d' });
+  if (!okd) return false;
+  return true;
+}
+
+/** SERP→PDP 状態マップのキー（楽天アフィなどは PDP と同一の正規化 URL） */
+function monitorSerpDomUrlKey(url) {
+  const n = normalizeRakutenUrl(url);
+  const s = n && String(n).trim() ? String(n) : String(url || '').trim();
+  return s;
+}
+
+function shoeSizeTagKeysFromKeywordSizeInfo(sizeInfo) {
+  if (!sizeInfo || sizeInfo.type !== 'shoe') return undefined;
+  const lcm = listingCmFromSizeInfo(sizeInfo);
+  if (lcm == null) return undefined;
+  const keys = sizeTagKeysForListingTolerance(lcm);
+  return keys.length ? keys : undefined;
+}
+
+async function sendMonitorDigest(r, payload) {
+  const { target, stamp, items } = payload;
+  if (!Array.isArray(items) || items.length === 0) return;
+  const top = items[0] || {};
+  const count = items.length;
+  const title =
+    top.displayTitle ||
+    `[まとめ通知] 新着 ${count}件`;
+  const head =
+    top.displayMessage ||
+    `${(top.title || top.itemTitle || top.keyword || '新着').toString().slice(0, 110)}` +
+      (count > 1 ? ` ほか${count - 1}件` : '');
+  const url = top.url || top.itemUrl || top.link || '';
+  const sizeTagKeys = Array.isArray(top.sizeTagKeys) ? top.sizeTagKeys : undefined;
+  const opsPlan = typeof top.opsPlan === 'string' ? top.opsPlan : 'FREE';
+
+  // digest 送信もレート制限に含める（送信回数を抑制）
+  const burstOk = await allowMonitorUserPushBurst(r, target);
+  if (!burstOk) {
+    opsJsonLog('rate_limit_skip', {
+      source: 'digest_flush',
+      userId: String(target).slice(0, 10),
+    });
+    return;
+  }
+
+  const tmpl =
+    typeof top.ctrTemplate === 'string'
+      ? top.ctrTemplate
+      : count > 1
+        ? 'digest_multi'
+        : 'digest_single';
+
+  await sendOneSignalNotification({
+    title,
+    message: head,
+    url,
+    data: {
+      type: 'digest',
+      userId: target,
+      digestStamp: stamp,
+      digestCount: count,
+      ctrTemplate: tmpl,
+      opsPlan,
+      opsSource: 'monitor_digest',
+      ...(sizeTagKeys ? { sizeTagKeys } : {}),
+    },
+  });
+}
 
 // ── 公式ドメイン一覧（特権パス対象） ──────────────────────────────────────────
 // 公式サイトが「在庫あり」と言えば他の全フィルターをスキップして即通知する。
@@ -187,8 +336,39 @@ async function handleRegister(req, res) {
     });
   }
 
+  // ── プラン別: 在庫見守り登録数の上限（サーバー側の厳格ガード）───────────────
+  const effectivePlan = await resolveUserPlanForLimits(r, userId, plan);
+  const cap = PLAN_STOCK_LIMIT[effectivePlan] || PLAN_STOCK_LIMIT.FREE;
+  const indexKey = userWatchIndexKey(userId);
+
   const hash = itemHashKey(sourceId, itemId);
   const key = watchKey(userId, hash);
+
+  try {
+    const already = await withRedisRetry(() => r.sismember(indexKey, hash), { label: 'register:cap-sismember' }).catch(
+      () => 0
+    );
+    if (!already) {
+      const cur = await withRedisRetry(() => r.scard(indexKey), { label: 'register:cap-scard' }).catch(() => 0);
+      if (Number(cur) >= cap) {
+        return res.status(400).json({
+          error: 'PLAN_LIMIT_REACHED',
+          msg: `在庫見守り枠の上限に達しました（${effectivePlan}：最大${cap}件）。不要な見守りを削除するか、プランを変更してください。`,
+          plan: effectivePlan,
+          cap,
+          current: Number(cur) || 0,
+        });
+      }
+    }
+  } catch (e) {
+    console.error('[monitor] cap check failed:', e.message);
+    // cap チェックに失敗した場合は安全側（登録を拒否）に倒す
+    return res.status(503).json({
+      error: 'REDIS_UNAVAILABLE',
+      msg: '現在、登録制限の確認に失敗しました。しばらくしてから再度お試しください。',
+      detail: e.message,
+    });
+  }
 
   // ── 品番の確定（登録時に一度だけ抽出・固定する）─────────────────────────
   // keyword と title の両方から品番を探す。
@@ -283,10 +463,137 @@ async function handleRegister(req, res) {
   }
 }
 
+function normalizeBrowseProfileGender(q) {
+  const g = String(q || '')
+    .trim()
+    .toLowerCase();
+  if (g === 'male' || g === 'female' || g === 'unknown') return g;
+  return 'unknown';
+}
+
+/**
+ * GET …?serpFilter=1&keyword=&page=&limit=&gender=male|female|unknown
+ * （後方互換: profileGender も gender と同義）
+ * SERP→v5 軽量ノイズ→LLMバッチ1回→スコア≥0.6→PDP（靴／服／キーワード一致カテゴリ／main+confidence≥0.85）→ページング
+ */
+async function handleSerpFilterBrowse(req, res) {
+  const uid = sanitizeUserId(String(req.query.userId || ''));
+  if (!uid) return res.status(400).json({ error: 'userId required' });
+  const keyword = String(req.query.keyword || '').trim();
+  if (!keyword) return res.status(400).json({ error: 'keyword required for serpFilter' });
+
+  let page = parseInt(String(req.query.page || '0'), 10);
+  if (!Number.isFinite(page) || page < 0) page = 0;
+  let limit = parseInt(String(req.query.limit || '10'), 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = 10;
+  limit = Math.min(10, limit);
+
+  const userGender = normalizeBrowseProfileGender(req.query.gender || req.query.profileGender);
+  const refresh = String(req.query.refresh || '') === '1';
+
+  let r;
+  try {
+    r = getRedis();
+  } catch (e) {
+    return res.status(503).json({
+      error: 'Redis が未設定です。',
+      code: 'REDIS_NOT_CONFIGURED',
+      detail: e.message,
+    });
+  }
+
+  const cacheKey = browseCacheKey(uid, keyword, userGender);
+  const useGemini = !!String(process.env.GEMINI_API_KEY || '').trim();
+
+  /** @type {{ adopted: object[], serpCount: number, keyword: string, classifier: string, classifierNote?: string }|null} */
+  let cached = null;
+  if (!refresh) {
+    try {
+      const raw = await withRedisRetry(() => r.get(cacheKey), { label: 'monbrowse:get' });
+      if (raw) {
+        const p = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (p && Array.isArray(p.adopted)) cached = p;
+      }
+    } catch {
+      cached = null;
+    }
+  }
+
+  if (!cached) {
+    const marketResult = await searchAllCached(keyword, {
+      maxResults: 10,
+      cacheTtlSec: 120,
+    });
+    const marketItems = marketResult.items || [];
+    const seenUrls = new Set();
+    const items = [];
+    for (const i of marketItems) {
+      if (!i?.url || seenUrls.has(i.url)) continue;
+      seenUrls.add(i.url);
+      items.push(i);
+      if (items.length >= 10) break;
+    }
+
+    const pdpPar = Math.max(1, Math.min(4, Number(process.env.RE_EYE_MONITOR_PDP_PARALLEL) || 4));
+    const { adopted } = await buildSerpFilterAdoptedList(items, keyword, userGender, {
+      pdpParallel: pdpPar,
+    });
+
+    adopted.sort((a, b) => b.score - a.score);
+
+    cached = {
+      adopted,
+      serpCount: items.length,
+      keyword,
+      classifier: useGemini ? 'gemini_batch' : 'heuristic_batch',
+      classifierNote: useGemini
+        ? 'v5.0: ノイズ→LLMバッチ1回→スコア≥0.6→PDP（靴／服／キーワード一致カテゴリ／main+confidence≥0.85）'
+        : 'GEMINI_API_KEY 未設定: ヒューリスティック分類のみ',
+    };
+    try {
+      await withRedisRetry(
+        () =>
+          r.set(cacheKey, JSON.stringify(cached), {
+            ex: Number(process.env.RE_EYE_MONBROWSE_TTL_SEC) > 0
+              ? Number(process.env.RE_EYE_MONBROWSE_TTL_SEC)
+              : 180,
+          }),
+        { label: 'monbrowse:set' },
+      );
+    } catch (e) {
+      console.warn('[monitor] browse cache set:', e.message);
+    }
+  }
+
+  const total = cached.adopted.length;
+  const start = page * limit;
+  const slice = cached.adopted.slice(start, start + limit);
+  const hasMore = start + slice.length < total;
+
+  return res.status(200).json({
+    mode: 'serpFilter',
+    items: slice.map(({ adopted: _a, ...rest }) => rest),
+    page,
+    limit,
+    total,
+    hasMore,
+    keyword: cached.keyword,
+    serpCount: cached.serpCount,
+    classifier: cached.classifier,
+    classifierNote: cached.classifierNote,
+    gender: userGender,
+    profileGender: userGender,
+  });
+}
+
 /** ユーザーの全見守りアイテムを取得 */
 async function handleStatus(req, res) {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId required' });
+
+  if (String(req.query.serpFilter || '') === '1') {
+    return handleSerpFilterBrowse(req, res);
+  }
 
   try {
     const items = await getUserWatchItems(userId);
@@ -378,6 +685,26 @@ export async function checkAllWatched() {
     return;
   }
 
+  /** JST 21:00–09:00 は実運用上の負荷平準化・通知抑制（plan-config の昼/夜とは別レイヤ）。無効化: MONITOR_JST_QUIET_DISABLED=1 */
+  if (process.env.MONITOR_JST_QUIET_DISABLED !== '1') {
+    try {
+      const hourTok = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Tokyo',
+        hour: 'numeric',
+        hour12: false,
+      }).formatToParts(new Date())
+        .find((p) => p.type === 'hour')?.value;
+      const hj = Number(hourTok ?? 'NaN');
+      if (Number.isFinite(hj) && (hj >= 21 || hj < 9)) {
+        console.log('[monitor] JST 静粭時間（21–09）— checkAllWatched スキップ');
+        cliLog('[run-cli] JST 静粭時間のため処理しません');
+        return;
+      }
+    } catch {
+      // noop
+    }
+  }
+
   const r = getRedis();
   let keys = [];
   try {
@@ -432,10 +759,15 @@ export async function checkAllWatched() {
   const now = Date.now();
   const entries = allEntries.filter(entry => {
     const plan = planMap[entry.userId] || CURRENT_PLAN;
-    const { intervalSec } = getStockIntervalForPlan(plan);
+    const { intervalSec, jitterSec } = getStockIntervalForPlan(plan);
     if (intervalSec === null) return false; // 夜間スキップ対象プラン
     const elapsedSec = (now - (entry.lastCheckedAt || 0)) / 1000;
-    return elapsedSec >= intervalSec * 0.85; // 85%経過したらチェック対象（余裕を持たせる）
+    const delta =
+      jitterSec && Number.isFinite(jitterSec)
+        ? Math.floor(Math.random() * jitterSec * 2) - jitterSec
+        : 0;
+    const target = Math.max(0, intervalSec + delta);
+    return elapsedSec >= target;
   });
 
   if (entries.length < allEntries.length) {
@@ -485,33 +817,24 @@ export async function checkAllWatched() {
  * @param {string} officialTitle 公式タイトル（品番抽出に使用）
  * @returns {{ cascadeText: string, marketFound: boolean, cheapest: object|null, googleFound: boolean }}
  */
-async function runCascadeSearch(keyword, officialTitle, userId) {
+async function runCascadeSearch(keyword, officialTitle, _userId) {
   try {
-    const expandedKeyword = expandColorQuery(keyword);
-    const sizeInfo        = extractSizeFromKeyword(keyword);
-
-    let mallPreserveTokens = [];
-    if (userId) {
-      const settings = await loadUserSettings(userId);
-      if (settings) mallPreserveTokens = getUserMallPreserveTokens(settings, keyword, false);
-    }
+    const sizeInfo = extractSizeFromKeyword(keyword);
 
     console.log(
-      `[CASCADE] 開始: expanded="${expandedKeyword.slice(0, 60)}"` +
-      ` size=${sizeInfo ? `${sizeInfo.raw}(${sizeInfo.type})` : 'なし'}`
+      `[CASCADE] 開始: keyword="${String(keyword ?? '').slice(0, 60)}" ` +
+      `size=${sizeInfo ? `${sizeInfo.raw}(${sizeInfo.type})` : 'なし'}`
     );
 
-    const marketResult = await searchAllCached(expandedKeyword, {
+    const marketResult = await searchAllCached(keyword, {
       maxResults: 10,
-      inStockOnly: false,
       cacheTtlSec: 120,
-      ...(mallPreserveTokens.length ? { mallPreserveTokens } : {}),
     });
     const marketItems = marketResult.items || [];
 
-    const available = marketItems.filter(i => i.available && (i.price || 0) > 0);
-    const cheapest  = available.length > 0
-      ? available.reduce((a, b) => (a.price || 0) <= (b.price || 0) ? a : b)
+    const priced = marketItems.filter((i) => (i.price || 0) > 0);
+    const cheapest = priced.length > 0
+      ? priced.reduce((a, b) => ((a.price || 0) <= (b.price || 0) ? a : b))
       : null;
     const marketFound = cheapest !== null;
 
@@ -519,7 +842,7 @@ async function runCascadeSearch(keyword, officialTitle, userId) {
     if (cheapest) parts.push(`楽天・Yahoo最安 ¥${cheapest.price.toLocaleString()}`);
     const cascadeText = parts.length > 0 ? ` / ${parts.join(' / ')}` : '';
 
-    console.log(`[CASCADE] 結果: 楽天・Yahoo在庫ヒット ${available.length}件 marketFound=${marketFound}`);
+    console.log(`[CASCADE] 結果: 楽天・Yahoo価格付きヒット ${priced.length}件 marketFound=${marketFound}`);
 
     return { cascadeText, marketFound, cheapest, googleFound: false };
   } catch(e) {
@@ -533,51 +856,58 @@ async function runCascadeSearch(keyword, officialTitle, userId) {
 // ─────────────────────────────────────────────────────────
 
 /**
- * Yahoo は親 SKU で inStock=false でも、説明にサイズ選択・在庫表記があることがある。
+ * PDP verify など重い処理の同時実行数（fail-close と相性のため上限付き）。
+ * `RE_EYE_MONITOR_PDP_PARALLEL` で 1–6 を上書き可。
+ *
+ * @param {T[]} items
+ * @param {number} concurrency
+ * @param {(item: T, index: number) => Promise<unknown>} mapper
+ * @template T
  */
-function yahooSelectableStockHeuristic(item) {
-  if (item.sourceId !== 'yahoo' || item.available !== false) return false;
-  const hay = buildSerpPlainTextHaystack(item);
-  const d = hay.toLowerCase();
-  if (/売り切れ|在庫なし|完売|販売終了|取扱終了|取り扱い終了|品切れ/.test(d)) return false;
-  if (
-    /在庫あり|△|〇|ご購入いただけ|カートに入れ|バリエーション|サイズ.*選択|選択.*サイズ|選べるサイズ|オプションで|カラー.*サイズ|サイズ・カラー/.test(
-      d
-    )
-  ) {
-    return true;
+async function pmapMonitorWithConcurrency(items, concurrency, mapper) {
+  const n = Math.max(0, items.length);
+  if (n === 0) return [];
+  const slots = Math.max(1, Math.min(concurrency, n));
+  const out = new Array(n);
+  let wi = 0;
+  async function worker() {
+    while (true) {
+      const i = wi++;
+      if (i >= n) return;
+      out[i] = await mapper(items[i], i);
+    }
   }
-  return false;
+  await Promise.all(Array.from({ length: slots }, () => worker()));
+  return out;
 }
 
 /**
- * serpUrls: Redis に保存する「前回検索時の URL セット」（最大100件）
+ * serpUrls: Redis に保存する「前回検索時の URL セット」（SERP ヒット最大10件と同型）
+ * serpPdpDomStructural: URLキー→PDP dom_structural かつ CE 非 reject（最終 ON。OFF→ON 判定用）
  */
 async function checkAndNotifySerp(r, entry) {
   const { keyword, userId, itemId, sourceId, title, listPrice } = entry;
   const label = (title || keyword || itemId || '?').slice(0, 56);
 
-  // ── Step 1–2: 色展開クエリで楽天・Yahoo のみ検索（Google / SerpAPI は未使用）────
-  const expandedKeyword = expandColorQuery(keyword);
-  const sizeInfo        = extractSizeFromKeyword(keyword);
+  const kwSizeForPdp = extractSizeFromKeyword(keyword);
 
-  let mallPreserveTokens = [];
+  let settings = null;
   if (userId) {
-    const settings = await loadUserSettings(userId);
-    if (settings) mallPreserveTokens = getUserMallPreserveTokens(settings, keyword, false);
+    settings = await loadUserSettings(userId);
   }
+  const userGender = userGenderForSerpV5(settings);
+
+  const notifyPlan = await resolveNotifyPlan(r, userId);
+  const useDigest = digestPathForPlan(notifyPlan) === 'digest';
 
   console.log(
-    `[SERP] "${keyword.slice(0, 40)}" ` +
-    `expanded="${expandedKeyword.slice(0, 50)}" ` +
-    `size=${sizeInfo ? `${sizeInfo.raw}(${sizeInfo.type})` : 'なし'}`
+    `[SERP] "${String(keyword).slice(0, 40)}" ` +
+      `keywordRaw size=${kwSizeForPdp ? `${kwSizeForPdp.raw}(${kwSizeForPdp.type})` : 'なし'} v5_gender=${userGender}`
   );
 
-  const marketResult = await searchAllCached(expandedKeyword, {
-    maxResults: 20,
-    inStockOnly: false,
+  const marketResult = await searchAllCached(keyword, {
+    maxResults: 10,
     cacheTtlSec: 120,
-    ...(mallPreserveTokens.length ? { mallPreserveTokens } : {}),
   });
   const searchErrs = marketResult.errors || [];
   if (isRunCli() && searchErrs.length) {
@@ -588,12 +918,13 @@ async function checkAndNotifySerp(r, entry) {
   const marketItems = marketResult.items || [];
 
   const seenUrls = new Set();
-  const allItems = marketItems.filter(i => {
-    if (!i.url) return false;
-    if (seenUrls.has(i.url)) return false;
+  const allItems = [];
+  for (const i of marketItems || []) {
+    if (!i?.url || seenUrls.has(i.url)) continue;
     seenUrls.add(i.url);
-    return true;
-  });
+    allItems.push(i);
+    if (allItems.length >= 10) break;
+  }
 
   // 有効 URL のみ抽出
   const currentUrls = allItems.map(i => i.url);
@@ -622,11 +953,10 @@ async function checkAndNotifySerp(r, entry) {
   const newItems = allItems.filter(i => i.url && !prevUrls.includes(i.url));
 
   console.log(
-    `[SERP] 現在${currentUrls.length}件 前回${prevUrls.length}件 新着${newItems.length}件` +
-    (SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST ? ' [テスト: 全ヒットを判定・通知候補]' : '')
+    `[SERP] 現在${currentUrls.length}件 前回${prevUrls.length}件 新着${newItems.length}件`,
   );
 
-  if (!SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST && newItems.length === 0) {
+  if (newItems.length === 0) {
     // 変化なし → タイムスタンプ更新のみ
     const hash = itemHashKey(sourceId, itemId);
     await r.set(watchKey(userId, hash), JSON.stringify({
@@ -642,74 +972,339 @@ async function checkAndNotifySerp(r, entry) {
     };
   }
 
-  /** 通常は新着のみ。テスト時は検索に載っている全商品をサイズ・品番判定する。 */
-  const itemsToEvaluate = SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST ? allItems : newItems;
+  /** prevUrls に無い URL のみ PDP。ソース配列先頭から最大10件だけ走査（配列 slice は使わない） */
+  const itemsToEvaluate = newItems;
+  /** 直近サイクルで PDP した URL の dom_structural 真偽（entry にマージ） */
+  const pdpDomStructuralDelta = {};
 
-  const confirmed = [];
+/** v5 FINAL: 新着先頭最大10件 → LLM+score → runSerpV5PdpVerify のみ */
+const staged = [];
+for (let ii = 0; ii < itemsToEvaluate.length && ii < 10; ii++) {
+  const item = itemsToEvaluate[ii];
 
-  for (const item of itemsToEvaluate.slice(0, 30)) {
-    if (isNoise(item)) {
-      console.log(`[SERP] ノイズ: "${item.title?.slice(0, 40)}"`);
+  // --- ここから指示通り追加 ---
+  const noise = analyzeNoise(item);
+
+  // 即死判定
+  if (noise.isNoise) {
+    console.log(`[NoiseGuard:REJECT] ${item.title?.slice(0, 40)}`);
+    continue;
+  }
+  // --- ここまで ---
+
+  // 以前の if (isNoise(item)) ロジックは analyzeNoise に統合されたので
+  // ここから下の価格チェックに繋げます
+  const itemPrice = item.price || 0;
+  if (listPrice > 0 && itemPrice > 0) {
+    const ratio = itemPrice / listPrice;
+    if (ratio < 0.5 || ratio > 2.5) {
+      console.log(`[SERP] 価格異常: ¥${itemPrice} / 参考¥${listPrice}`);
       continue;
     }
-
-    const itemPrice = item.price || 0;
-    if (listPrice > 0 && itemPrice > 0) {
-      const ratio = itemPrice / listPrice;
-      if (ratio < 0.5 || ratio > 2.5) {
-        console.log(`[SERP] 価格異常: ¥${itemPrice} / 参考¥${listPrice}`);
-        continue;
-      }
-    }
-
-    if (!serpItemMatchesRule(entry, item)) continue;
-
-    let stockConfirmed = item.available !== false;
-    if (!stockConfirmed && yahooSelectableStockHeuristic(item)) {
-      stockConfirmed = true;
-      console.log('[SERP] Yahoo: inStock=false でも説明・キャッチに購入/バリエーション表記あり → 在庫ありとみなす');
-    }
-    if (isOfficialUrl(item.url)) {
-      const sr = await checkStock(item.url, keyword);
-      stockConfirmed = sr.status === 'in_stock';
-    }
-    if (!stockConfirmed) {
-      console.log(`[SERP] 在庫なし: ${item.url?.slice(0, 60)}`);
-      continue;
-    }
-
-    confirmed.push({ item });
-    console.log(`[SERP] ✅ 合格: "${item.title?.slice(0, 50)}" ¥${itemPrice.toLocaleString()} ${item.url?.slice(0, 50)}`);
   }
 
-  for (const { item } of confirmed) {
-    const itemPrice = item.price || 0;
-    const sizeInfo  = extractSizeFromKeyword(keyword);
-    const sizeLine  = sizeInfo?.raw ? `サイズ:${sizeInfo.raw}` : '';
-    let siteLine    = '';
-    try {
-      siteLine = new URL(item.url).hostname.replace(/^www\./, '');
-    } catch { /* ok */ }
-    const msgBody = [
-      item.title?.slice(0, 52),
-      `¥${itemPrice.toLocaleString()}`,
-      sizeLine,
-      siteLine,
-    ].filter(Boolean).join(' · ');
-    try {
-      await sendOneSignalNotification({
-        title:   `[新着在庫] ${title || keyword}`,
-        message: msgBody,
-        url:     item.url,
-        data: {
-          type:    'serp_new',
-          userId,
-          itemUrl: item.url,
-          keyword,
-          shop:    item.sourceId || '',
-        },
+  staged.push(item);
+} // 【重要】ここで for ループが閉じます。これより下はループの外です。
+
+const scored = await classifyAndScoreSerpItemsV5(staged, userGender);
+
+const pdpParallel = Math.max(
+  1,
+  Math.min(6, Number(process.env.RE_EYE_MONITOR_PDP_PARALLEL) || 4),
+);
+
+  /** @type {Array<{ item: object, itemPrice: number, row: object, score: number, task: object|null }>} */
+  const rowsWithTask = [];
+  for (let i = 0; i < scored.length; i++) {
+    const rec = scored[i];
+    const item = rec.item;
+    const itemPrice = Number(item.price) || 0;
+    const task = resolveSerpV5PdpTask(rec.row, item, entry, kwSizeForPdp);
+    if (task) {
+      console.log(
+        `[SERP] v5 PDP arm=${task.kind}: "${(item.title || '').slice(0, 50)}" ¥${itemPrice.toLocaleString()} ${(item.url || '').slice(0, 50)}`,
+      );
+    }
+    rowsWithTask.push({ item, itemPrice, row: rec.row, score: rec.score, task });
+  }
+
+  const needPdp = rowsWithTask.filter((r) => r.task);
+  if (scored.length > 0 && needPdp.length === 0) {
+    console.log('[SERP] v5: スコア通過ありだが PDP 発火条件なし（靴／服サイズ・カテゴリ+キーワード・main+confidence）');
+  }
+
+  /** @type {{ item: object, itemPrice: number }[]} */
+  const rowsNotify = [];
+
+  if (needPdp.length > 0) {
+    const withPdp = await pmapMonitorWithConcurrency(needPdp, pdpParallel, async (row) => {
+      const pdpv = await runSerpV5PdpVerify(row.item, row.task);
+      return { ...row, pdpv };
+    });
+
+    for (const row of withPdp) {
+      const { pdpv, item, itemPrice, task } = row;
+      const clsRow = row.row;
+      const urlKey = monitorSerpDomUrlKey(item.url);
+      const strictPdpOk = isSerpV5PdpDomStructuralOn(pdpv);
+      const serpStrong = serpV5AnchorProgramMatch(entry, item);
+      const ce = evaluateContradictionEngine({
+        llmCategory: String(clsRow?.category || 'other'),
+        llmConfidence: Number(clsRow?.confidence) || 0,
+        serpStrongMatch: serpStrong,
+        pdpResult: strictPdpOk ? 'on' : 'off',
+        pdpRetryable: !!pdpv.retryable,
+        pdpReason: String(pdpv?.reason || ''),
+        userGender,
+        productGender: String(clsRow?.gender || 'unknown'),
+        productRole: String(clsRow?.product_role || 'unknown'),
       });
+      const finalStockOn = isSerpV5FinalStockOn(pdpv, ce);
+      pdpDomStructuralDelta[urlKey] = finalStockOn;
+
+      if (!strictPdpOk) {
+        const retryableFetch =
+          !!pdpv.retryable && String(pdpv.reason || '') === 'fetch_fail_strict';
+        if (retryableFetch) {
+          scheduleRetry(item, {
+            source: 'monitor_serp_pdp',
+            userId: String(userId).slice(0, 24),
+            size: task?.kind === 'shoe' ? String(kwSizeForPdp?.raw || '') : String(task?.kind || ''),
+          });
+        }
+        if (ce.status === 'reject' && ce.flags.length > 0) {
+          opsJsonLog('monitor_serp_ce_contradiction', {
+            flags: ce.flags,
+            reason: ce.reason,
+            url: item.url?.slice(0, 90),
+            userId: String(userId).slice(0, 10),
+          });
+          void recordCeRejectionSafe({
+            source: 'monitor_serp_pdp_off',
+            flags: ce.flags,
+            reason: ce.reason,
+            keyword: String(keyword || title || ''),
+            urlHost: ceFeedbackUrlHost(item.url),
+          });
+        }
+        opsJsonLog(
+          retryableFetch ? 'monitor_serp_skip_pdp_retryable' : 'monitor_serp_skip_pdp',
+          {
+            ok: pdpv.ok,
+            tentative: !!pdpv.pdpTentative,
+            reason: pdpv.reason,
+            method: pdpv.method,
+            retryable: !!pdpv.retryable,
+            url: item.url?.slice(0, 90),
+            userId: String(userId).slice(0, 10),
+          },
+        );
+        continue;
+      }
+
+      const prevDomOn =
+        entry.serpPdpDomStructural &&
+        typeof entry.serpPdpDomStructural === 'object' &&
+        entry.serpPdpDomStructural[urlKey] === true;
+      if (prevDomOn) {
+        opsJsonLog('monitor_serp_skip_pdp', {
+          reason: 'already_dom_structural',
+          url: urlKey.slice(0, 90),
+          userId: String(userId).slice(0, 10),
+        });
+        continue;
+      }
+
+      if (ce.status === 'reject') {
+        opsJsonLog('monitor_serp_ce_reject', {
+          flags: ce.flags,
+          reason: ce.reason,
+          confidencePenalty: ce.confidencePenalty,
+          url: item.url?.slice(0, 90),
+          userId: String(userId).slice(0, 10),
+        });
+        void recordCeRejectionSafe({
+          source: 'monitor_serp_pdp_on',
+          flags: ce.flags,
+          reason: ce.reason,
+          keyword: String(keyword || title || ''),
+          urlHost: ceFeedbackUrlHost(item.url),
+        });
+        continue;
+      }
+
+      rowsNotify.push({ item, itemPrice });
+    }
+  }
+
+  const sizeInfo = kwSizeForPdp;
+
+  for (const row of rowsNotify) {
+    const { item } = row;
+    const itemPrice = row.itemPrice || 0;
+
+    if (!shoeProfileAllowsListing(settings, sizeInfo)) {
+      opsJsonLog('size_gate_skip', {
+        source: 'monitor_serp',
+        userId: String(userId).slice(0, 10),
+      });
+      continue;
+    }
+
+    const minLtqRaw = Number(process.env.RE_EYE_LTV_MIN_SCORE_FREE);
+    const minLtq = Number.isFinite(minLtqRaw) ? minLtqRaw : 0;
+    const ltqScore = computeLtqScore({
+      price: itemPrice,
+      listPrice,
+      title: item.title || '',
+    });
+    if (
+      shouldSkipLtqFree({
+        plan: notifyPlan,
+        score: ltqScore,
+        minScore: minLtq,
+        skipPaidLtq: true,
+      })
+    ) {
+      opsJsonLog('notification_skip_ltq', {
+        source: 'monitor_serp',
+        score: ltqScore,
+        min: minLtq,
+      });
+      continue;
+    }
+
+    const boostMinRaw = Number(process.env.RE_EYE_CTR_BOOST_MIN_SCORE_FREE ?? '0');
+    const boostMin = Number.isFinite(boostMinRaw) ? boostMinRaw : 0;
+    const boostScore = computeCtrBoostScore({
+      shoeRaw: sizeInfo?.type === 'shoe' ? sizeInfo.raw : undefined,
+      title: item.title || '',
+      keyword: title || keyword || '',
+    });
+    if (boostMin > 0 && !isPaidPlan(notifyPlan) && boostScore < boostMin) {
+      opsJsonLog('ctr_boost_skip', {
+        source: 'monitor_serp',
+        score: boostScore,
+        min: boostMin,
+      });
+      continue;
+    }
+
+    const dpre = await freeDailyCapPreSend(r, userId, notifyPlan);
+    if (!dpre.ok) {
+      opsJsonLog('notification_skip_daily_cap_free', {
+        cap: dpre.cap,
+        cur: dpre.cur,
+      });
+      continue;
+    }
+
+    const burstOk = await allowMonitorUserPushBurst(r, userId);
+    if (!burstOk) {
+      opsJsonLog('rate_limit_skip', { source: 'monitor_serp' });
+      continue;
+    }
+
+    const freePeakDefer =
+      process.env.RE_EYE_FREE_PEAK_DEFER === '1' ||
+      process.env.RE_EYE_FREE_PEAK_DEFER === 'true';
+    if (
+      freePeakDefer &&
+      notifyPlan === 'FREE' &&
+      !useDigest &&
+      getTimeScoreJst() < 1.0
+    ) {
+      opsJsonLog('notify_defer_offpeak', {
+        source: 'monitor_serp',
+        userId: String(userId).slice(0, 10),
+        jstHour: getJstHour(),
+        timeScore: getTimeScoreJst(),
+      });
+      continue;
+    }
+
+    const gapOkFree = await allowFreePushMinGap(r, userId, notifyPlan);
+    if (!gapOkFree) {
+      opsJsonLog('notify_skip_min_gap', { source: 'monitor_serp' });
+      continue;
+    }
+
+    const dedupeKey = notifySentDedupeKey(userId, item.sourceId || '', item.itemId || '');
+    try {
+      const nx = await withRedisRetry(
+        () => r.set(dedupeKey, '1', { ex: 600, nx: true }),
+        { label: 'serp-notify-dedupe-nx' }
+      );
+      if (nx == null) {
+        continue;
+      }
+
+      const sizeKeys = shoeSizeTagKeysFromKeywordSizeInfo(sizeInfo);
+      const variant = ctrVariant(userId);
+      const ctrPack = buildStockMonitorCtr({
+        itemTitle: item.title,
+        keywordLabel: title || keyword,
+        shoeRaw: sizeInfo?.type === 'shoe' ? sizeInfo.raw : undefined,
+        clothingAlpha: sizeInfo?.type === 'clothing' ? sizeInfo.raw : undefined,
+        price: itemPrice,
+        listPrice,
+        variant,
+        stockHint: 'ok',
+      });
+      const heatSig = computeHeatSignals(entry);
+
+      if (useDigest) {
+        await enqueueDigestItem(r, {
+          target: userId,
+          item: {
+            type: 'serp_new',
+            displayTitle: ctrPack.title,
+            displayMessage: ctrPack.message,
+            title: `[新着在庫] ${title || keyword}`,
+            url: item.url,
+            itemUrl: item.url,
+            keyword,
+            shop: item.sourceId || '',
+            ctrTemplate: ctrPack.templateId,
+            heatLabel: heatSig.label,
+            opsPlan: notifyPlan,
+            ...(sizeKeys ? { sizeTagKeys: sizeKeys } : {}),
+          },
+          onFlush: async (p) => sendMonitorDigest(r, p),
+        });
+      } else {
+        await sendOneSignalNotification({
+          title: ctrPack.title,
+          message: ctrPack.message,
+          url: item.url,
+          data: {
+            type: 'serp_new',
+            userId,
+            opsPlan: notifyPlan,
+            opsSource: 'monitor_serp',
+            ctrVariant: variant,
+            ctrTemplate: ctrPack.templateId,
+            ...(heatSig.label === 'high' ? { ctrHeat: heatSig.label } : {}),
+            itemUrl: item.url,
+            keyword,
+            shop: item.sourceId || '',
+            pdpStructural: true,
+            monitoredAt: Date.now(),
+            monitoredSizeKey:
+              sizeInfo?.type === 'shoe'
+                ? `${sizeInfo.raw}cm`
+                : sizeInfo?.type === 'clothing'
+                  ? `SIZE_${String(sizeInfo.raw || '').toUpperCase()}`
+                  : undefined,
+            ...(sizeKeys ? { sizeTagKeys: sizeKeys } : {}),
+          },
+        });
+      }
     } catch(e) {
+      try {
+        await withRedisRetry(() => r.del(dedupeKey), { label: 'serp-notify-dedupe-rollback' });
+      } catch {/* ok */}
+      opsJsonLog('notification_send_fail', { source: 'monitor_serp', message: e.message });
       console.error('[SERP] OneSignal 通知失敗:', e.message);
     }
   }
@@ -717,35 +1312,48 @@ async function checkAndNotifySerp(r, entry) {
   // ── Step 6: 状態を更新（GET /api/monitor・フロントが参照する status / url / price / results）────
   const hash = itemHashKey(sourceId, itemId);
   const resultsPayload =
-    confirmed.length > 0
-      ? confirmed.map(({ item: it }) => ({
-          title:     it.title || '',
-          url:       it.url || '',
-          price:     Number(it.price) || 0,
-          sourceId:  it.sourceId || '',
-          itemId:    String(it.itemId || ''),
-          shopName:  it.shopName || '',
-          available: it.available !== false,
+    rowsNotify.length > 0
+      ? rowsNotify.map(({ item: it }) => ({
+          title: it.title || '',
+          url: it.url || '',
+          price: Number(it.price) || 0,
+          sourceId: it.sourceId || '',
+          itemId: String(it.itemId || ''),
+          shopName: it.shopName || '',
           matchedAt: Date.now(),
+          pdpDomStructural: true,
         }))
       : undefined;
-  const primary = confirmed[0]?.item;
+  const primary = rowsNotify[0]?.item;
+
+  const mergedSerpDom =
+    Object.keys(pdpDomStructuralDelta).length > 0
+      ? (() => {
+          const prev = entry.serpPdpDomStructural;
+          const base =
+            prev && typeof prev === 'object' && !Array.isArray(prev)
+              ? { ...prev }
+              : {};
+          Object.assign(base, pdpDomStructuralDelta);
+          return base;
+        })()
+      : entry.serpPdpDomStructural;
 
   await r.set(
     watchKey(userId, hash),
     JSON.stringify({
       ...entry,
-      serpUrls:      currentUrls.slice(0, 100),
+      serpUrls:      currentUrls,
+      ...(mergedSerpDom ? { serpPdpDomStructural: mergedSerpDom } : {}),
       lastCheckedAt: Date.now(),
       schemaVersion: MONITOR_SCHEMA_VERSION,
-      ...(confirmed.length > 0
+      ...(rowsNotify.length > 0
         ? {
             notifiedAt: Date.now(),
             status:     'ON',
             results:    resultsPayload,
-            // 監視行の代表リンク（シードのプレースホルダ URL を実ヒットで上書き）
-            url:   primary?.url || entry.url,
-            price: Number(primary?.price) || entry.price || 0,
+            url:        primary?.url || entry.url,
+            price:      Number(primary?.price) || entry.price || 0,
           }
         : {}),
     }),
@@ -754,13 +1362,14 @@ async function checkAndNotifySerp(r, entry) {
 
   let outcome;
   if (searchErrs.length) {
-    outcome = confirmed.length > 0
-      ? `通知あり（${confirmed.length}件）※検索APIエラーあり`
-      : '在庫なし・通知なし ※検索APIエラーあり';
-  } else if (confirmed.length > 0) {
-    outcome = `通知あり（${confirmed.length}件）`;
+    outcome =
+      rowsNotify.length > 0
+        ? `PDP確認・通知あり（${rowsNotify.length}件）※検索APIエラーあり`
+        : 'PDP未達・通知なし ※検索APIエラーあり';
+  } else if (rowsNotify.length > 0) {
+    outcome = `PDP確認・通知あり（${rowsNotify.length}件）`;
   } else {
-    outcome = '在庫なし（新着はノイズ・不一致・在庫なしで除外）';
+    outcome = 'PDP未達（ノイズ・不一致・サイズ未定・またはPDP NG）';
   }
   return {
     label,
@@ -770,132 +1379,191 @@ async function checkAndNotifySerp(r, entry) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  公式URL特権パス: 全フィルタースキップ + 全方位波及検索
+//  公式 URL: PDP（dom_structural）のみが真実。cascade は市場参照メタのみ（通知は PDP 復活のみ）。
 // ─────────────────────────────────────────────────────────
 
 /**
- * 公式ドメインのアイテムを直接フェッチして在庫確認・通知する。
- *
- * 2軸状態管理:
- *   officialStatus: 'ON'|'OFF' — 公式サイトの在庫状態
- *   marketStatus:   'FOUND'|'NOT_FOUND' — 楽天・Yahoo・専門店での発見状態
- *
- * 通知トリガー:
- *   1. officialStatus が変化した時
- *   2. officialStatus が OFF のまま、marketStatus が NOT_FOUND→FOUND に変化した時
- *      （「公式は品切れだが、専門店で在庫発見」）
+ * @param {import('@upstash/redis').Redis} r
  */
 async function checkOfficialAndNotify(r, entry, lastStatus) {
   const { url, keyword, title, price, listPrice, userId, itemId, sourceId } = entry;
   const label = (title || keyword || '?').slice(0, 56);
 
-  console.log(`[monitor][公式特権] "${title?.slice(0, 40)}" → 直接フェッチ: ${url.slice(0, 60)}`);
-  const stockResult = await checkStock(url, keyword || '');
+  console.log(`[monitor][公式] PDP truth:「${title?.slice(0, 40)}」 ${String(url || '').slice(0, 60)}`);
 
-  // エラー / 判定不能 → タイムスタンプ更新のみ
-  if (stockResult.status === 'error' || stockResult.status === 'unknown') {
-    console.log(`[monitor][公式] 判定不能(${stockResult.status}): ${url.slice(0, 60)}`);
-    const hash = itemHashKey(sourceId, itemId);
-    await r.set(watchKey(userId, hash), JSON.stringify({
-      ...entry, lastCheckedAt: Date.now(), schemaVersion: MONITOR_SCHEMA_VERSION,
-    }), { ex: WATCH_TTL });
-    return { label, outcome: 'エラー', detail: `公式在庫判定: ${stockResult.status}` };
-  }
-
-  const newStatus    = stockResult.status === 'in_stock' ? 'ON' : 'OFF';
-  const isRestocked  = newStatus === 'ON';
-
-  // ── 全方位波及検索（公式の在庫状況に関わらず常に実行）───────────────────────
-  // 公式が品切れでも楽天・専門店を意地でも探す。
   const cascade = await runCascadeSearch(keyword, title, userId);
-
-  // ── 2軸状態変化の判定 ─────────────────────────────────────────────────────
   const prevMarketStatus = entry.marketStatus || 'NOT_FOUND';
-  const newMarketStatus  = cascade.marketFound ? 'FOUND' : 'NOT_FOUND';
+  const newMarketStatus = cascade.marketFound ? 'FOUND' : 'NOT_FOUND';
 
-  const officialChanged = newStatus !== lastStatus;
-  const marketChanged   = newMarketStatus !== prevMarketStatus;
+  const kwSizeForPdp = extractSizeFromKeyword(keyword || '');
+  const officialPdpTask = buildSerpV5OfficialUrlPdpTask(kwSizeForPdp);
 
-  // 変化なし → タイムスタンプ + marketStatus のみ更新
-  if (!officialChanged && !marketChanged) {
-    const hash = itemHashKey(sourceId, itemId);
-    await r.set(watchKey(userId, hash), JSON.stringify({
-      ...entry,
-      lastCheckedAt: Date.now(),
-      marketStatus:  newMarketStatus,
-      schemaVersion: MONITOR_SCHEMA_VERSION,
-    }), { ex: WATCH_TTL });
-    let outcomeNoChange;
-    if (newStatus === 'ON') outcomeNoChange = '変化なし（公式在庫あり）';
-    else if (newMarketStatus === 'FOUND') outcomeNoChange = '変化なし（公式品切れ・市場在庫あり）';
-    else outcomeNoChange = '変化なし（在庫なし）';
+  let pdpv = { ok: false, reason: 'no_input', method: 'none', pdpTentative: false, retryable: false };
+  let structuralOk = false;
 
-    return {
-      label,
-      outcome: outcomeNoChange,
-      detail:  `公式=${newStatus} 市場=${newMarketStatus}`,
-    };
-  }
+  if (officialPdpTask && url) {
+    pdpv = await runSerpV5PdpVerify({ url }, officialPdpTask);
+    structuralOk = isSerpV5PdpDomStructuralOn(pdpv);
 
-  let notifTitle, notifMessage, notifUrl;
-
-  if (officialChanged && isRestocked) {
-    notifTitle   = `[公式入荷] ${title}`;
-    notifMessage = `公式サイトで在庫を確認${cascade.cascadeText}`;
-    notifUrl     = url;
-
-  } else if (officialChanged && !isRestocked) {
-    if (cascade.marketFound) {
-      notifTitle   = `[公式品切れ | 楽天・Yahoo在庫あり] ${title}`;
-      notifMessage = `公式は品切れ。${cascade.cascadeText.replace(' / ', '')}`;
-      notifUrl     = cascade.cheapest?.url || undefined;
-    } else {
-      notifTitle   = `${title} 品切れ（公式・楽天・Yahoo確認）`;
-      notifMessage = '公式・楽天市場・Yahoo!ショッピングで該当在庫なし。引き続き監視します。';
-      notifUrl     = undefined;
+    if (!structuralOk && !!pdpv.retryable && String(pdpv.reason || '') === 'fetch_fail_strict') {
+      scheduleRetry(
+        { url },
+        {
+          source: 'monitor_official_pdp',
+          userId: String(userId).slice(0, 24),
+          size: String(kwSizeForPdp.raw || ''),
+        },
+      );
     }
-
-  } else {
-    notifTitle   = `[発見] ${title} — 楽天・Yahooで在庫あり`;
-    notifMessage = `公式は品切れ中。${cascade.cascadeText.replace(' / ', '')}`;
-    notifUrl     = cascade.cheapest?.url || undefined;
   }
 
-  try {
-    await sendOneSignalNotification({
-      title:   notifTitle,
-      message: notifMessage,
-      url:     notifUrl,
-      data: {
-        type:     isRestocked ? 'official_restock' : (cascade.marketFound ? 'market_found' : 'soldout'),
-        itemId, sourceId, userId,
-        newStatus, marketStatus: newMarketStatus,
-        itemUrl: url, keyword,
-      },
+  const newStatus = structuralOk ? 'ON' : 'OFF';
+  const transitionedToStructural = structuralOk && lastStatus !== 'ON';
+
+  const notifySettings = userId ? await loadUserSettings(userId) : null;
+  const offPlan = userId ? await resolveNotifyPlan(r, userId) : 'FREE';
+
+  const sizeGateOk = shoeProfileAllowsListing(notifySettings, kwSizeForPdp);
+
+  const minLtqRaw = Number(process.env.RE_EYE_LTV_MIN_SCORE_FREE);
+  const minLtq = Number.isFinite(minLtqRaw) ? minLtqRaw : 0;
+  const ltqScoreOff = computeLtqScore({
+    price: Number(price) || 0,
+    listPrice: Number(listPrice) || 0,
+    title: title || '',
+  });
+  const skipLtqOfficial =
+    shouldSkipLtqFree({
+      plan: offPlan,
+      score: ltqScoreOff,
+      minScore: minLtq,
+      skipPaidLtq: true,
     });
-  } catch(e) {
-    console.error('[monitor][公式] OneSignal 通知失敗:', e.message);
+
+  const dcOfficial = await freeDailyCapPreSend(r, userId, offPlan);
+
+  let burstOk = false;
+  if (userId && sizeGateOk && !skipLtqOfficial && dcOfficial.ok) {
+    burstOk = await allowMonitorUserPushBurst(r, userId);
+  }
+  const sizeKeysOfficial = shoeSizeTagKeysFromKeywordSizeInfo(kwSizeForPdp);
+
+  const offDigest = digestPathForPlan(offPlan) === 'digest';
+  const officialPeakDefer =
+    process.env.RE_EYE_FREE_PEAK_DEFER === '1' ||
+    process.env.RE_EYE_FREE_PEAK_DEFER === 'true';
+
+  let officialNotifySent = false;
+
+  const ctrOff = buildStockMonitorCtr({
+    itemTitle: title,
+    keywordLabel: title || keyword,
+    shoeRaw: kwSizeForPdp?.type === 'shoe' ? kwSizeForPdp.raw : undefined,
+    clothingAlpha: kwSizeForPdp?.type === 'clothing' ? kwSizeForPdp.raw : undefined,
+    price: Number(price) || 0,
+    listPrice: Number(listPrice) || 0,
+    variant: ctrVariant(userId),
+    stockHint: 'ok',
+  });
+
+  if (
+    transitionedToStructural &&
+    userId &&
+    officialPdpTask &&
+    sizeGateOk &&
+    !skipLtqOfficial &&
+    dcOfficial.ok &&
+    burstOk &&
+    !(officialPeakDefer && offPlan === 'FREE' && !offDigest && getTimeScoreJst() < 1.0)
+  ) {
+    if (!(await allowFreePushMinGap(r, userId, offPlan))) {
+      opsJsonLog('notify_skip_min_gap', { source: 'monitor_official' });
+    } else {
+      try {
+        await sendOneSignalNotification({
+          title: ctrOff.title,
+          message: ctrOff.message,
+          url,
+          data: {
+            type: 'official_pdp_restock',
+            itemId,
+            sourceId,
+            userId,
+            itemUrl: url,
+            keyword,
+            ctrTemplate: ctrOff.templateId,
+            opsPlan: offPlan,
+            opsSource: 'monitor_official',
+            marketStatusMeta: newMarketStatus,
+            pdpStructural: true,
+            monitoredAt: Date.now(),
+            ...(sizeKeysOfficial ? { sizeTagKeys: sizeKeysOfficial } : {}),
+          },
+        });
+        officialNotifySent = true;
+      } catch (e) {
+        opsJsonLog('notification_send_fail', { source: 'monitor_official', message: e.message });
+      }
+    }
+  } else {
+    if (!officialPdpTask) {
+      opsJsonLog('monitor_serp_skip_pdp', {
+        ok: !!pdpv.ok,
+        reason: 'official_no_keyword_size',
+        source: 'monitor_official',
+        userId: String(userId).slice(0, 10),
+      });
+    } else if (!structuralOk) {
+      opsJsonLog('monitor_serp_skip_pdp', {
+        ok: !!pdpv.ok,
+        reason: String(pdpv.reason || ''),
+        retryable: !!pdpv.retryable,
+        source: 'monitor_official',
+        userId: String(userId).slice(0, 10),
+      });
+    }
+    if (transitionedToStructural === false || !sizeGateOk) {
+      /* 通知しない */
+      if (!sizeGateOk) {
+        opsJsonLog('size_gate_skip', {
+          source: 'monitor_official',
+          userId: String(userId).slice(0, 10),
+        });
+      } else if (skipLtqOfficial) {
+        opsJsonLog('notification_skip_ltq', {
+          source: 'monitor_official',
+          score: ltqScoreOff,
+          min: minLtq,
+        });
+      } else if (!dcOfficial.ok) {
+        opsJsonLog('notification_skip_daily_cap_free', {
+          cap: dcOfficial.cap,
+          cur: dcOfficial.cur,
+        });
+      } else if (!burstOk && userId) {
+        opsJsonLog('rate_limit_skip', { source: 'monitor_official' });
+      }
+    }
   }
 
   const hash = itemHashKey(sourceId, itemId);
-  await r.set(watchKey(userId, hash), JSON.stringify({
+  const baseOut = {
     ...entry,
-    status:        newStatus,
-    marketStatus:  newMarketStatus,
+    status: newStatus,
+    marketStatus: newMarketStatus,
     lastCheckedAt: Date.now(),
-    notifiedAt:    Date.now(),
     schemaVersion: MONITOR_SCHEMA_VERSION,
-  }), { ex: WATCH_TTL });
-
-  console.log(
-    `[monitor][公式] 通知: "${notifTitle.slice(0, 60)}"` +
-    ` official=${newStatus} market=${newMarketStatus}`
-  );
+    ...(officialNotifySent ? { notifiedAt: Date.now() } : {}),
+  };
+  await r.set(watchKey(userId, hash), JSON.stringify(baseOut), { ex: WATCH_TTL });
 
   return {
     label,
-    outcome: '通知送信',
-    detail:  `公式=${newStatus} 市場=${newMarketStatus}`,
+    outcome:
+      transitionedToStructural
+        ? 'PDP復活検知・通知済'
+        : `PDP状態維持（${newStatus}）／市場=${newMarketStatus}`,
+    detail: cascade.cascadeText || undefined,
   };
 }
 
@@ -1022,25 +1690,13 @@ async function checkAuctionAndNotify(r, entry) {
   const isOverList = auctionMin > listPrice;
   const prevOverList = entry.overListPrice === true;
 
-  // 状態変化がある場合のみ通知（定価超えになった瞬間だけ）
+  // ヤフオク相場は内部判断のみ（ユーザー向け通知・プッシュ文言に使わない）
   if (isOverList && !prevOverList) {
-    try {
-      await sendOneSignalNotification({
-        title:   `${title} — 中古相場が定価を超えました`,
-        message: `ヤフオク最安値 ¥${auctionMin.toLocaleString()} ／ 定価 ¥${listPrice.toLocaleString()}`,
-        data: {
-          type:       'auction_over_list',
-          itemId,
-          sourceId,
-          userId,
-          auctionMin,
-          listPrice,
-          keyword,
-        },
-      });
-    } catch(e) {
-      console.error('[auction] OneSignal 通知失敗:', e.message);
-    }
+    opsJsonLog('auction_internal_over_list_flip', {
+      source: 'auction_checker',
+      userId: userId ? String(userId).slice(0, 10) : undefined,
+      itemHint: itemId ? String(itemId).slice(0, 14) : undefined,
+    });
   }
 
   // Redis の overListPrice フラグを更新
@@ -1053,5 +1709,7 @@ async function checkAuctionAndNotify(r, entry) {
     auctionCheckedAt:     Date.now(),
   }), { ex: WATCH_TTL });
 
-  console.log(`[auction] ${title}: ヤフオク最安 ¥${auctionMin.toLocaleString()} / 定価 ¥${listPrice.toLocaleString()} → ${isOverList ? '⚠️ 定価超え' : 'OK'}`);
+  console.log(
+    `[auction] ${title}: チェック済み overList=${isOverList}`,
+  );
 }

@@ -4,6 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## 凍結仕様（v1.0）
+
+コア（SERP → LLM → PDP → CE → Redis → UI）の **最終固定 1 枚**: `docs/RE-EYE-HUB-FINAL-LOCK-SPEC.md`（FULL FREEZE / v1.0）。実装と矛盾する変更は避ける。  
+**現場破壊の地図（運用）:** `docs/RE-EYE-HUB-OPERATIONAL-FAILURE-SIMULATION.md`
+
+---
+
 ## ⚡ 最優先事項：V11 リサーチ起点型 SERP 監視アーキテクチャ（2026-04-14）
 
 > **「URL を番犬のように見張るな。検索結果ページ（SERP）を見張れ。」**
@@ -86,6 +93,14 @@ Cron は `every 1 minutes` で毎分起動するが、`checkAllWatched()` 内の
 | Google Shopping | `lib/google-shopping.js` → `searchGoogleShopping()` |
 | プラン別間隔 | `lib/plan-config.js` → `getStockIntervalForPlan()` |
 | Cron 起動 | `index.js` → `stockWatchScheduler`（every 1 minutes） |
+
+### `functions/lib/pdp-shoe-stock.js` 編集時（チャット冒頭お守り）
+
+機能追加・バグ修正で本ファイルに触れるとき、次の1文を**会話の冒頭に貼る**（維持方針の再確認用）。
+
+> 既存の no_size_but_buyable や getBodyStructuredText といった曖昧な文字列一致に頼る古い経路はすべて廃止・削除し、今回定義した hasStructuralSize（構造判定）をメインゲートとする新ロジックに一本化してください。
+
+※ 実装では `bodyHasStructuralExactShoeSize(doc, rawCm)` の結果を `hasStructuralSize` として扱う。
 
 ---
 

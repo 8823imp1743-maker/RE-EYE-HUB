@@ -1,18 +1,29 @@
 /**
- * SERP 監視と検索 API で共通のルールベース一致判定。
- * 追加の外部 HTTP は行わず、タイトル・説明・キャッチ等を結合したテキスト上で判定する。
+ * SERP 用エントリ組み立て・poll サイズランク。キーワード錨の PDP 判定は serp-v5-pipeline の serpV5AnchorProgramMatch。
  */
 
 import { extractModelNumbers, extractSizeFromKeyword, hasSizeInTitleUniversal } from './cross-validator.js';
-import {
-  validateColorMatchForItem,
-  extractColorKeywords,
-  buildSerpPlainTextHaystack,
-} from './color-filter.js';
-import { matchesProductKeyword } from './keyword-match.js';
-import { normalizeBrand } from './brand-normalizer.js';
+import { extractColorKeywords, buildSerpPlainTextHaystack } from './color-filter.js';
 
-const CLOTHING = ['4XL', '3XL', '2XL', 'XXL', 'XL', 'L', 'M', 'S', 'XS'];
+/** 監視・SERP 服サイズ（アルファ6種のみ） */
+const CLOTHING = ['XXL', 'XL', 'L', 'M', 'S', 'XS'];
+
+/**
+ * colorKeywords で付いた cm が fail-close と整合するときだけ靴 sizeInfo にする。
+ * @param {string} s
+ * @returns {{ type: 'shoe', raw: string }|null}
+ */
+function strictShoeSizeInfoFromToken(s) {
+  const t = String(s ?? '').trim();
+  if (/[-〜~\u2013\u2014]/.test(t) || /約|前後/.test(t)) return null;
+  const m = t.match(/^(\d{1,2}(?:\.\d)?)\s*cm$/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n < 14 || n > 35) return null;
+  const canon = Math.round(n * 10) / 10;
+  const raw = canon % 1 === 0 ? String(Math.trunc(canon)) : canon.toFixed(1);
+  return { type: 'shoe', raw };
+}
 
 /**
  * キーワード内の cm 表記 + entry.colorKeywords の数字・服サイズを sizeInfo 化（重複除去）
@@ -33,8 +44,9 @@ export function collectRequiredSizeInfos(entry, keyword) {
   for (const ck of entry.colorKeywords || []) {
     const s = String(ck ?? '').trim();
     if (!s) continue;
-    if (/^\d+(\.\d+)?(cm)?$/i.test(s)) {
-      push({ type: 'shoe', raw: s.replace(/cm$/i, '') });
+    const sho = strictShoeSizeInfoFromToken(s);
+    if (sho) {
+      push(sho);
     } else {
       const u = s.toUpperCase();
       if (CLOTHING.includes(u)) push({ type: 'clothing', raw: u });
@@ -55,68 +67,10 @@ export function buildSerpRuleEntryForKeyword(trimmed) {
   };
 }
 
-/**
- * キーワード・色・品番・サイズが商品テキストと整合するか（プログラム判定）
- * @param {{ keyword?: string, colorKeywords?: string[], modelNumbers?: string[] }} entry
- * @param {object} item 楽天・Yahoo 正規化アイテム（available = API の在庫フラグ想定）
- * @param {{ relaxSizeWhenInStock?: boolean, inventoryListingSearch?: boolean }} [opts]
- *   relaxSizeWhenInStock: 本文にサイズが無くても API が在庫ありならサイズ条件だけ通す
- *   inventoryListingSearch: POST /api/search 在庫検索向け。一覧にサイズが載らない店舗でも relaxable 型はサイズ軸を落とさない（PDP で要確認）
- */
-export function serpItemMatchesRule(entry, item, opts = {}) {
-  const { relaxSizeWhenInStock = false, inventoryListingSearch = false } = opts;
-  const keyword = entry.keyword || '';
-  const normalized = normalizeBrand(keyword);
-  const hay = buildSerpPlainTextHaystack(item);
-
-  if (!validateColorMatchForItem(item, keyword)) {
-    console.log(`[SERP] 色不一致スキップ: "${(item.title || '').slice(0, 45)}"`);
-    return false;
-  }
-
-  const sizeInfos = collectRequiredSizeInfos(entry, keyword);
-  for (const si of sizeInfos) {
-    if (!hasSizeInTitleUniversal(hay, si)) {
-      // 一覧 JSON にバリエーションサイズが載らない店舗がある → 検索時のみ API 在庫ありならサイズ軸は通す
-      const relaxable =
-        si.type === 'shoe' || si.type === 'clothing' || si.type === 'numeric';
-      if (relaxSizeWhenInStock && item.available === true && relaxable) {
-        console.log(
-          `[SERP] サイズが本文に無いが API 在庫あり → 緩和通過（${si.type}=${si.raw}・リンク先で要確認）`
-        );
-        continue;
-      }
-      if (inventoryListingSearch && relaxable) {
-        console.log(
-          `[SERP] 在庫検索API サイズ緩和: 本文に無いが通過（${si.type}=${si.raw}・PDP要確認）`
-        );
-        continue;
-      }
-      console.log(`[SERP] サイズ不一致スキップ: need ${si.type}=${si.raw} … "${(item.title || '').slice(0, 40)}"`);
-      return false;
-    }
-  }
-
-  const models = entry.modelNumbers || [];
-  if (models.length > 0) {
-    const t = hay.toUpperCase();
-    const ok = models.some(m => t.includes(String(m).toUpperCase()));
-    if (!ok) {
-      console.log(`[SERP] 品番不一致スキップ: need [${models.join(',')}]`);
-      return false;
-    }
-  }
-  if (!matchesProductKeyword(item, keyword, normalized)) {
-    console.log(`[SERP] 商品名キーワード不一致: "${(item.title || '').slice(0, 45)}"`);
-    return false;
-  }
-  return true;
-}
-
 // ── poll 用: マイサイズ A/B/C（厳格: 本文にマイサイズが無ければ在庫フラグで繰り上げない）────────
 
 /** user-settings 保存形と整合（長い表記を先に試す） */
-const POLL_CLOTHING_FOR_SIGNAL = ['4XL', '3XL', '2XL', 'XXL', 'XL', 'XS', 'XXS', 'L', 'M', 'S'];
+const POLL_CLOTHING_FOR_SIGNAL = ['XXL', 'XL', 'L', 'M', 'S', 'XS'];
 
 const SHOE_CM_IN_TEXT = /(\d{2}(?:\.\d)?)\s*cm/gi;
 

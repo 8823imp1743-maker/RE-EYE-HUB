@@ -69,38 +69,77 @@ export function extractModelNumbers(title) {
 //  キーワード文字列から「何サイズを探しているか」を解釈する。
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** 靴 cm 単一明示以外は fail-close（約・レンジ・曖昧・US/EU） */
+const KEYWORD_AMBIGUO_SHOE = new RegExp(
+  [
+    '約',
+    '前後',
+    'くらい',
+    '位',
+    '程度',
+    '場合があります',
+    '場合も',
+    '\\bapprox',
+    'だいたい',
+    'サイズにより',
+    '多少',
+    '\\bEU\\b',
+    '\\bUK\\s*\\d',
+    '\\bUS\\b',
+    'u\\.\\s*s\\.\\s*\\.?\\s*\\d',
+  ].join('|'),
+  'iu'
+);
+
+/** レンジ表記があるキーワードは靴サイズ確定しない */
+const KEYWORD_SHOE_CM_RANGE_FORBIDDEN =
+  /\d{2}(?:\.\d)?\s*(?:㎝|cm)\s*(?:-|～|〜|∼|[\u2013\u2014]|to)\s*\d{2}(?:\.\d)?\s*(?:㎝|cm)?|\d{2}\s*-\s*\d{2}\s*(?:㎝|cm)/iu;
+
+/** 複数離散 cm が列挙（例 : 26 / 26.5 cm）がある場合は単一とはみなさない */
+function keywordHasAmbiguousMultipleNumericCm(shoeKw) {
+  const matches = [...String(shoeKw).matchAll(/(\d{2}(?:\.\d)?)\s*(?:㎝|\bcm\b)/gi)];
+  const uniq = new Set(matches.map((m) => Math.round(parseFloat(m[1]) * 10) / 10));
+  return uniq.size > 1;
+}
+
 /**
  * キーワードからサイズ情報を抽出する。
  * @param {string} keyword
- * @returns {{ type: 'shoe'|'clothing'|'numeric', raw: string }|null}
- *   type 'shoe'     : 26.5cm → raw "26.5"
- *   type 'clothing' : M/L/XL → raw "L"
- *   type 'numeric'  : 38/40  → raw "38"
+ * @returns {{ type: 'shoe'|'clothing', raw: string }|null}
+ *   type 'shoe'     : 26.5cm → raw "26.5"（単一・非レンジ・**cm 字面のみ**）
+ *   type 'clothing' : S/M/L/XL のみ（XS・XXL・フリーサイズ曖昧は null）
  */
 export function extractSizeFromKeyword(keyword) {
   if (!keyword) return null;
 
-  // 靴サイズ: 25.5cm / 26cm（従来）
-  const shoeMatch = keyword.match(/(\d{2}(?:\.\d)?)cm/i);
-  if (shoeMatch) return { type: 'shoe', raw: shoeMatch[1] };
+  // ── 靴: (\d{2}(?:\.\d)?)\s*(cm|㎝) のみ（子10–25／大人14–35 を 10〜35 で受理）
+  const shoeCand = keyword.match(/(?:^|[^\d.])(\d{2}(?:\.\d)?)\s*(?:cm|㎝)(?![\d.a-z/])/i);
+  if (shoeCand && shoeCand[1]) {
+    if (KEYWORD_AMBIGUO_SHOE.test(keyword)) return null;
+    if (KEYWORD_SHOE_CM_RANGE_FORBIDDEN.test(keyword)) return null;
+    if (keywordHasAmbiguousMultipleNumericCm(keyword)) return null;
+    const n = parseFloat(shoeCand[1]);
+    if (!Number.isFinite(n)) return null;
+    if (n < 10 || n > 35) return null;
+    const canon = Math.round(n * 10) / 10;
+    const canonical =
+      canon % 1 === 0 ? String(Math.trunc(canon)) : canon.toFixed(1).replace(/\.?0+$/, '');
+    return { type: 'shoe', raw: canonical };
+  }
 
-  // 靴: 楽天等の「US8.5-26.5」「US8.5〜26.5cm」「US8.5－26.5」（全角ハイフン・en dash 含む / u フラグ）
-  const usJoint = keyword.match(
-    /\bUS\s*[\d.]+\s*[-\/～〜\u2013\u2014\uFF0D]\s*(\d{2}(?:\.\d)?)(?:\s*cm|\bセンチ\b)?/iu
-  );
-  if (usJoint) return { type: 'shoe', raw: usJoint[1] };
+  /** 監視 PDP 許可 は S/M/L/XL のみ。XS・XXL・フリーサイズ類はサイズ未定義扱い */
+  const KW_FREE_SZ_AMBIG =
+    /フリ(?:ー)?サイズ|FREE(?:\s*SIZE)?|\bONESIZE\b|\bワンサイズ\b|\bユニサイズ\b|均一\s*(?:サイズ)?/iu;
+  if (KW_FREE_SZ_AMBIG.test(keyword)) return null;
 
-  // 服サイズ（文字）: 長い表記を優先 (4XL > 3XL > XXL > XL > XS > S/M/L)
-  const CLOTHING_SIZES = ['4XL','3XL','2XL','XXL','XL','XS','S','M','L'];
-  for (const size of CLOTHING_SIZES) {
-    if (new RegExp(`(?:^|[\\s　・/（(【「])(${size})(?=[\\s　・/）)】」]|$)`, 'i').test(keyword)) {
+  const CLOTHING_ALLOW = ['XL', 'L', 'M', 'S'];
+  for (const size of CLOTHING_ALLOW) {
+    if (
+      new RegExp(`(?:^|[\\s　・/（(【「])(${size})(?=[\\s　・/）)】」]|$|サイズ)`, 'i').test(keyword)
+    ) {
       return { type: 'clothing', raw: size };
     }
   }
-
-  // 数値サイズ（レディース欧州/日本サイズ: 34〜50 偶数）
-  const numericMatch = keyword.match(/(?:^|[\s　])(3[4-9]|4[0-9]|50)(?=[\s　]|$)/);
-  if (numericMatch) return { type: 'numeric', raw: numericMatch[1] };
 
   return null;
 }
@@ -109,30 +148,33 @@ export function extractSizeFromKeyword(keyword) {
 //  サイズ密着フィルタリング（全カテゴリ対応）
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 靴専用（内部使用）
+// 靴専用：US 推測・並記とも禁止。**本文に単独 cm/mm** のみ許可。
 function hasSizeInTitle(title, sizeCmStr) {
-  if (!sizeCmStr) return true;
-  const t   = (title || '').replace(/\s+/g, '');
-  const cm  = parseFloat(sizeCmStr);
+  if (!sizeCmStr) return false;
+  const tWide = String(title || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!tWide) return false;
+  const escNum = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const raw = escNum(sizeCmStr);
+  const cm = parseFloat(sizeCmStr);
   if (!Number.isFinite(cm)) return false;
-  const usA = cm - 18;
-  const usStr = Number.isInteger(usA) ? usA.toFixed(0) : usA.toFixed(1);
-  const cmEsc = cm.toFixed(1).replace('.', '\\.');
-  // US8.5-26.5 / US8.5ー26.5cm（ハイフン・波ダッシュ併記。includes('26.5') だけでは拾い切れない表記用）
-  const usHyphenJoint = new RegExp(
-    `US\\s*\\d+(?:\\.\\d)?\\s*[-\\/～〜\\u2013\\u2014\\uFF0D]\\s*${cmEsc}(?:cm)?`,
-    'iu'
-  );
-  if (usHyphenJoint.test(t)) return true;
 
-  return [
-    cm.toFixed(1),             // "26.5"
-    `${Math.floor(cm)}cm`,    // "26cm"
-    `${cm.toFixed(1)}cm`,     // "26.5cm"
-    `${Math.round(cm*10)}mm`, // "265mm"
-    `US${usStr}`,              // "US8.5"
-    `US ${usStr}`,
-  ].some(p => t.includes(p));
+  /** 「約」「前後」の近傍にサイズが付くときは単一サイズとはみなさない */
+  if (/(約|およそ|前後|くらい|程度)\s*\d{2}(?:\.\d)?\s*(?:㎝|\bcm\b|\bmm\b)?/iu.test(tWide))
+    return false;
+
+  /** レンジ行（一覧に広告が混じるときの誤検出防止） */
+  if (/\d{2}(?:\.\d)?\s*(?:㎝|\bcm\b)\s*[-〜~\u2013\u2014]/.test(tWide)) return false;
+
+  const boundaryTok = `(?<![0-9.])${raw}(?![0-9.])`;
+  if (new RegExp(`${boundaryTok}\\s*(?:㎝|\\bcm\\b)`, 'iu').test(tWide)) return true;
+
+  const mmRounded = Math.round(cm * 10);
+  if (Number.isInteger(mmRounded) && (cm * 10) % 1 === 0)
+    return new RegExp(`(?<![0-9])${mmRounded}(?![0-9])\\s*mm`, 'iu').test(tWide);
+
+  return false;
 }
 
 /**
@@ -146,24 +188,23 @@ function hasSizeInTitle(title, sizeCmStr) {
  * SERP ではタイトルだけでなく Yahoo の description / 楽天の itemCaption 等も渡す。
  */
 export function hasSizeInTitleUniversal(title, sizeInfo) {
-  if (!sizeInfo) return true; // サイズ指定なし → 条件なし → 通過
+  // fail-close: サイズ不明のとき証明不能 → 要件のある SERP では明示キーワードを要求
+  if (!sizeInfo || !sizeInfo.type) return false;
 
   if (sizeInfo.type === 'shoe') {
     return hasSizeInTitle(title, sizeInfo.raw);
   }
 
   if (sizeInfo.type === 'clothing') {
-    // S/M/L/XL 等が意味のある単位として存在するか（アルファベット連続の中間は除外）
-    const v = sizeInfo.raw;
-    return new RegExp(`(?:^|[^A-Za-z])(${v})(?:[^A-Za-z]|$)`, 'i').test(title || '');
+    const v = String(sizeInfo.raw || '').toUpperCase();
+    return new RegExp(`(?:^|[\\s　])${v}(?=[\\s　]|$|サイズ)`, 'i').test(title || '');
   }
 
   if (sizeInfo.type === 'numeric') {
-    // "38" が独立した数値として存在するか（価格・品番の一部は除外）
-    return new RegExp(`(?:^|[^0-9])(${sizeInfo.raw})(?:[^0-9]|$)`).test(title || '');
+    return false;
   }
 
-  return true;
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

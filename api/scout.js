@@ -1,21 +1,11 @@
 import scoutHandler from '../functions/api/scout.js';
 import { attachExpressLikeResponse, ensureJsonBody, ensureQuery } from './_compat.js';
-
-function applyCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Max-Age', '86400');
-}
+import { guardVercelApi } from './_security.js';
 
 export default async function handler(req, res) {
   attachExpressLikeResponse(res);
-  applyCors(res);
-
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
-    return res.end();
-  }
+  const gate = await guardVercelApi(req, res, { rateTier: 'heavy' });
+  if (gate !== 'ok') return;
 
   try {
     ensureQuery(req);

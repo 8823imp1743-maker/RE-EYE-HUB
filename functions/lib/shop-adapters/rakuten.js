@@ -10,21 +10,36 @@ import { extractModelNumbers } from '../cross-validator.js';
 const API_BASE   = 'https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601';
 const APP_ORIGIN = 'https://re-eye-hub.web.app';
 
+/** 楽天アプリID（Vercel 等の名前揺れを吸収。RAKUTEN_APP_ID を最優先） */
+function resolveRakutenApplicationId() {
+  const a = (process.env.RAKUTEN_APP_ID || '').trim();
+  if (a) return a;
+  const b = (process.env.RAKUTEN_APPLICATION_ID || '').trim();
+  if (b) return b;
+  const c = (process.env['楽天アプリID'] || '').trim();
+  return c || '';
+}
+
 export class RakutenAdapter extends ShopAdapter {
   get id() { return 'rakuten'; }
   get name() { return '楽天市場'; }
 
   isConfigured() {
-    const appId = (process.env.RAKUTEN_APP_ID || '').trim();
-    const accessKey = (process.env.RAKUTEN_ACCESS_KEY || '').trim();
+    const appId = resolveRakutenApplicationId();
+    const accessKey =
+      (process.env.RAKUTEN_ACCESS_KEY || process.env.RAKUTEN_API_KEY || '').trim();
     // 楽天開発者ポータル発行の App ID + Access Key（2026 年以降の API は両方必須）
     return !!(appId && accessKey);
   }
 
   async search(keyword, options = {}) {
+    const rawEnvAppId = process.env.RAKUTEN_APP_ID;
+    const envAppIdPresent = !!String(rawEnvAppId || '').trim();
+    const appId = resolveRakutenApplicationId();
+    const appIdPresent = !!String(appId || '').trim();
+
     const {
       maxResults = 20,
-      inStockOnly = false,
       mallPreserveTokens = [],
       page: mallPage = 1,
     } = options;
@@ -32,10 +47,8 @@ export class RakutenAdapter extends ShopAdapter {
       ? mallPreserveTokens.map((t) => String(t || '').trim()).filter(Boolean)
       : [];
 
-    // ヒット拡大のため cm を落とす → 続けて mallPreserveTokens をクエリ先頭に固定（検索の主眼＝ユーザーの鍵）
-    let refinedKeyword = keyword
-      .replace(/[0-9]{2}(\.[0-9])?cm/g, '')
-      .replace(/国内正規品|メンズ|レディース|送料無料|新品|公式|ショップ|【.*?】|（.*?）/g, ' ')
+    // 完成仕様: クエリ加工禁止・cm削除禁止・在庫条件禁止（mallPreserveTokens の先頭結合のみ）
+    let refinedKeyword = String(keyword ?? '')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -44,18 +57,22 @@ export class RakutenAdapter extends ShopAdapter {
       refinedKeyword = `${anchor} ${refinedKeyword}`.replace(/\s+/g, ' ').trim();
     }
 
-    const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（サイズを除外しました）';
+    const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（クエリそのまま）';
     console.log(`[Reporting Officer] 楽天・改善ワード: "${refinedKeyword}" ${preserveNote}`);
 
-    // applicationId: 環境変数のハイフンは API が受け付ける形式に合わせて除去
-    const applicationId = (process.env.RAKUTEN_APP_ID || '').trim().replace(/-/g, '');
-    const accessKey = (process.env.RAKUTEN_ACCESS_KEY || '').trim();
+    // applicationId: 上記3ソースのいずれか + ハイフン除去
+    const applicationId = String(appId || '').trim().replace(/-/g, '');
+    const accessKey =
+      (process.env.RAKUTEN_ACCESS_KEY || process.env.RAKUTEN_API_KEY || '').trim();
     const affiliateId = (process.env.RAKUTEN_AFFILIATE_ID || '').trim();
 
+    console.log('RAKUTEN_KEY_CHECK:', envAppIdPresent, 'resolved=', appIdPresent, 'accessKey=', !!accessKey);
+
     if (!applicationId || !accessKey) {
-      throw new Error(
-        '楽天 API: RAKUTEN_APP_ID と RAKUTEN_ACCESS_KEY を .env に設定してください（開発者ポータルのアプリ一覧で確認）'
-      );
+      // アダプターは「並列で必ず呼ぶ」方針。未設定でも例外で全体を止めず、空配列として扱う。
+      const miss = !applicationId ? 'applicationId' : 'accessKey';
+      console.warn('[rakuten] API key missing (' + miss + ') → skip calling Rakuten API');
+      return [];
     }
 
     const pageNum = Math.max(1, Math.min(100, Number(mallPage) || 1));
@@ -68,7 +85,6 @@ export class RakutenAdapter extends ShopAdapter {
       page: String(pageNum),
       sort: '-updateTimestamp',
       ...(affiliateId ? { affiliateId } : {}),
-      ...(inStockOnly ? { availability: '1' } : {}),
     });
 
     const cli = process.env.RE_EYE_CLI === '1' || process.env.RE_EYE_CLI === 'true';
