@@ -1,7 +1,0 @@
-{
-  "nike": { "w_to_m": -1.5, "w_to_m_cm": -1.5 },
-  "adidas": { "w_to_m": -1.0, "w_to_m_cm": -1.0 },
-  "newbalance": { "w_to_m": -1.25, "w_to_m_cm": -1.25 },
-  "asics": { "w_to_m": -1.5, "w_to_m_cm": -1.5 },
-  "puma": { "w_to_m": -1.0, "w_to_m_cm": -1.0 }
-}
