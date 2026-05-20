@@ -10,4 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Vercel Cron
-        run: curl -X POST "${{ secrets.MONITOR_CRON_URL }}" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+        run: |
+          curl -X POST "${{ secrets.MONITOR_CRON_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
