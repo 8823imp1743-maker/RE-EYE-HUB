@@ -11,5 +11,5 @@ jobs:
     steps:
       - name: Trigger Vercel Cron
         run: |
-          curl -X POST "${{ secrets.MONITOR_CRON_URL }}" \
+          curl --fail -X POST "${{ secrets.MONITOR_CRON_URL }}" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
