@@ -1,6 +1,7 @@
 import trendHandler from '../functions/api/trend.js';
 import { attachExpressLikeResponse, ensureJsonBody, ensureQuery } from './_compat.js';
 import { guardVercelApi } from './_security.js';
+import { captureIfCritical } from './_sentry.js';
 
 export default async function handler(req, res) {
   attachExpressLikeResponse(res);
@@ -12,6 +13,7 @@ export default async function handler(req, res) {
     await ensureJsonBody(req);
     return await trendHandler(req, res);
   } catch (e) {
+    void captureIfCritical(e, { endpoint: 'trend' });
     console.error('[api/trend]', e);
     if (res.writableEnded) return;
     res.statusCode = 500;

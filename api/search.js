@@ -6,6 +6,7 @@ import searchHandler from '../functions/api/search.js';
 import { attachExpressLikeResponse, ensureJsonBody, ensureQuery } from './_compat.js';
 import { guardVercelApi } from './_security.js';
 import { applySearchMemoryShield } from './_search-vercel-memory.js';
+import { captureIfCritical } from './_sentry.js';
 
 export default async function handler(req, res) {
   attachExpressLikeResponse(res);
@@ -17,6 +18,7 @@ export default async function handler(req, res) {
     await ensureJsonBody(req);
     return await applySearchMemoryShield(req, res, searchHandler);
   } catch (e) {
+    void captureIfCritical(e, { endpoint: 'search' });
     console.error('[api/search]', e);
     if (res.writableEnded) return;
     res.statusCode = 200;

@@ -1,0 +1,53 @@
+name: Critical Error Handler
+
+# Sentry の "Alert Rule" → Webhook → GitHub repository_dispatch でトリガー
+# ペイロード例: { "event_type": "critical-error", "client_payload": { "issue_url": "..." } }
+on:
+  repository_dispatch:
+    types: [critical-error]
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'エラーメッセージ（手動テスト用）'
+        required: false
+        default: 'manual test'
+
+jobs:
+  notify-and-log:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Notify Discord (CRITICAL)
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          ISSUE_URL="${{ github.event.client_payload.issue_url }}"
+          MESSAGE="${{ github.event.inputs.message }}"
+          BODY=$(jq -n \
+            --arg title "🚨 CRITICAL ERROR — re-eye-hub" \
+            --arg url "${ISSUE_URL:-（Sentry Issue URLなし）}" \
+            --arg msg "${MESSAGE:-Sentry で CRITICAL エラーが検知されました}" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $msg,
+                url: $url,
+                color: 15158332
+              }]
+            }')
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "$BODY" \
+            "$DISCORD_WEBHOOK")
+          echo "Discord status: $STATUS"
+          if [ "$STATUS" != "204" ] && [ "$STATUS" != "200" ]; then
+            echo "Discord notify failed (status=$STATUS)"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo "✅ Discord 通知完了"
+          echo "Sentry Issue: ${{ github.event.client_payload.issue_url }}"

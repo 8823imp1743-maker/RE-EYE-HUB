@@ -1,6 +1,7 @@
 import scoutHandler from '../functions/api/scout.js';
 import { attachExpressLikeResponse, ensureJsonBody, ensureQuery } from './_compat.js';
 import { guardVercelApi } from './_security.js';
+import { captureIfCritical } from './_sentry.js';
 
 export default async function handler(req, res) {
   attachExpressLikeResponse(res);
@@ -12,6 +13,7 @@ export default async function handler(req, res) {
     await ensureJsonBody(req);
     return await scoutHandler(req, res);
   } catch (e) {
+    void captureIfCritical(e, { endpoint: 'scout' });
     console.error('[api/scout] phase=wrapper', {
       message: e?.message || String(e),
       name: e?.name,
