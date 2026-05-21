@@ -27,15 +27,11 @@ import {
   sanitizeStoredUserSettings,
   userSettingsKey,
 } from '../lib/user-settings.js';
-import { stampPollSizeRankAndSort, serpItemMatchesRule, buildEntryCanonicalId } from '../lib/serp-item-rule.js';
+import { stampPollSizeRankAndSort } from '../lib/serp-item-rule.js';
 import {
   applyUserSizesToKeywordFromSettings,
   getUserMallPreserveTokens,
 } from '../lib/user-size.js';
-<<<<<<< HEAD
-import { extractModelNumbers, extractSizeFromKeyword } from '../lib/cross-validator.js';
-import { extractColorKeywords } from '../lib/color-filter.js';
-=======
 import { shoeProfileAllowsListing } from '../lib/shoe-size-gate.js';
 import { listingCmFromSizeInfo, sizeTagKeysForListingTolerance } from '../lib/size-bucket-tags.js';
 import {
@@ -57,7 +53,6 @@ import { opsJsonLog } from '../lib/notify-ops-log.js';
 import { ctrVariant, buildStockMonitorCtr } from '../lib/notify-ctr.js';
 import { computeLtqScore, shouldSkipLtqFree } from '../lib/notify-ltv.js';
 import { freeDailyCapPreSend } from '../lib/free-user-daily-cap.js';
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 
 // プラン別の検索件数上限
 const PLAN_MAX_RESULTS = {
@@ -128,27 +123,6 @@ export default async function handler(req, res) {
     mallPreserveTokens = getUserMallPreserveTokens(storedUserSettings, baseKw, false);
   }
 
-  // ── poll ルールエントリ: keyword から構造化フィールドを抽出してルールエンジン用に組み立てる
-  // SERP 監視パスの entry と同じ軸（sku / size / color / canonical_id）で判定するため、
-  // keyword から可能な限り抽出して entry 相当のオブジェクトを生成する。
-  const pollModels   = extractModelNumbers(baseKw);
-  const pollSizeInfo = extractSizeFromKeyword(baseKw);
-  const pollColors   = extractColorKeywords(baseKw);
-  const _pollSku  = pollModels.length > 0 ? pollModels[0] : '';
-  const _pollSize = pollSizeInfo?.raw || '';
-  const pollRuleEntry = {
-    keyword:       baseKw,
-    keywordRaw:    baseKw,
-    brand:         '', // poll は brand 情報を持たない（keyword から抽出不可）
-    sku:           _pollSku,
-    size:          _pollSize,
-    color:         pollColors.length > 0 ? pollColors[0] : '',
-    // buildEntryCanonicalId で動的生成: sku があれば "SKU:size" 形式で確定する
-    canonical_id:  buildEntryCanonicalId({ brand: '', sku: _pollSku, size: _pollSize }),
-    colorKeywords: pollColors,
-    modelNumbers:  pollModels,
-  };
-
   // 1. 全アクティブショップで並列検索
   const { items: rawItems, errors } = await searchAllCached(searchKeyword, {
     maxResults,
@@ -160,26 +134,12 @@ export default async function handler(req, res) {
   const safeRawItems = Array.isArray(rawItems)
     ? rawItems.filter(it => it != null && typeof it === 'object')
     : [];
-
-  // ── 1-a. serpItemMatchesRule で SKU / size / color / canonical_id を判定 ──────
-  // shouldExclude / seen チェックより前に実行し、ルール不一致を根本排除する。
-  // SERP 監視パスと完全に同一のルールエンジンを使用する。
-  // matcher 失敗時は安全側（空配列）に倒す。safeRawItems をそのまま通すのは禁止。
-  let ruleMatchedItems = [];
-  try {
-    const r = getRedis();
-    ruleMatchedItems = safeRawItems.filter(item => serpItemMatchesRule(pollRuleEntry, item, { redis: r }));
-    console.log(`[poll] matcher: ${safeRawItems.length}件 → ${ruleMatchedItems.length}件`);
-  } catch (e) {
-    console.error('[poll] serpItemMatchesRule 失敗 → 空配列で処理続行:', e.message);
-  }
-
   let allItems;
   try {
-    allItems = stampPollSizeRankAndSort(ruleMatchedItems, storedUserSettings);
+    allItems = stampPollSizeRankAndSort(safeRawItems, storedUserSettings);
   } catch (e) {
     console.error('[poll] stampPollSizeRankAndSort(allItems):', e.message);
-    allItems = ruleMatchedItems;
+    allItems = safeRawItems;
   }
 
   // 2. 各アイテムの seenチェック → 未見のみ抽出
@@ -226,21 +186,6 @@ export default async function handler(req, res) {
   if (inStockNew.length > 0 && safeUserId) {
     try {
       const top = inStockNew[0];
-<<<<<<< HEAD
-      const { category, isImportant } = getNotificationCategory(top.title, top.title);
-      const prefix = isImportant ? '[重要] ' : '';
-      await sendOneSignalNotification({
-        title:    `${prefix}${top.shopName}で在庫あり`,
-        message:  `${top.title} / ¥${top.price.toLocaleString()}`,
-        url:      top.url,
-        category,
-        data: {
-          userId:   safeUserId || undefined,
-          itemId:   top.itemId   ? String(top.itemId)   : undefined,
-          sourceId: top.sourceId ? String(top.sourceId) : undefined,
-        },
-      });
-=======
       const topPrice = Number(top.price) || 0;
       const kwSz = extractSizeFromKeyword(baseKw);
       const prof =
@@ -434,7 +379,6 @@ export default async function handler(req, res) {
           }
         }
       }
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
     } catch (e) {
       opsJsonLog('notification_send_fail', {
         source: 'poll',

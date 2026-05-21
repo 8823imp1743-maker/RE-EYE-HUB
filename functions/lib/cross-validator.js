@@ -46,12 +46,6 @@ const RAKUTEN_API_BASE = 'https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/
 const APP_ORIGIN       = 'https://re-eye-hub.web.app';
 const CROSS_TIMEOUT_MS = 6000;
 
-// serp-item-rule.js と循環依存を避けるためローカル定義（仕様は normalizeSku と完全同一）
-function _normSku(str) {
-  return String(str || '').trim().toUpperCase()
-    .replace(/[\s_\/]+/g, '-').replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
-}
-
 // ── 型番パターン ──────────────────────────────────────────────────────────────
 // Nike/Under Armour など（ハイフンあり）: CW2288-111, FJ4146-106, HV4403-001
 const MODEL_HYPHEN_RE = /\b([A-Z]{2,4}[0-9]{3,5}-[0-9]{2,4})\b/g;
@@ -166,20 +160,6 @@ function hasSizeInTitle(title, sizeCmStr) {
   const cm = parseFloat(sizeCmStr);
   if (!Number.isFinite(cm)) return false;
 
-<<<<<<< HEAD
-  // String.includes による部分一致は禁止。非数字境界の正規表現で完全一致判定する。
-  return [
-    cm.toFixed(1),             // "26.5"
-    `${Math.floor(cm)}cm`,    // "26cm"
-    `${cm.toFixed(1)}cm`,     // "26.5cm"
-    `${Math.round(cm*10)}mm`, // "265mm"
-    `US${usStr}`,              // "US8.5"
-    `US${usStr.replace('.', '')}`, // "US85"（表記ゆれ対応）
-  ].some(p => {
-    const esc = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(?<!\\d)${esc}(?!\\d)`, 'i').test(t);
-  });
-=======
   /** 「約」「前後」の近傍にサイズが付くときは単一サイズとはみなさない */
   if (/(約|およそ|前後|くらい|程度)\s*\d{2}(?:\.\d)?\s*(?:㎝|\bcm\b|\bmm\b)?/iu.test(tWide))
     return false;
@@ -195,7 +175,6 @@ function hasSizeInTitle(title, sizeCmStr) {
     return new RegExp(`(?<![0-9])${mmRounded}(?![0-9])\\s*mm`, 'iu').test(tWide);
 
   return false;
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 }
 
 /**
@@ -247,12 +226,9 @@ async function checkOnYahoo(modelNumber, sizeInfo) {
     if (!res.ok) return 'error';
     const json = await res.json();
 
-    const target = _normSku(modelNumber);
-    const modelHits = (json.hits || []).filter(h => {
-      // token split ではなく extractModelNumbers → normalizeSku で完全一致
-      const skus = extractModelNumbers(h.name || '').map(_normSku);
-      return skus.includes(target);
-    });
+    const modelHits = (json.hits || []).filter(h =>
+      (h.name || '').toUpperCase().includes(modelNumber.toUpperCase())
+    );
     if (modelHits.length === 0) { return 'not_found'; }
 
     if (sizeInfo) {
@@ -296,14 +272,9 @@ async function checkOnRakutenMarket(modelNumber, sizeInfo) {
     if (!res.ok) return 'error';
     const json = await res.json();
 
-    const target = _normSku(modelNumber);
     const modelItems = (json.Items || [])
       .map(({ Item }) => Item)
-      .filter(i => {
-        // token split ではなく extractModelNumbers → normalizeSku で完全一致
-        const skus = extractModelNumbers(i.itemName || '').map(_normSku);
-        return skus.includes(target);
-      });
+      .filter(i => (i.itemName || '').toUpperCase().includes(modelNumber.toUpperCase()));
     if (modelItems.length === 0) { return 'not_found'; }
 
     if (sizeInfo) {

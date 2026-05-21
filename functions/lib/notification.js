@@ -3,28 +3,6 @@
  */
 
 import { getRedis } from './redis.js';
-<<<<<<< HEAD
-
-/** 通知冪等ロック TTL（秒）: 同一アイテムへの再通知をこの期間ブロックする */
-const NOTIF_LOCK_TTL_SEC = 300; // 5分
-
-/**
- * @param {{
- *   title: string,
- *   message: string,
- *   url?: string,
- *   category?: string,
- *   data?: {
- *     userId?: string,
- *     itemId?: string,
- *     sourceId?: string,
- *     itemHash?: string,
- *     type?: string,
- *     [key: string]: any
- *   }
- * }} params
- */
-=======
 import { incrNotifyAttemptsPerMinute } from './notify-metrics-redis.js';
 import { freeDailyCapRecordSuccess } from './free-user-daily-cap.js';
 import { opsJsonLog } from './notify-ops-log.js';
@@ -125,7 +103,6 @@ export function buildOneSignalTargetingFromData(data) {
   return { included_segments: ['All'] };
 }
 
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 export async function sendOneSignalNotification({
   title,
   message,
@@ -133,45 +110,12 @@ export async function sendOneSignalNotification({
   category,
   data = {},
 }) {
-<<<<<<< HEAD
-  // ── 冪等ロック（Redis SET NX）──────────────────────────────────────────────
-  // 優先: canonical_id（sku ベース・ショップ横断重複防止）
-  // fallback: sourceId:itemId（canonical_id が未確定の場合）
-  const lockUserId = data.userId ? String(data.userId) : null;
-  const lockItemHash =
-    (data.canonical_id && String(data.canonical_id).trim())
-      ? String(data.canonical_id).trim()
-      : data.itemHash
-        ? String(data.itemHash)
-        : (data.sourceId && data.itemId)
-          ? `${data.sourceId}:${data.itemId}`
-          : null;
-
-  if (lockUserId && lockItemHash) {
-    try {
-      const r = getRedis();
-      const lockKey = `notif:lock:${lockUserId}:${lockItemHash}`;
-      const acquired = await r.set(lockKey, '1', { nx: true, ex: NOTIF_LOCK_TTL_SEC });
-      if (acquired === null) {
-        console.log(`[notification] ロック取得失敗: 5分以内に送信済みのためスキップ key=${lockKey}`);
-        return null;
-      }
-    } catch (e) {
-      console.warn('[notification] notif:lock Redis エラー（続行）:', e.message);
-    }
-  }
-  // ONESIGNAL_KEY を App ID として使用（UUID 形式）
-  // REST API Key は ONESIGNAL_REST_KEY → ONESIGNAL_API_KEY の順にフォールバック
-  const appId  = process.env.ONESIGNAL_KEY || process.env.ONESIGNAL_APP_ID;
-  const apiKey = process.env.ONESIGNAL_REST_KEY || process.env.ONESIGNAL_API_KEY || '';
-=======
   const appId =
     process.env.ONESIGNAL_KEY || process.env.ONESIGNAL_APP_ID;
   const apiKey =
     process.env.ONESIGNAL_REST_KEY ||
     process.env.ONESIGNAL_API_KEY ||
     '';
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 
   if (!appId) {
     throw new Error('ONESIGNAL_KEY (App ID) must be set');

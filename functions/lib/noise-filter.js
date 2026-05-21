@@ -138,3 +138,23 @@ export function analyzeNoise(item = {}) {
     reasons,
   };
 }
+
+/** 楽天 API の NGKeyword パラメータ（除外語）。必要に応じて拡張する。 */
+export const RAKUTEN_NG_KEYWORD = '';
+
+/**
+ * Google News RSS 等のクエリに付加するノイズマイナスキーワード文字列。
+ * scout.js / rss-scanner.js がベースとして使用する。
+ */
+export const QUERY_NOISE_MINUS =
+  '-中古 -コピー品 -フェイク -レプリカ -ジャンク -空箱 -修理 -部品取り' +
+  ' -シューレース -インソール -中敷 -靴ひも';
+
+/**
+ * アイテム配列からノイズを除去して返す。
+ * @param {Array<{title?: string, description?: string, url?: string}>} items
+ * @returns {typeof items}
+ */
+export function filterNoise(items) {
+  return (items || []).filter((item) => !analyzeNoise(item).isNoise);
+}

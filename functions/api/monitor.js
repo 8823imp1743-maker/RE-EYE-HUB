@@ -9,16 +9,7 @@
 import { getRedis, withRedisRetry } from '../lib/redis.js';
 import { analyzeNoise } from '../lib/noise-filter.js';
 import { extractModelNumbers, extractSizeFromKeyword } from '../lib/cross-validator.js';
-<<<<<<< HEAD
-import {
-  extractColorKeywords,
-  expandColorQuery,
-  buildSerpPlainTextHaystack,
-} from '../lib/color-filter.js';
-import { serpItemMatchesRule, buildEntryCanonicalId } from '../lib/serp-item-rule.js';
-=======
 import { extractColorKeywords } from '../lib/color-filter.js';
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 import { searchAllCached } from '../lib/shop-search-cache.js';
 import { loadUserSettings } from '../lib/user-size.js';
 import { sanitizeUserId } from '../lib/user-settings.js';
@@ -130,10 +121,6 @@ function cliLog(...args) {
   if (isRunCli()) console.log(...args);
 }
 
-<<<<<<< HEAD
-/** 新着URL差分のみ判定（SERP本来設計）。true にすると全ヒットを毎回判定しAPIコスト増大。 */
-const SERP_EVALUATE_ALL_CURRENT_ITEMS_FOR_TEST = false;
-=======
 async function allowMonitorUserPushBurst(r, userId) {
   const ok1 = await allowUserPushPerMinute(r, userId, { label: 'monitor-push-u1m' });
   if (!ok1) return false;
@@ -208,7 +195,6 @@ async function sendMonitorDigest(r, payload) {
     },
   });
 }
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 
 // ── 公式ドメイン一覧（特権パス対象） ──────────────────────────────────────────
 // 公式サイトが「在庫あり」と言えば他の全フィルターをスキップして即通知する。
@@ -321,20 +307,14 @@ async function handleRegister(req, res) {
   if (body.syncPlanOnly) {
     return handlePlanSyncOnly(req, res);
   }
-  const keyword    = String(body.keyword    || '').trim();
-  const keywordRaw = String(body.keywordRaw || body.keyword || '').trim();
-  const brand      = String(body.brand  || '').trim();
-  // sku: フロントが抽出した構造化 SKU。空の場合は keyword からの推測にフォールバック
-  const sku        = String(body.sku    || '').trim().toUpperCase();
-  const size       = String(body.size   || '').trim();
-  const color      = String(body.color  || '').trim();
-  const itemId     = normalizeWatchId(body.itemId);
-  const sourceId   = normalizeWatchId(body.sourceId);
-  const userId     = String(body.userId || '').trim();
-  const url        = body.url   != null ? String(body.url)   : '';
-  const title      = body.title != null ? String(body.title) : '';
-  const price      = Number(body.price) || 0;
-  const plan       = body.plan;
+  const keyword = String(body.keyword || '').trim();
+  const itemId = normalizeWatchId(body.itemId);
+  const sourceId = normalizeWatchId(body.sourceId);
+  const userId = String(body.userId || '').trim();
+  const url = body.url != null ? String(body.url) : '';
+  const title = body.title != null ? String(body.title) : '';
+  const price = Number(body.price) || 0;
+  const plan = body.plan;
   if (!keyword || !itemId || !sourceId || !userId) {
     return res.status(400).json({ error: 'keyword, itemId, sourceId, userId are required' });
   }
@@ -364,11 +344,6 @@ async function handleRegister(req, res) {
   const hash = itemHashKey(sourceId, itemId);
   const key = watchKey(userId, hash);
 
-<<<<<<< HEAD
-  // ── 品番の確定（登録時に一度だけ固定する）────────────────────────────────
-  // 優先順位: ① フロントが抽出した sku → ② keyword/title からの自動抽出
-  // 登録後にショップ側のタイトルが変わっても、この「登録品番」が判定の絶対基準になる。
-=======
   try {
     const already = await withRedisRetry(() => r.sismember(indexKey, hash), { label: 'register:cap-sismember' }).catch(
       () => 0
@@ -399,19 +374,14 @@ async function handleRegister(req, res) {
   // keyword と title の両方から品番を探す。
   // 登録後にショップ側のタイトルが変わっても、
   // この「登録品番」が判定の絶対的な基準になる。
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
   const registeredTitle = title || keyword;
   const registeredModels = [
-    ...(sku ? [sku] : []),                   // ① 構造化 SKU（主軸）
-    ...extractModelNumbers(keyword),          // ② keyword から推測（補助）
-    ...extractModelNumbers(registeredTitle),  // ② title  から推測（補助）
+    ...extractModelNumbers(keyword),
+    ...extractModelNumbers(registeredTitle),
   ].filter((v, i, a) => a.indexOf(v) === i); // 重複除去
 
-  // 色キーワードの確定: ① フロント抽出 color → ② keyword からの推測
-  const registeredColors = [
-    ...(color ? [color] : []),
-    ...extractColorKeywords(keyword),
-  ].filter((v, i, a) => a.indexOf(v) === i);
+  // 色キーワードも登録時に確定・保存（ピンク/pink 等）
+  const registeredColors = extractColorKeywords(keyword);
 
   if (registeredModels.length > 0) {
     console.log(`[monitor] 品番確定: ${registeredModels.join(', ')} ("${registeredTitle.slice(0,50)}")`);
@@ -422,21 +392,8 @@ async function handleRegister(req, res) {
     console.log(`[monitor] 色確定: ${registeredColors.join(', ')}`);
   }
 
-  // canonical_id: フロント送信値を優先し、なければサーバー側で導出する
-  const canonical_id = String(body.canonical_id || '').trim()
-    || buildEntryCanonicalId({ brand, sku, size });
-
   const entry = {
     keyword,
-    keywordRaw,
-    // ── 構造化フィールド（主軸）────────────────────────────────────────
-    // フロントが登録時に抽出した確定値。空文字 = 未指定（フィルタースキップ）
-    brand,
-    sku,
-    size,
-    color,
-    canonical_id,
-    // ────────────────────────────────────────────────────────────────────
     itemId,
     sourceId,
     userId,
@@ -444,9 +401,13 @@ async function handleRegister(req, res) {
     title:         registeredTitle,
     price,
     listPrice:     resolvedListPrice || 0,
-    // ── 品番絶対主義の核（sku → keyword 推測の順で確定済み）────────────
+    // ── 品番絶対主義の核 ────────────────────────────────────────────────
+    // ハイフン以下を含む完全品番（例: ["CW2288-111"]）。
+    // 空配列 = 品番指定なし（フィルタースキップ）
     modelNumbers:  registeredModels,
-    // ── 色フィルターの核（color → keyword 推測の順で確定済み）──────────
+    // ── 色フィルターの核 ────────────────────────────────────────────────
+    // 登録時のキーワードから確定した色ワード（例: ["ピンク"]）。
+    // 空配列 = 色指定なし（フィルタースキップ）
     colorKeywords: registeredColors,
     status:        'OFF',
     addedAt:       Date.now(),
@@ -488,13 +449,8 @@ async function handleRegister(req, res) {
       hash,
       itemId,
       sourceId,
-      listPrice:     resolvedListPrice,
-      sku:           sku || (registeredModels[0] || ''),
-      brand,
-      size,
-      color,
-      canonical_id,
-      modelNumbers:  registeredModels,
+      listPrice: resolvedListPrice,
+      modelNumbers: registeredModels,
       colorKeywords: registeredColors,
     });
   } catch (e) {
@@ -888,7 +844,7 @@ async function runCascadeSearch(keyword, officialTitle, _userId) {
 
     console.log(`[CASCADE] 結果: 楽天・Yahoo価格付きヒット ${priced.length}件 marketFound=${marketFound}`);
 
-    return { cascadeText, marketFound, cheapest, available, googleFound: false };
+    return { cascadeText, marketFound, cheapest, googleFound: false };
   } catch(e) {
     console.warn('[CASCADE] 波及検索失敗:', e.message);
     return { cascadeText: '', marketFound: false, cheapest: null, googleFound: false };
@@ -1045,67 +1001,6 @@ for (let ii = 0; ii < itemsToEvaluate.length && ii < 10; ii++) {
       console.log(`[SERP] 価格異常: ¥${itemPrice} / 参考¥${listPrice}`);
       continue;
     }
-<<<<<<< HEAD
-
-    const itemPrice = item.price || 0;
-    if (listPrice > 0 && itemPrice > 0) {
-      const ratio = itemPrice / listPrice;
-      if (ratio < 0.5 || ratio > 2.5) {
-        console.log(`[SERP] 価格異常: ¥${itemPrice} / 参考¥${listPrice}`);
-        continue;
-      }
-    }
-
-    if (!serpItemMatchesRule(entry, item, { redis: r })) continue;
-
-    let stockConfirmed = item.available !== false;
-    if (!stockConfirmed && yahooSelectableStockHeuristic(item)) {
-      stockConfirmed = true;
-      console.log('[SERP] Yahoo: inStock=false でも説明・キャッチに購入/バリエーション表記あり → 在庫ありとみなす');
-    }
-    if (isOfficialUrl(item.url)) {
-      const sr = await checkStock(item.url, keyword);
-      stockConfirmed = sr.status === 'in_stock';
-    }
-    if (!stockConfirmed) {
-      console.log(`[SERP] 在庫なし: ${item.url?.slice(0, 60)}`);
-      continue;
-    }
-
-    confirmed.push({ item });
-    console.log(`[SERP] ✅ 合格: "${item.title?.slice(0, 50)}" ¥${itemPrice.toLocaleString()} ${item.url?.slice(0, 50)}`);
-  }
-
-  for (const { item } of confirmed) {
-    const itemPrice = item.price || 0;
-    const sizeInfo  = extractSizeFromKeyword(keyword);
-    const sizeLine  = sizeInfo?.raw ? `サイズ:${sizeInfo.raw}` : '';
-    let siteLine    = '';
-    try {
-      siteLine = new URL(item.url).hostname.replace(/^www\./, '');
-    } catch { /* ok */ }
-    const msgBody = [
-      item.title?.slice(0, 52),
-      `¥${itemPrice.toLocaleString()}`,
-      sizeLine,
-      siteLine,
-    ].filter(Boolean).join(' · ');
-    try {
-      await sendOneSignalNotification({
-        title:   `[新着在庫] ${title || keyword}`,
-        message: msgBody,
-        url:     item.url,
-        data: {
-          type:         'serp_new',
-          userId,
-          itemId,
-          sourceId,
-          canonical_id: item.canonical_id || buildEntryCanonicalId(entry),
-          itemUrl:      item.url,
-          keyword,
-          shop:         item.sourceId || '',
-        },
-=======
   }
 
   staged.push(item);
@@ -1163,7 +1058,6 @@ const pdpParallel = Math.max(
         userGender,
         productGender: String(clsRow?.gender || 'unknown'),
         productRole: String(clsRow?.product_role || 'unknown'),
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
       });
       const finalStockOn = isSerpV5FinalStockOn(pdpv, ce);
       pdpDomStructuralDelta[urlKey] = finalStockOn;
@@ -1498,28 +1392,8 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
   console.log(`[monitor][公式] PDP truth:「${title?.slice(0, 40)}」 ${String(url || '').slice(0, 60)}`);
 
   const cascade = await runCascadeSearch(keyword, title, userId);
-<<<<<<< HEAD
-
-  // cascade の available items を serpItemMatchesRule でフィルタリング（matcher 統一）
-  const cascadeFiltered = (cascade.available || []).filter(item => {
-    try { return serpItemMatchesRule(entry, item, { redis: r }); }
-    catch { return false; }
-  });
-  const filteredCheapest = cascadeFiltered.length > 0
-    ? cascadeFiltered.reduce((a, b) => (a.price || 0) <= (b.price || 0) ? a : b)
-    : null;
-  const filteredMarketFound = filteredCheapest !== null;
-  const filteredCascadeText = filteredCheapest
-    ? ` / 楽天・Yahoo最安 ¥${filteredCheapest.price.toLocaleString()}`
-    : '';
-
-  // ── 2軸状態変化の判定 ─────────────────────────────────────────────────────
-  const prevMarketStatus = entry.marketStatus || 'NOT_FOUND';
-  const newMarketStatus  = filteredMarketFound ? 'FOUND' : 'NOT_FOUND';
-=======
   const prevMarketStatus = entry.marketStatus || 'NOT_FOUND';
   const newMarketStatus = cascade.marketFound ? 'FOUND' : 'NOT_FOUND';
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 
   const kwSizeForPdp = extractSizeFromKeyword(keyword || '');
   const officialPdpTask = buildSerpV5OfficialUrlPdpTask(kwSizeForPdp);
@@ -1531,44 +1405,6 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
     pdpv = await runSerpV5PdpVerify({ url }, officialPdpTask);
     structuralOk = isSerpV5PdpDomStructuralOn(pdpv);
 
-<<<<<<< HEAD
-  let notifTitle, notifMessage, notifUrl;
-
-  if (officialChanged && isRestocked) {
-    notifTitle   = `[公式入荷] ${title}`;
-    notifMessage = `公式サイトで在庫を確認${filteredCascadeText}`;
-    notifUrl     = url;
-
-  } else if (officialChanged && !isRestocked) {
-    if (filteredMarketFound) {
-      notifTitle   = `[公式品切れ | 楽天・Yahoo在庫あり] ${title}`;
-      notifMessage = `公式は品切れ。${filteredCascadeText.replace(' / ', '')}`;
-      notifUrl     = filteredCheapest?.url || undefined;
-    } else {
-      notifTitle   = `${title} 品切れ（公式・楽天・Yahoo確認）`;
-      notifMessage = '公式・楽天市場・Yahoo!ショッピングで該当在庫なし。引き続き監視します。';
-      notifUrl     = undefined;
-    }
-
-  } else {
-    notifTitle   = `[発見] ${title} — 楽天・Yahooで在庫あり`;
-    notifMessage = `公式は品切れ中。${filteredCascadeText.replace(' / ', '')}`;
-    notifUrl     = filteredCheapest?.url || undefined;
-  }
-
-  try {
-    await sendOneSignalNotification({
-      title:   notifTitle,
-      message: notifMessage,
-      url:     notifUrl,
-      data: {
-        type:         isRestocked ? 'official_restock' : (cascade.marketFound ? 'market_found' : 'soldout'),
-        itemId, sourceId, userId,
-        canonical_id: buildEntryCanonicalId(entry),
-        newStatus, marketStatus: newMarketStatus,
-        itemUrl: url, keyword,
-      },
-=======
     if (!structuralOk && !!pdpv.retryable && String(pdpv.reason || '') === 'fetch_fail_strict') {
       scheduleRetry(
         { url },
@@ -1602,7 +1438,6 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
       score: ltqScoreOff,
       minScore: minLtq,
       skipPaidLtq: true,
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
     });
 
   const dcOfficial = await freeDailyCapPreSend(r, userId, offPlan);

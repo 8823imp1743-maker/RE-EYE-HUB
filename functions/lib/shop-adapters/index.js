@@ -1,7 +1,6 @@
-import { RakutenAdapter }      from './rakuten.js';
-import { YahooAdapter }        from './yahoo.js';
-import { filterNoise }         from '../noise-filter.js';
-import { enrichItemStructure } from '../serp-item-rule.js';
+import { RakutenAdapter } from './rakuten.js';
+import { YahooAdapter }   from './yahoo.js';
+import { filterNoise }    from '../noise-filter.js';
 
 const REGISTRY = [
   new RakutenAdapter(),
@@ -74,14 +73,6 @@ export async function searchAll(keyword, options = {}) {
     console.log('[AUDIT][searchAll] filterNoise 除外', noiseDropped, '件');
   }
 
-<<<<<<< HEAD
-  // ── adapter normalize: matcher に渡す前に共通構造化フィールドを確定する ──
-  // brand / sku / skuAll / size / sizeInfo / color / canonical_id / source を保証する。
-  // matcher (serpItemMatchesRule) は _enriched 済みの item のみを受け取る前提。
-  cleanItems.forEach(enrichItemStructure);
-
-  return { items: cleanItems, errors };
-=======
   return {
     items: cleanItems,
     errors,
@@ -90,7 +81,6 @@ export async function searchAll(keyword, options = {}) {
       marketRaw: items.length,
     },
   };
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 }
 
 export function getAdapterInfo() {

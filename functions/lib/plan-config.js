@@ -10,31 +10,18 @@
 export const CURRENT_PLAN = 'VIP';
 
 // ── Stock Watch ─────────────────────────────────────────────
+//   テスト中: インターバル実質無効（checkAllWatched は elapsed >= 0 で常に対象）
 //   dayInterval  : 昼間（08:00–19:00）の監視間隔（秒）
 //   nightInterval: 夜間の監視間隔（秒）null = スキップ
-//   jitterSec    : ±揺らぎ秒数
-//
-//   コスト基準（GitHub Actions 無料 Cron = 30分間隔前提）:
-//     VIP      昼 300秒（5分）  → Cron起動ごとに毎回チェック
-//     PRO      昼 900秒（15分） → 30分Cron で2回に1回スキップ
-//     STANDARD 昼 1800秒（30分）→ 30分Cron で1回/Cron
-//     FREE     昼 3600秒（1時間）→ 30分Cron で2回に1回
-//     夜間（19–08時）は全プランスキップ（null）でAPIコスト0
-/** 在庫監視のベース間隔（秒）。 */
-export const DEFAULT_MONITOR_INTERVAL_SEC = 1800;
+//   jitterSec    : ±揺らぎ秒数（0 = 揺らぎなし）
+/** 在庫監視のベース間隔（秒）。0 のときプラン別も 0 扱いで待ちなし。 */
+export const DEFAULT_MONITOR_INTERVAL_SEC = 0;
 
 export const STOCK_CONFIG = {
-<<<<<<< HEAD
-  FREE:     { dayInterval: 3600, nightInterval: null, jitterSec: 60  },
-  STANDARD: { dayInterval: 1800, nightInterval: null, jitterSec: 60  },
-  PRO:      { dayInterval:  900, nightInterval: null, jitterSec: 30  },
-  VIP:      { dayInterval:  300, nightInterval: null, jitterSec: 15  },
-=======
   FREE:     { dayInterval: 3600, nightInterval: null,  jitterSec: 0  },
   STANDARD: { dayInterval: 900,  nightInterval: 3600,  jitterSec: 0  },
   PRO:      { dayInterval: 300,  nightInterval: 3600,  jitterSec: 60 },
   VIP:      { dayInterval: 300,  nightInterval: 300,   jitterSec: 60 },
->>>>>>> 5cd0cd18d44d8972bc0f36c1caefc506e3d91796
 };
 
 // ── Scout ────────────────────────────────────────────────────
