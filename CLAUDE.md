@@ -511,3 +511,73 @@ HTML の `onclick` 属性と JS の関数定義が別々に追加され、対応
 - エラーが出たままデプロイしない。
 - `--force` フラグは使用しない。
 - `index.html` を `Write` ツールで全体上書きしない（KBL-001 参照）。
+
+---
+
+## 運用・監視 最終指示書（2026-05-22 固定）
+
+> **本システムの本質：「完全自動化」ではなく「最速で安全に復旧できる仕組み」**
+
+### 絶対原則（破禁止）
+
+| # | 原則 | 内容 |
+|---|------|------|
+| 1 | 本番自動修正禁止 | AI が直接本番を変更することは禁止。必ず PR 経由 |
+| 2 | 無料枠制約優先 | Vercel Hobby / GitHub Free / Sentry Free / Discord Webhook を超える設計は禁止 |
+| 3 | 安全性優先 | 正しさよりも「壊れない構成」を優先。不明な場合は保守的に設計 |
+| 4 | シンプル優先 | 不要な自動化は禁止。構成を増やしすぎない |
+
+### エラー分類ルール
+
+**CRITICAL（対応：Sentry + Discord + Actions）**
+- 500 系 / API 死 / DB 接続失敗
+
+**WARNING（対応：Sentry 記録のみ）**
+- 404 / validation error / 軽微 UI エラー
+
+### 監視スタック（固定）
+
+```
+Vercel → GitHub → Sentry(@sentry/node) → Discord → GitHub Actions → PR → 人間 merge → Vercel 自動デプロイ
+```
+
+- API wrapper は `api/_sentry.js` の `captureIfCritical` を必ず使用
+- フロントは `public/index.html` の Sentry CDN を使用
+- CRITICAL のみ `critical-error.yml` Actions が起動
+
+### GitHub Actions ルール
+
+- CRITICAL のみ起動（`repository_dispatch: critical-error`）
+- 役割は通知 or PR 補助のみ
+- 自動デプロイは絶対禁止
+
+### すべての変更前に必ず確認する項目
+
+1. **安全性**：本番を壊す可能性はあるか / ロールバック可能か
+2. **コスト**：無料枠を超えないか / Actions 暴走しないか
+3. **構造**：不必要に複雑化していないか / シンプル代替はないか
+4. **自動化レベル**：これは自動化する必要があるか / 通知で十分ではないか
+
+### ユーザー確認フォーマット（必須停止）
+
+影響範囲が `api/` または `functions/` に及ぶ変更、または新規 Workflow 追加の際は、
+実装前に以下フォーマットで必ず止まってユーザーの承認を取ること：
+
+```
+【提案内容】〜〜〜
+【理由】〜〜〜
+【影響範囲】frontend / api / infra
+【リスク】低 / 中 / 高
+【コスト】無料枠内 / 増加あり
+【代替案】より安全な方法：〜〜
+---
+【質問】この方針で進めていいですか？ YES / NO / 修正
+```
+
+### 禁止事項（運用）
+
+- 自動本番修正
+- 無制限 Actions 実行
+- 不要な複雑化
+- 無料枠超過設計
+- ユーザー確認なしの実装
