@@ -12,4 +12,5 @@ jobs:
       - name: Trigger Vercel Cron
         run: |
           curl --fail -X POST "${{ secrets.MONITOR_CRON_URL }}" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json"
