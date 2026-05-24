@@ -1,9 +1,23 @@
 {
   "functions": {
-    "api/*.js": {
-      "maxDuration": 60
-    }
+    "api/index.js": { "maxDuration": 60 },
+    "api/health.js": { "maxDuration": 10 }
   },
+  "rewrites": [
+    { "source": "/api/cron",          "destination": "/api/index" },
+    { "source": "/api/monitor",       "destination": "/api/index" },
+    { "source": "/api/search",        "destination": "/api/index" },
+    { "source": "/api/scout",         "destination": "/api/index" },
+    { "source": "/api/poll",          "destination": "/api/index" },
+    { "source": "/api/dashboard",     "destination": "/api/index" },
+    { "source": "/api/trend",         "destination": "/api/index" },
+    { "source": "/api/user-settings", "destination": "/api/index" },
+    { "source": "/api/reports",       "destination": "/api/index" },
+    { "source": "/api/system-health", "destination": "/api/index" },
+    { "source": "/api/notify-health", "destination": "/api/index" },
+    { "source": "/api/ctr-click",     "destination": "/api/index" },
+    { "source": "/api/usage-status",  "destination": "/api/index" }
+  ],
   "headers": [
     {
       "source": "/",
