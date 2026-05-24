@@ -538,20 +538,76 @@ function sortPoolByNewUnopenedFirst(pool) {
 }
 
 /**
- * 在庫フィルター層 — API 取得後・レスポンス前の最終段階で実行。
- * 楽天・Yahoo ともに available: boolean が正規化済みのため直接参照。
- * price > 0 をセカンダリ条件として追加（availability 未設定商品への保険）。
+ * ── stockFilterLayer ─────────────────────────────────────────────────────────
+ *
+ * Stage 1: 商品レベル在庫チェック（available + price + テキスト）
+ * Stage 2: 購入可能性チェック（URL有効性 + タイトル + 将来 variants 対応）
+ * Stage 3: URL基準クロスソース重複排除（楽天・Yahoo 同一商品の 2重返し防止）
+ *
+ * ★ 設計上の注意 ★
+ * 楽天・Yahoo は商品1行=1SKU で返す（variants フィールドはない）。
+ * isActuallyPurchasable の variants ブロックは将来拡張用（現時点は到達しない）。
  */
+
+// Stage 1: 商品レベル在庫
 function isItemInStock(item) {
   if (!item) return false;
   // available が明示的 false → 確実に除外
   if (item.available === false) return false;
-  // price が 0 以下 → 実質非在庫
-  if (typeof item.price === 'number' && item.price <= 0) return false;
-  // タイトル・キャプションに sold out / 在庫なし を含む → 除外
-  const hay = String(item.title || '') + ' ' + String(item.catchcopy || '') + ' ' + String(item.itemCaption || '');
-  if (/sold.?out|完売|在庫なし|品切れ|欠品/i.test(hay)) return false;
+  // price が数値でない、または 0 以下 → 実質非在庫
+  if (typeof item.price !== 'number' || item.price <= 0) return false;
+  // タイトル・キャプション・説明文に品切れ表現 → 除外
+  const hay =
+    String(item.title       || '') + ' ' +
+    String(item.catchcopy   || '') + ' ' +
+    String(item.itemCaption || '') + ' ' +
+    String(item.description || '');
+  if (/sold.?out|完売|在庫なし|品切れ|欠品|取り扱いなし|out of stock/i.test(hay)) return false;
   return true;
+}
+
+// Stage 2: 購入可能性チェック
+function isActuallyPurchasable(item) {
+  if (!item) return false;
+
+  // 購入ページ URL が存在しない → 購入ボタンを押せない
+  if (!item.url || typeof item.url !== 'string' || !item.url.startsWith('http')) return false;
+
+  // タイトルが空または1文字以下 → 商品として成立しない
+  if (!item.title || String(item.title).trim().length < 2) return false;
+
+  // variants がある場合（将来拡張: PDP から SKU 一覧を取得した場合）
+  // → 1つでも購入可能な SKU があれば通す
+  if (Array.isArray(item.variants) && item.variants.length > 0) {
+    return item.variants.some(
+      (v) =>
+        v.available === true &&
+        typeof v.price === 'number' &&
+        v.price > 0 &&
+        !/sold.?out|在庫なし|欠品/i.test(v.label || '')
+    );
+  }
+
+  return true;
+}
+
+// Stage 3: URL基準重複排除（sourceId:itemId 重複排除は buildCleanItemsFromRaw 済み）
+// ここでは URL 一致によるクロスソース（楽天・Yahoo 同一商品）を除去する
+function dedupeByUrl(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    // URL 正規化: クエリ文字列を除いたパスで比較
+    let key = item.url || '';
+    try {
+      const u = new URL(key);
+      key = u.origin + u.pathname; // クエリ・ハッシュ除去
+    } catch {
+      key = item.url || `${item.sourceId}:${item.itemId}`;
+    }
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function sortByPriceAsc(items) {
@@ -1283,11 +1339,16 @@ export default async function handler(req, res) {
     let pool = r1.pool;
     lastRejectSummary = r1.rejectReasonSummary || lastRejectSummary;
 
-    // ── stockFilterLayer（非靴パス） ──────────────────────────
-    const beforeStock = pool.length;
-    pool = pool.filter(isItemInStock);
-    const stockExcluded = beforeStock - pool.length;
-    console.log(`[stockFilter] non-shoe: ${beforeStock} → ${pool.length} kept (${stockExcluded} out-of-stock excluded)`);
+    // ── stockFilterLayer 3段階（非靴パス） ───────────────────
+    const rawCount    = pool.length;
+    const stage1      = pool.filter(isItemInStock);
+    const stage2      = stage1.filter(isActuallyPurchasable);
+    const finalPool   = dedupeByUrl(stage2);
+    const stockExcluded = rawCount - finalPool.length;
+    console.log(
+      `[stockFilter] non-shoe: raw=${rawCount} stage1=${stage1.length} stage2=${stage2.length} final=${finalPool.length}`
+    );
+    pool = finalPool;
     if (lastRejectSummary) lastRejectSummary.stockExcluded = stockExcluded;
 
     pool = sortByPriceAsc(pool);
