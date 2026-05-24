@@ -7,6 +7,7 @@
  */
 
 import { getRedis, withRedisRetry } from '../lib/redis.js';
+import { guardRedisWrite, redisGuardStatus } from '../lib/redis-guard.js';
 import { analyzeNoise } from '../lib/noise-filter.js';
 import { extractModelNumbers, extractSizeFromKeyword } from '../lib/cross-validator.js';
 import { extractColorKeywords } from '../lib/color-filter.js';
@@ -677,6 +678,13 @@ async function getUserPlanBatch(r, userIds) {
  */
 export async function checkAllWatched() {
   cliLog('[run-cli] Upstash（Redis）に接続して監視エントリを読み込みます');
+
+  // Redis 予算チェック — 上限到達時はサイクル全体をスキップして課金を防ぐ
+  if (!guardRedisWrite('checkAllWatched-cycle', 40)) {
+    const s = redisGuardStatus();
+    console.warn(`[monitor] Redis 予算超過によりサイクルをスキップ (${s.count}/${s.limit})`);
+    return;
+  }
 
   const { intervalSec } = getStockInterval();
   if (intervalSec === null) {

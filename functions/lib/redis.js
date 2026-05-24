@@ -52,6 +52,10 @@ export async function withRedisRetry(fn, opts = {}) {
     } catch (e) {
       last = e;
       const msg = String(e?.message || e);
+      // quota 超過・認証エラーはリトライしない（余計な消費を防ぐ）
+      const nonRetryable =
+        /max daily|quota|rate limit|429|401|403|unauthorized|forbidden/i.test(msg);
+      if (nonRetryable) break;
       const retryable =
         /fetch failed|Failed to fetch|ECONNRESET|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|socket|network|502|503|504/i.test(
           msg
