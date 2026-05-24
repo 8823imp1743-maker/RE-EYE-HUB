@@ -1712,6 +1712,21 @@
                 </div>
             </div>
 
+            <!-- FREE QUOTA CONTROL PANEL -->
+            <div class="transparent-box" id="quota-panel" style="margin-top:11px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                    <span class="gold-label">FREE QUOTA CONTROL PANEL</span>
+                    <span id="quota-system-status" class="meta-11px" style="letter-spacing:1px;">—</span>
+                </div>
+                <div id="quota-rows" style="display:flex;flex-direction:column;gap:8px;">
+                    <div class="meta-11px" style="color:rgba(247,231,206,0.4);text-align:center;padding:8px 0;">読み込み中…</div>
+                </div>
+                <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;">
+                    <span id="quota-worst" class="meta-11px" style="color:var(--champagne-gold);opacity:0.7;"></span>
+                    <button onclick="loadQuotaPanel()" style="background:none;border:none;color:var(--amethyst);font-size:11px;letter-spacing:1px;cursor:pointer;padding:4px 0;">↻ 更新</button>
+                </div>
+            </div>
+
             <p class="disclaimer-11px">本アプリはプランごとの監視間隔で情報を提供します。通知後の欠品など、購入の確約は致しかねますので予めご了承ください。</p>
         </div>
     </div>
@@ -2452,8 +2467,73 @@ function show(id, btn) {
     if (id === 'history')  { renderHistory(historyItems); syncWatchStatus(); }
     if (id === 'insight')  renderTrendItems(document.getElementById('insight-search')?.value);
     if (id === 'settings') { renderSettingsTrendWatching(); loadWatchHistory({ silent: true }); syncWatchStatus(); }
+    if (id === 'link')     { loadQuotaPanel(); }
     updateAdVisibility();
     requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); refreshLucideIcons(); });
+}
+
+// ── FREE QUOTA CONTROL PANEL ──────────────────────────────────
+async function loadQuotaPanel() {
+    const rowsEl   = document.getElementById('quota-rows');
+    const statusEl = document.getElementById('quota-system-status');
+    const worstEl  = document.getElementById('quota-worst');
+    if (!rowsEl) return;
+
+    rowsEl.innerHTML = '<div class="meta-11px" style="color:rgba(247,231,206,0.4);text-align:center;padding:8px 0;">読み込み中…</div>';
+    statusEl.textContent = '—';
+
+    let data;
+    try {
+        const r = await fetch('/api/usage-status');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        data = await r.json();
+    } catch (e) {
+        rowsEl.innerHTML = `<div class="meta-11px" style="color:rgba(255,80,80,0.7);text-align:center;padding:8px 0;">取得失敗: ${e.message}</div>`;
+        return;
+    }
+
+    const LABELS = { gemini: 'Gemini', serpapi: 'SerpAPI', redis: 'Redis', cron: 'Cron' };
+    const ORDER  = ['gemini', 'serpapi', 'redis', 'cron'];
+
+    const sysStatus = data.summary?.systemStatus || 'SAFE';
+    const statusColor = sysStatus === 'CRITICAL' ? '#ff4d4d' : sysStatus === 'WARNING' ? '#f7c948' : '#4dff9b';
+    statusEl.textContent  = sysStatus;
+    statusEl.style.color  = statusColor;
+
+    const worstKey = data.summary?.worstCase;
+    const worstH   = data.summary?.worstRemainingHours;
+    if (worstKey && worstH !== null) {
+        const hDisp = worstH < 1 ? `${Math.round(worstH * 60)}分` : `${worstH}時間`;
+        worstEl.textContent = `最短枯渇: ${LABELS[worstKey] || worstKey}（残り ${hDisp}）`;
+        worstEl.style.color = '#ff4d4d';
+    } else {
+        worstEl.textContent = '';
+    }
+
+    const rows = ORDER.map(k => {
+        const s = data[k];
+        if (!s) return '';
+        const pct       = s.pct ?? 0;
+        const barColor  = pct >= 90 ? '#ff4d4d' : pct >= 70 ? '#f7c948' : 'var(--amethyst)';
+        const remaining = s.remaining ?? (s.limit - s.used);
+        const hRaw      = s.remainingHours;
+        let hDisp       = '∞';
+        if (hRaw !== null && hRaw !== undefined) {
+            hDisp = hRaw < 1 ? `${Math.round(hRaw * 60)}分` : hRaw < 48 ? `${hRaw}時間` : `${Math.round(hRaw / 24)}日`;
+        }
+        const locked = s.locked ? ' 🔒' : '';
+        return `<div style="display:flex;flex-direction:column;gap:3px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                <span class="meta-11px" style="color:var(--champagne-gold);letter-spacing:1.5px;">${LABELS[k] || k}${locked}</span>
+                <span class="meta-11px" style="color:rgba(247,231,206,0.6);">${s.used} / ${s.limit}&nbsp;&nbsp;残り ${remaining}回&nbsp;→&nbsp;約 ${hDisp}</span>
+            </div>
+            <div style="height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;">
+                <div style="height:100%;width:${Math.min(pct, 100)}%;background:${barColor};border-radius:2px;transition:width 0.5s ease;"></div>
+            </div>
+        </div>`;
+    }).join('');
+
+    rowsEl.innerHTML = rows || '<div class="meta-11px" style="color:rgba(247,231,206,0.4);text-align:center;">データなし</div>';
 }
 
 // ── フォーマット系 ────────────────────────────────────────────
