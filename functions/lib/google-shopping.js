@@ -27,6 +27,7 @@
 
 import { createHash } from 'crypto';
 import { getRedis }   from './redis.js';
+import { safeCall }   from './quota-manager.js';
 
 const SERPAPI_BASE   = 'https://serpapi.com/search.json';
 const TIMEOUT_MS     = 8000;
@@ -174,21 +175,34 @@ export async function searchGoogleShopping(searchTerm, sizeInfo = null) {
     num:     '20',
   });
 
+  // safeCall: quota超過時は null → error を返してキャッシュしない
+  let fetchedJson = null;
   try {
-    const res = await Promise.race([
-      fetch(`${SERPAPI_BASE}?${params}`, { headers: { Accept: 'application/json' } }),
-      new Promise((_, rej) =>
-        setTimeout(() => rej(new Error('serpapi-timeout')), TIMEOUT_MS)
-      ),
-    ]);
+    fetchedJson = await safeCall('serpapi', async () => {
+      const res = await Promise.race([
+        fetch(`${SERPAPI_BASE}?${params}`, { headers: { Accept: 'application/json' } }),
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error('serpapi-timeout')), TIMEOUT_MS)
+        ),
+      ]);
+      if (!res.ok) {
+        // 429 は safeCall 内で quotaLock されるようエラーを throw
+        throw new Error(`serpapi-http-${res.status}`);
+      }
+      return res.json();
+    });
+  } catch (e) {
+    console.warn(`[google-shopping] SerpAPI error (${searchTerm.slice(0, 40)}):`, e.message?.slice(0, 80));
+    return { signal: 'error', items: [] };
+  }
 
-    if (!res.ok) {
-      console.warn(`[google-shopping] SerpAPI HTTP ${res.status}`);
-      return { signal: 'error', items: [] };
-    }
+  if (fetchedJson === null) {
+    // quota blocked — 課金なし
+    return { signal: 'error', items: [] };
+  }
 
-    const json     = await res.json();
-    const raw      = json.shopping_results || [];
+  try {
+    const raw = fetchedJson.shopping_results || [];
 
     if (raw.length === 0) {
       console.log(`[google-shopping] "${searchTerm.slice(0, 40)}" 結果0件`);
@@ -234,7 +248,7 @@ export async function searchGoogleShopping(searchTerm, sizeInfo = null) {
     await _cache(cacheKey, result);
     return result;
 
-  } catch(e) {
+  } catch (e) {
     console.warn(`[google-shopping] 例外 (${searchTerm.slice(0, 40)}):`, e.message);
     return { signal: 'error', items: [] };
   }

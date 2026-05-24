@@ -1,6 +1,7 @@
 import { getRedis, withRedisRetry } from '../lib/redis.js';
 import { getCircuit } from '../lib/re-eye-circuit.js';
 import { redisGuardStatus } from '../lib/redis-guard.js';
+import { quotaStatus } from '../lib/quota-manager.js';
 
 const HEALTH_LIST = 'reeye:health:events';
 
@@ -86,6 +87,11 @@ export default async function handler(req, res) {
     topFailQueries: topFailQueriesOut,
     apiHealth,
     circuitState,
+    quota: {
+      ...quotaStatus(),
+      redis: redisGuardStatus(),
+    },
+    /** @deprecated 後方互換 — quota.redis と同一 */
     redisGuard: redisGuardStatus(),
   });
 }

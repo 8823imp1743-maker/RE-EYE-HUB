@@ -8,6 +8,7 @@
 
 import { getRedis, withRedisRetry } from '../lib/redis.js';
 import { guardRedisWrite, redisGuardStatus } from '../lib/redis-guard.js';
+import { quotaCheck, quotaConsume, quotaStatus } from '../lib/quota-manager.js';
 import { analyzeNoise } from '../lib/noise-filter.js';
 import { extractModelNumbers, extractSizeFromKeyword } from '../lib/cross-validator.js';
 import { extractColorKeywords } from '../lib/color-filter.js';
@@ -679,7 +680,15 @@ async function getUserPlanBatch(r, userIds) {
 export async function checkAllWatched() {
   cliLog('[run-cli] Upstash（Redis）に接続して監視エントリを読み込みます');
 
-  // Redis 予算チェック — 上限到達時はサイクル全体をスキップして課金を防ぐ
+  // cron 実行回数チェック（24/day）— 超過なら全体スキップ
+  if (!quotaCheck('cron')) {
+    const qs = quotaStatus();
+    console.warn(`[monitor] cron quota exceeded — skip (${qs.cron?.count}/${qs.cron?.limit})`);
+    return;
+  }
+  quotaConsume('cron');
+
+  // Redis 書き込み予算チェック（8000コマンド/day）
   if (!guardRedisWrite('checkAllWatched-cycle', 40)) {
     const s = redisGuardStatus();
     console.warn(`[monitor] Redis 予算超過によりサイクルをスキップ (${s.count}/${s.limit})`);

@@ -5,6 +5,7 @@
 
 import { createHash } from 'crypto';
 import { getCeFeedbackPromptNudge } from './ce-feedback.js';
+import { safeCall } from './quota-manager.js';
 
 /** v5.0 §3 ノイズ（ローカル：LLM プロンプトに列挙し意味判定を補助。スコア式 §5 には含めない） */
 export const NOISE_KEYWORDS = [
@@ -317,23 +318,35 @@ index は入力と同じ順で ${list.length} 件すべて含めること。`;
     },
   };
 
+  // safeCall: quota超過時は null を返す → heuristic にフォールバック
+  let geminiResult = null;
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    geminiResult = await safeCall('gemini', async () => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const raw = await res.text();
+      if (!res.ok) {
+        // HTTP 429 / 403 は safeCall 内で quotaLock されるようエラーを throw
+        const err = new Error(`gemini-http-${res.status}: ${raw.slice(0, 120)}`);
+        throw err;
+      }
+      return raw;
     });
-    const raw = await res.text();
-    if (!res.ok) {
-      console.warn('[serp-classifier] batch Gemini HTTP', res.status, raw.slice(0, 200));
-      return list.map((item) => classifySerpItemHeuristic(item));
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return list.map((item) => classifySerpItemHeuristic(item));
-    }
+  } catch (e) {
+    console.warn('[serp-classifier] batch Gemini error', e.message?.slice(0, 100));
+    return list.map((item) => classifySerpItemHeuristic(item));
+  }
+
+  if (geminiResult === null) {
+    // quota blocked — heuristic にフォールバック（課金なし）
+    return list.map((item) => classifySerpItemHeuristic(item));
+  }
+
+  try {
+    const parsed = JSON.parse(geminiResult);
     const text =
       parsed?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
     const obj = extractJsonObject(text);
@@ -350,7 +363,7 @@ index は入力と同じ順で ${list.length} 件すべて含めること。`;
     }
     return list.map((item, i) => byIndex.get(i) || classifySerpItemHeuristic(item));
   } catch (e) {
-    console.warn('[serp-classifier] batch', e.message);
+    console.warn('[serp-classifier] batch parse error', e.message);
     return list.map((item) => classifySerpItemHeuristic(item));
   }
 }
