@@ -1,5 +1,6 @@
 import { withRedisRetry } from './redis.js';
 import { opsJsonLog } from './notify-ops-log.js';
+import { guardRedisWrite } from './redis-guard.js';
 
 const BUCKET_MS = 60 * 1000;
 
@@ -7,6 +8,7 @@ const BUCKET_MS = 60 * 1000;
  * グローバル「通知試行」を 1 分粒度で INCR（notify_per_min 観測用）
  */
 export async function incrNotifyAttemptsPerMinute(r) {
+  if (!guardRedisWrite('metric-notify-per-min', 2)) return null;
   const b = Math.floor(Date.now() / BUCKET_MS);
   const key = `metric:nfy:atm:v1:${b}`;
   try {

@@ -1,5 +1,6 @@
 import { getRedis, withRedisRetry } from '../lib/redis.js';
 import { getCircuit } from '../lib/re-eye-circuit.js';
+import { redisGuardStatus } from '../lib/redis-guard.js';
 
 const HEALTH_LIST = 'reeye:health:events';
 
@@ -85,6 +86,7 @@ export default async function handler(req, res) {
     topFailQueries: topFailQueriesOut,
     apiHealth,
     circuitState,
+    redisGuard: redisGuardStatus(),
   });
 }
 

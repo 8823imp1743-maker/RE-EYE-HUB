@@ -8,6 +8,7 @@
 import { createHash } from 'crypto';
 import { getRedis } from './redis.js';
 import { searchAll } from './shop-adapters/index.js';
+import { guardRedisWrite } from './redis-guard.js';
 
 const DEFAULT_TTL_SEC = 180;
 
@@ -109,7 +110,7 @@ export async function searchAllCached(keyword, options = {}) {
     );
   }
 
-  if (r && !skipCache) {
+  if (r && !skipCache && guardRedisWrite('shop-cache-write')) {
     try {
       await r.set(key, JSON.stringify(result), { ex: ttl });
     } catch (e) {
