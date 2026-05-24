@@ -537,6 +537,23 @@ function sortPoolByNewUnopenedFirst(pool) {
   });
 }
 
+/**
+ * 在庫フィルター層 — API 取得後・レスポンス前の最終段階で実行。
+ * 楽天・Yahoo ともに available: boolean が正規化済みのため直接参照。
+ * price > 0 をセカンダリ条件として追加（availability 未設定商品への保険）。
+ */
+function isItemInStock(item) {
+  if (!item) return false;
+  // available が明示的 false → 確実に除外
+  if (item.available === false) return false;
+  // price が 0 以下 → 実質非在庫
+  if (typeof item.price === 'number' && item.price <= 0) return false;
+  // タイトル・キャプションに sold out / 在庫なし を含む → 除外
+  const hay = String(item.title || '') + ' ' + String(item.catchcopy || '') + ' ' + String(item.itemCaption || '');
+  if (/sold.?out|完売|在庫なし|品切れ|欠品/i.test(hay)) return false;
+  return true;
+}
+
 function sortByPriceAsc(items) {
   if (!Array.isArray(items) || items.length < 2) return items;
   return [...items].sort((a, b) => {
@@ -1265,6 +1282,14 @@ export default async function handler(req, res) {
     );
     let pool = r1.pool;
     lastRejectSummary = r1.rejectReasonSummary || lastRejectSummary;
+
+    // ── stockFilterLayer（非靴パス） ──────────────────────────
+    const beforeStock = pool.length;
+    pool = pool.filter(isItemInStock);
+    const stockExcluded = beforeStock - pool.length;
+    console.log(`[stockFilter] non-shoe: ${beforeStock} → ${pool.length} kept (${stockExcluded} out-of-stock excluded)`);
+    if (lastRejectSummary) lastRejectSummary.stockExcluded = stockExcluded;
+
     pool = sortByPriceAsc(pool);
 
     const sizeModeList = detectSizeMode({
