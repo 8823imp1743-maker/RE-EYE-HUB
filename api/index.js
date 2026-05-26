@@ -31,6 +31,7 @@ import systemHealthHandler from '../functions/api/system-health.js';
 import notifyHealthHandler from '../functions/api/notify-health.js';
 import ctrClickHandler     from '../functions/api/ctr-click.js';
 import usageStatusHandler  from '../functions/api/usage-status.js';
+import { discoverUrlsForKeyword, buildMonitorEntries } from '../functions/lib/scout-to-monitor-bridge.js';
 
 // ── ルート設定テーブル ────────────────────────────────
 // rateTier: 'default' | 'heavy' | 'search' | null（スキップ）
@@ -49,7 +50,33 @@ const ROUTES = {
   'notify-health': { fn: notifyHealthHandler,  rateTier: 'default', noBody: true },
   'ctr-click':     { fn: ctrClickHandler,      rateTier: 'default' },
   'usage-status':  { fn: usageStatusHandler,   rateTier: null      },
+  'discover':      { fn: discoverHandler,       rateTier: 'heavy'  },
 };
+
+// ── discover ハンドラ（キーワード → URL発見） ─────────
+async function discoverHandler(req, res) {
+  const body = req.body || {};
+  const keyword = String(body.keyword || '').trim();
+  const userId  = String(body.userId  || '').trim();
+  const mode    = body.mode === 'sneaker' ? 'sneaker' : 'standard';
+
+  if (!keyword || !userId) {
+    return res.status(400).json({ ok: false, error: 'keyword, userId are required' });
+  }
+
+  const result  = await discoverUrlsForKeyword({ keyword, mode });
+  const entries = buildMonitorEntries({ userId, keyword, discoveredUrls: result.discoveredUrls, mode });
+
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).json({
+    ok: true,
+    keyword,
+    mode,
+    source: result.source,
+    discoveredUrls: result.discoveredUrls,
+    monitorEntries: entries,
+  });
+}
 
 // ── cron 暴走防止（インスタンス内メモリ） ────────────
 let _lastCronMs = 0;

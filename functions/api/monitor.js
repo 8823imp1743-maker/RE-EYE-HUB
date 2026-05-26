@@ -310,16 +310,22 @@ async function handleRegister(req, res) {
     return handlePlanSyncOnly(req, res);
   }
   const keyword = String(body.keyword || '').trim();
-  const itemId = normalizeWatchId(body.itemId);
-  const sourceId = normalizeWatchId(body.sourceId);
   const userId = String(body.userId || '').trim();
   const url = body.url != null ? String(body.url) : '';
   const title = body.title != null ? String(body.title) : '';
   const price = Number(body.price) || 0;
   const plan = body.plan;
-  if (!keyword || !itemId || !sourceId || !userId) {
-    return res.status(400).json({ error: 'keyword, itemId, sourceId, userId are required' });
+
+  if (!keyword || !userId) {
+    return res.status(400).json({ error: 'keyword, userId are required' });
   }
+
+  // keyword のみ登録（URL未発見状態）をサポート。
+  // sourceId は提供されなければキーワードから一意なIDを自動生成する。
+  // 将来URLが発見された際に同じ sourceId で上書き登録できる。
+  const kwHash = Buffer.from(keyword).toString('base64url').slice(0, 12);
+  const itemId = normalizeWatchId(body.itemId) || `kwitem_${kwHash}`;
+  const sourceId = normalizeWatchId(body.sourceId) || `kwsrc_${kwHash}`;
 
   const listPriceNum =
     body.listPrice != null && body.listPrice !== '' ? Number(body.listPrice) : NaN;

@@ -1070,25 +1070,33 @@ export default async function handler(req, res) {
 
     const { isShoe, isCloth, isAccessoryGlove } = genresForKeyword(baseKeyword);
 
+    // ── Sneaker Precision Module: isShoe のみ発火 ──────────────────────────────
+    // standard mode（ぬいぐるみ/コスメ/推し活 等）はここを完全スキップする。
+    // 靴の精度は一切落ちない。非靴カテゴリの無駄なcm解析を排除するのが目的。
     /** @type {number[]} */
-    let shoeTargetNums = resolveShoeCmTargetsStrict(settings, {
-      keyword: baseKeyword,
-      rawKeyword: baseKeyword,
-      forChild,
-      multiTargetCm: Array.isArray(body.multiTargetCm) ? body.multiTargetCm : undefined,
-    });
-    const userCmRaw = getUserShoeCmRawForPostFilter(settings, forChild);
-    if (!shoeTargetNums.length && userCmRaw) {
-      const q = parseFloat(String(userCmRaw).replace(/cm$/i, '').trim());
-      const okRange = forChild ? q >= 10 && q <= 25 : q >= 14 && q <= 35;
-      if (Number.isFinite(q) && okRange) shoeTargetNums = [Math.round(q * 10) / 10];
-    }
+    let shoeTargetNums = [];
+    let userCmRaw = '';
+    let shoeSizeRaw = '';
 
-    const shoeSizeRaw = shoeTargetNums.length
-      ? shoeTargetNums
-          .map((n) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.?0+$/, '').replace(/^(\d+)\.$/, '$1')))
-          .join(',')
-      : userCmRaw || '';
+    if (isShoe) {
+      shoeTargetNums = resolveShoeCmTargetsStrict(settings, {
+        keyword: baseKeyword,
+        rawKeyword: baseKeyword,
+        forChild,
+        multiTargetCm: Array.isArray(body.multiTargetCm) ? body.multiTargetCm : undefined,
+      });
+      userCmRaw = getUserShoeCmRawForPostFilter(settings, forChild);
+      if (!shoeTargetNums.length && userCmRaw) {
+        const q = parseFloat(String(userCmRaw).replace(/cm$/i, '').trim());
+        const okRange = forChild ? q >= 10 && q <= 25 : q >= 14 && q <= 35;
+        if (Number.isFinite(q) && okRange) shoeTargetNums = [Math.round(q * 10) / 10];
+      }
+      shoeSizeRaw = shoeTargetNums.length
+        ? shoeTargetNums
+            .map((n) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.?0+$/, '').replace(/^(\d+)\.$/, '$1')))
+            .join(',')
+        : userCmRaw || '';
+    }
 
     if (isShoe && shoeTargetNums.length === 0) {
       try {
