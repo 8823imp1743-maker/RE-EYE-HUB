@@ -178,18 +178,22 @@ export function checkNegativeSignal(text) {
 /**
  * URL 候補リストを正規化 → スコアリング → 高品質順にソートして返す。
  *
+ * フォールバック設計:
+ *   - minScore 未満の候補しかない場合は全候補を閾値なしで返す（0件より1件の方が良い）
+ *   - items が空でも安全に空配列を返す
+ *
  * @param {Array<{url: string, title?: string, price?: number}>} items
  * @param {object} opts
  * @param {string} [opts.keyword]
- * @param {number} [opts.minScore=40] - この点数未満は除外
+ * @param {number} [opts.minScore=40] - この点数未満は除外（フォールバック時は無視）
  * @param {number} [opts.maxCount=5]
  * @returns {Array<{url: string, title: string, score: number}>}
  */
 export function rankAndFilterUrls(items, { keyword = '', minScore = 40, maxCount = 5 } = {}) {
   const seen = new Set();
-  const scored = [];
+  const allScored = [];
 
-  for (const item of items) {
+  for (const item of (items || [])) {
     const rawUrl = item.url || item.affiliateUrl || item.itemUrl || '';
     if (!rawUrl || !rawUrl.startsWith('http')) continue;
 
@@ -204,12 +208,15 @@ export function rankAndFilterUrls(items, { keyword = '', minScore = 40, maxCount
       price:   Number(item.price) || 0,
     });
 
-    if (score >= minScore) {
-      scored.push({ url: normalized, title: item.title || item.name || '', score });
-    }
+    allScored.push({ url: normalized, title: item.title || item.name || '', score });
   }
 
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxCount);
+  allScored.sort((a, b) => b.score - a.score);
+
+  const passed = allScored.filter(r => r.score >= minScore);
+
+  // フォールバック: minScore 通過が0件でも候補があれば上位maxCountを返す
+  const result = passed.length > 0 ? passed : allScored;
+
+  return result.slice(0, maxCount);
 }

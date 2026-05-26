@@ -114,6 +114,20 @@ async function discoverHandler(req, res) {
     }
   }
 
+  // ── 構造化ログ（Sentry 連携可能形式） ──────────────────────────────────
+  console.log('[discover:result]', JSON.stringify({
+    keyword,
+    canonicalName: result.product?.canonicalName || keyword,
+    category:      result.product?.category || 'standard',
+    mode:          result.mode,
+    source:        result.source,
+    discoveredCount:  result.discoveredUrls.length,
+    entriesCount:     entries.length,
+    autoRegistered:   autoRegistered.length,
+    topScore:         result.scored?.[0]?.score ?? 0,
+    rssSignalCount:   result.rssSignals?.length ?? 0,
+  }));
+
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json({
     ok: true,

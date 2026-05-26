@@ -118,7 +118,8 @@ export async function sendOneSignalNotification({
     '';
 
   if (!appId) {
-    throw new Error('ONESIGNAL_KEY (App ID) must be set');
+    console.warn('[notification] ONESIGNAL_APP_ID が未設定のため通知をスキップします。Vercel 環境変数を確認してください。');
+    return { skipped: true, reason: 'ONESIGNAL_APP_ID_NOT_SET' };
   }
 
   /** @type {Record<string, unknown>} */

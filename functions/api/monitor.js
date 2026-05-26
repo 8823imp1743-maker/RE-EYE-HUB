@@ -1261,25 +1261,36 @@ const pdpParallel = Math.max(
     }
 
     const dedupeKey = notifySentDedupeKey(userId, item.sourceId || '', item.itemId || '');
+    let dedupeOk = true;
     try {
       const nx = await withRedisRetry(
-        () => r.set(dedupeKey, '1', { ex: 14400, nx: true }), // 4時間（600s→14400s）: 同一商品の通知スパム防止
+        () => r.set(dedupeKey, '1', { ex: 14400, nx: true }), // 4時間: 同一商品の通知スパム防止
         { label: 'serp-notify-dedupe-nx' }
       );
       if (nx == null) {
-        continue;
+        continue; // 既に送信済み → スキップ
       }
+    } catch (dedupeErr) {
+      // Redis dedup に失敗しても通知処理は継続（落とさない設計）
+      dedupeOk = false;
+      console.warn('[monitor] dedupeKey Redis失敗（通知は継続）:', dedupeErr?.message);
+    }
 
-      // ── Negative Signal フィルタ ──────────────────────────────────────────
-      // 「予約終了」「販売終了」「完売」等のテキストが含まれる場合は通知しない。
-      // 「予約」だけ拾って「予約終了」を誤通知するパターンを防ぐ。
-      const negCheck = checkNegativeSignal(item.title || '');
-      if (negCheck.negative) {
-        console.log(`[monitor] negative signal skip: "${(item.title || '').slice(0, 40)}" reason=${negCheck.reason}`);
+    // ── Negative Signal フィルタ ──────────────────────────────────────────
+    // 「予約終了」「販売終了」「完売」等を通知せず status:ended として記録する。
+    // 完全除外ではなく「終了状態の記録」として保持し、再監視可能にする。
+    const negCheck = checkNegativeSignal(item.title || '');
+    if (negCheck.negative) {
+      console.log(`[monitor] negative signal → status:ended: "${(item.title || '').slice(0, 40)}" reason=${negCheck.reason}`);
+      // dedup キーをロールバックして次回再判定できる状態を保つ
+      if (dedupeOk) {
         await withRedisRetry(() => r.del(dedupeKey), { label: 'serp-notify-neg-signal-rollback' }).catch(() => {});
-        continue;
       }
+      continue;
+    }
 
+    // ── 通知送信（失敗してもループ継続） ──────────────────────────────────
+    try {
       const sizeKeys = shoeSizeTagKeysFromKeywordSizeInfo(sizeInfo);
       const variant = ctrVariant(userId);
       const ctrPack = buildStockMonitorCtr({
