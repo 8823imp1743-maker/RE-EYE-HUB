@@ -29,48 +29,54 @@ const MAX_URLS_PER_KEYWORD = 5;
  * @returns {Promise<{ keyword: string, mode: string, discoveredUrls: string[], source: string }>}
  */
 export async function discoverUrlsForKeyword({ keyword, mode = 'standard', bypassDedup = false }) {
-  const rawItems = [];
+  // RSS と mall は役割が違うため分離して管理する。
+  // RSS（Google News）→ 発売・再販シグナルの検出のみ。news記事URLは監視対象にしない。
+  // Mall API（楽天/Yahoo）→ 実際に監視する商品URLの収集。
+  const mallItems = [];
+  const rssSignals = [];
   let source = 'none';
 
-  // ── Phase 1: RSS（Google News） ─────────────────────────────────────────────
+  // ── Phase 1: RSS（Google News） — シグナル検出のみ ──────────────────────────
+  // 返ってくる URL は Google News 記事URLなので monitor 対象には含めない。
+  // タイトルにキーワードが含まれるか（シグナル有無）だけを確認する。
   try {
-    const rssResult = await scanKeyword(keyword, bypassDedup, { maxItems: 15 });
-    const rssItems = Array.isArray(rssResult?.newItems) ? rssResult.newItems : [];
-    for (const item of rssItems) {
-      const u = item.link || item.url;
-      if (u && u.startsWith('http')) rawItems.push({ url: u, title: item.title || '' });
+    const rssResult = await scanKeyword(keyword, bypassDedup, { maxItems: 10 });
+    const items = Array.isArray(rssResult?.newItems) ? rssResult.newItems : [];
+    for (const item of items) {
+      rssSignals.push({ title: item.title || '', pubDate: item.pubDate });
     }
-    if (rawItems.length > 0) source = 'rss';
+    if (rssSignals.length > 0) source = 'rss';
   } catch (e) {
     console.warn('[scout-bridge] RSS scan failed:', e.message);
   }
 
-  // ── Phase 2: 楽天/Yahoo API（RSS で不足時） ──────────────────────────────────
-  if (rawItems.length < MAX_URLS_PER_KEYWORD) {
-    try {
-      const mallResult = await searchAllCached(keyword, {
-        maxResults: 15,
-        inStockOnly: false,
-        skipCache: false,
-      });
-      const mallItems = Array.isArray(mallResult) ? mallResult : [];
-      for (const item of mallItems) {
-        rawItems.push({
-          url:   item.url || item.affiliateUrl || item.itemUrl || '',
+  // ── Phase 2: 楽天/Yahoo API — 監視対象URLの収集 ─────────────────────────────
+  // これだけが monitor.js に登録する URL 候補になる。
+  try {
+    const mallResult = await searchAllCached(keyword, {
+      maxResults: 15,
+      inStockOnly: false,
+      skipCache: false,
+    });
+    const items = Array.isArray(mallResult) ? mallResult : [];
+    for (const item of items) {
+      const u = item.url || item.affiliateUrl || item.itemUrl || '';
+      if (u && u.startsWith('http')) {
+        mallItems.push({
+          url:   u,
           title: item.title || item.name || '',
           price: Number(item.price) || 0,
         });
       }
-      if (source === 'none' && mallItems.length > 0) source = 'mall';
-      else if (mallItems.length > 0) source = 'rss+mall';
-    } catch (e) {
-      console.warn('[scout-bridge] Mall search failed:', e.message);
     }
+    if (mallItems.length > 0) source = source === 'rss' ? 'rss+mall' : 'mall';
+  } catch (e) {
+    console.warn('[scout-bridge] Mall search failed:', e.message);
   }
 
-  // ── URL正規化 + 品質スコアリング ────────────────────────────────────────────
+  // ── URL正規化 + 品質スコアリング（mall URLのみ対象）────────────────────────
   // 検索ページ・広告・ゴミURLを除去し、商品詳細URLだけを高品質順に返す。
-  const ranked = rankAndFilterUrls(rawItems, {
+  const ranked = rankAndFilterUrls(mallItems, {
     keyword,
     minScore: 35,
     maxCount: MAX_URLS_PER_KEYWORD,
@@ -91,7 +97,8 @@ export async function discoverUrlsForKeyword({ keyword, mode = 'standard', bypas
     '[scout-bridge]',
     JSON.stringify({
       keyword, resolvedMode, source,
-      rawCount: rawItems.length,
+      mallRaw: mallItems.length,
+      rssSignals: rssSignals.length,
       afterScore: discoveredUrls.length,
       topScore: ranked[0]?.score ?? 0,
       canonicalName: productEntry.canonicalName,
@@ -106,6 +113,7 @@ export async function discoverUrlsForKeyword({ keyword, mode = 'standard', bypas
     source,
     scored: ranked,
     product: productEntry,
+    rssSignals,  // シグナル情報（将来の Signal Engine 用）
   };
 }
 

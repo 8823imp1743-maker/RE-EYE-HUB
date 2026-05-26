@@ -133,6 +133,48 @@ export function scoreProductUrl({ url, title = '', keyword = '', price = 0 }) {
   return Math.max(0, Math.min(100, score));
 }
 
+// ── Negative Signal パターン（通知前に必ずチェックする）──────────────────
+// これに一致する場合は在庫シグナルを「信頼できない」と判定して通知しない。
+// 「予約終了」を「予約」と誤検知するなどの問題を防ぐ。
+const NEGATIVE_SIGNAL_PATTERNS = [
+  /販売終了/,
+  /受付終了/,
+  /予約終了/,
+  /申込(み)?終了/,
+  /抽選終了/,
+  /当選.*落選/,
+  /落選/,
+  /sold\s*out/i,
+  /完売/,
+  /在庫なし/,
+  /欠品/,
+  /取扱終了/,
+  /廃番/,
+  /終売/,
+  /生産終了/,
+  /入荷未定/,
+  /お取り扱いを終了/,
+  /\bEND\b/i,
+  /\bDISCONTINUED\b/i,
+];
+
+/**
+ * テキストに「通知すべきでないネガティブシグナル」が含まれるか検査する。
+ * monitor.js や notify.js の通知前チェックに使う。
+ *
+ * @param {string} text - 商品タイトル・本文・キャプション等
+ * @returns {{ negative: boolean, reason: string }}
+ */
+export function checkNegativeSignal(text) {
+  const t = text || '';
+  for (const pattern of NEGATIVE_SIGNAL_PATTERNS) {
+    if (pattern.test(t)) {
+      return { negative: true, reason: pattern.source };
+    }
+  }
+  return { negative: false, reason: '' };
+}
+
 /**
  * URL 候補リストを正規化 → スコアリング → 高品質順にソートして返す。
  *

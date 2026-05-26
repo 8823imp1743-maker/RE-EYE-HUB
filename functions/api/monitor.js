@@ -30,6 +30,7 @@ import {
 import { evaluateContradictionEngine } from '../lib/contradiction-engine.js';
 import { recordCeRejectionSafe, ceFeedbackUrlHost } from '../lib/ce-feedback.js';
 import { sendOneSignalNotification } from '../lib/notification.js';
+import { checkNegativeSignal } from '../lib/url-normalizer.js';
 import { shoeProfileAllowsListing } from '../lib/shoe-size-gate.js';
 import { normalizeRakutenUrl } from '../lib/pdp-shoe-stock.js';
 import {
@@ -1264,6 +1265,16 @@ const pdpParallel = Math.max(
         { label: 'serp-notify-dedupe-nx' }
       );
       if (nx == null) {
+        continue;
+      }
+
+      // ── Negative Signal フィルタ ──────────────────────────────────────────
+      // 「予約終了」「販売終了」「完売」等のテキストが含まれる場合は通知しない。
+      // 「予約」だけ拾って「予約終了」を誤通知するパターンを防ぐ。
+      const negCheck = checkNegativeSignal(item.title || '');
+      if (negCheck.negative) {
+        console.log(`[monitor] negative signal skip: "${(item.title || '').slice(0, 40)}" reason=${negCheck.reason}`);
+        await withRedisRetry(() => r.del(dedupeKey), { label: 'serp-notify-neg-signal-rollback' }).catch(() => {});
         continue;
       }
 
