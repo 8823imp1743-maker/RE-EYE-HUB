@@ -13,6 +13,7 @@
 
 import { scanKeyword } from './rss-scanner.js';
 import { searchAllCached } from './shop-search-cache.js';
+import { rankAndFilterUrls } from './url-normalizer.js';
 
 const MAX_URLS_PER_KEYWORD = 5;
 
@@ -27,52 +28,66 @@ const MAX_URLS_PER_KEYWORD = 5;
  * @returns {Promise<{ keyword: string, mode: string, discoveredUrls: string[], source: string }>}
  */
 export async function discoverUrlsForKeyword({ keyword, mode = 'standard', bypassDedup = false }) {
-  const urls = new Set();
+  const rawItems = [];
   let source = 'none';
 
   // ── Phase 1: RSS（Google News） ─────────────────────────────────────────────
   try {
-    const rssResult = await scanKeyword(keyword, bypassDedup, { maxItems: 10 });
+    const rssResult = await scanKeyword(keyword, bypassDedup, { maxItems: 15 });
     const rssItems = Array.isArray(rssResult?.newItems) ? rssResult.newItems : [];
     for (const item of rssItems) {
       const u = item.link || item.url;
-      if (u && u.startsWith('http')) urls.add(u);
-      if (urls.size >= MAX_URLS_PER_KEYWORD) break;
+      if (u && u.startsWith('http')) rawItems.push({ url: u, title: item.title || '' });
     }
-    if (urls.size > 0) source = 'rss';
+    if (rawItems.length > 0) source = 'rss';
   } catch (e) {
     console.warn('[scout-bridge] RSS scan failed:', e.message);
   }
 
   // ── Phase 2: 楽天/Yahoo API（RSS で不足時） ──────────────────────────────────
-  if (urls.size < MAX_URLS_PER_KEYWORD) {
+  if (rawItems.length < MAX_URLS_PER_KEYWORD) {
     try {
       const mallResult = await searchAllCached(keyword, {
-        maxResults: 10,
+        maxResults: 15,
         inStockOnly: false,
         skipCache: false,
       });
       const mallItems = Array.isArray(mallResult) ? mallResult : [];
       for (const item of mallItems) {
-        const u = item.url || item.affiliateUrl || item.itemUrl;
-        if (u && u.startsWith('http')) urls.add(u);
-        if (urls.size >= MAX_URLS_PER_KEYWORD) break;
+        rawItems.push({
+          url:   item.url || item.affiliateUrl || item.itemUrl || '',
+          title: item.title || item.name || '',
+          price: Number(item.price) || 0,
+        });
       }
-      if (source === 'none' && urls.size > 0) source = 'mall';
-      else if (urls.size > 0) source = 'rss+mall';
+      if (source === 'none' && mallItems.length > 0) source = 'mall';
+      else if (mallItems.length > 0) source = 'rss+mall';
     } catch (e) {
       console.warn('[scout-bridge] Mall search failed:', e.message);
     }
   }
 
-  const discoveredUrls = [...urls].slice(0, MAX_URLS_PER_KEYWORD);
+  // ── URL正規化 + 品質スコアリング ────────────────────────────────────────────
+  // 検索ページ・広告・ゴミURLを除去し、商品詳細URLだけを高品質順に返す。
+  const ranked = rankAndFilterUrls(rawItems, {
+    keyword,
+    minScore: 35,
+    maxCount: MAX_URLS_PER_KEYWORD,
+  });
+
+  const discoveredUrls = ranked.map(r => r.url);
 
   console.log(
     '[scout-bridge]',
-    JSON.stringify({ keyword, mode, found: discoveredUrls.length, source })
+    JSON.stringify({
+      keyword, mode, source,
+      rawCount: rawItems.length,
+      afterScore: discoveredUrls.length,
+      topScore: ranked[0]?.score ?? 0,
+    })
   );
 
-  return { keyword, mode, discoveredUrls, source };
+  return { keyword, mode, discoveredUrls, source, scored: ranked };
 }
 
 /**
