@@ -65,7 +65,7 @@ import { ctrVariant, buildStockMonitorCtr } from '../lib/notify-ctr.js';
 import { computeLtqScore, shouldSkipLtqFree } from '../lib/notify-ltv.js';
 import { freeDailyCapPreSend } from '../lib/free-user-daily-cap.js';
 import { getAuctionMinPrice } from '../lib/auction-checker.js';
-import { getStockInterval, getStockIntervalForPlan, CURRENT_PLAN, STOCK_CONFIG } from '../lib/plan-config.js';
+import { getStockInterval, getStockIntervalForPlan, getAdaptiveIntervalMultiplier, CURRENT_PLAN, STOCK_CONFIG } from '../lib/plan-config.js';
 import {
   MONITOR_SCHEMA_VERSION,
   WATCH_TTL,
@@ -795,7 +795,9 @@ export async function checkAllWatched() {
       jitterSec && Number.isFinite(jitterSec)
         ? Math.floor(Math.random() * jitterSec * 2) - jitterSec
         : 0;
-    const target = Math.max(0, intervalSec + delta);
+    // Adaptive Monitoring: mode・熱量に応じて間隔を動的調整
+    const adaptiveMul = getAdaptiveIntervalMultiplier(entry);
+    const target = Math.max(0, (intervalSec + delta) * adaptiveMul);
     return elapsedSec >= target;
   });
 

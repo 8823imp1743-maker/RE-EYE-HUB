@@ -96,3 +96,36 @@ export function getStockIntervalForPlan(plan, nowHour = new Date().getHours()) {
 export function getTrendSlots() {
   return (TREND_CONFIG[CURRENT_PLAN] ?? TREND_CONFIG.FREE).slots;
 }
+
+/**
+ * Adaptive Monitoring — エントリの熱量・モードに応じた間隔乗数を返す。
+ *
+ * 乗数設計:
+ *   0.5 × : 直近1時間以内に通知済み（hot item — 追跡中）
+ *   1.0 × : 通常（sneaker mode または recent activity あり）
+ *   2.0 × : standard mode で変化なし（軽量HTML監視で十分）
+ *   4.0 × : 7日以上変化なし かつ 一度も通知なし（cold item — 低頻度でOK）
+ *
+ * 目的: Redis コマンド数削減 + Vercel Serverless CPU 削減。
+ *       変化のないアイテムにリソースを使わない。
+ *
+ * @param {{ mode?: string, notifiedAt?: number, lastCheckedAt?: number, addedAt?: number }} entry
+ * @returns {number} 乗数（0.5 〜 4.0）
+ */
+export function getAdaptiveIntervalMultiplier(entry) {
+  const now      = Date.now();
+  const notified = entry.notifiedAt  || 0;
+  const added    = entry.addedAt     || now;
+
+  // 直近1時間以内に通知済み → 高頻度で追跡（抽選結果・再販連続チェック用）
+  if (notified > 0 && now - notified < 60 * 60 * 1000) return 0.5;
+
+  // 7日以上登録されているのに一度も通知なし → cold item
+  const ageSec = (now - added) / 1000;
+  if (ageSec > 7 * 24 * 3600 && notified === 0) return 4.0;
+
+  // standard mode（ちいかわ/コスメ等）は PDP 不要 → 通常の2倍インターバルで十分
+  if (entry.mode === 'standard') return 2.0;
+
+  return 1.0;
+}
