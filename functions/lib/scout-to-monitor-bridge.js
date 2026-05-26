@@ -14,6 +14,7 @@
 import { scanKeyword } from './rss-scanner.js';
 import { searchAllCached } from './shop-search-cache.js';
 import { rankAndFilterUrls } from './url-normalizer.js';
+import { buildProductEntry, detectCategory } from './canonical-product.js';
 
 const MAX_URLS_PER_KEYWORD = 5;
 
@@ -77,17 +78,35 @@ export async function discoverUrlsForKeyword({ keyword, mode = 'standard', bypas
 
   const discoveredUrls = ranked.map(r => r.url);
 
+  // カテゴリ自動検出（isShoe 判定等の mode 引数を上書き補正）
+  const detectedCategory = detectCategory(keyword);
+  const resolvedMode = mode !== 'standard'
+    ? mode
+    : (detectedCategory === 'sneaker' ? 'sneaker' : 'standard');
+
+  // Product エントリ構築（Canonical Product Engine 統合）
+  const productEntry = buildProductEntry({ keyword, urls: discoveredUrls });
+
   console.log(
     '[scout-bridge]',
     JSON.stringify({
-      keyword, mode, source,
+      keyword, resolvedMode, source,
       rawCount: rawItems.length,
       afterScore: discoveredUrls.length,
       topScore: ranked[0]?.score ?? 0,
+      canonicalName: productEntry.canonicalName,
+      category: productEntry.category,
     })
   );
 
-  return { keyword, mode, discoveredUrls, source, scored: ranked };
+  return {
+    keyword,
+    mode: resolvedMode,
+    discoveredUrls,
+    source,
+    scored: ranked,
+    product: productEntry,
+  };
 }
 
 /**
@@ -101,17 +120,33 @@ export async function discoverUrlsForKeyword({ keyword, mode = 'standard', bypas
  * @param {'sneaker'|'standard'} [opts.mode='standard']
  * @returns {Array<{ keyword: string, userId: string, url: string, mode: string, itemId: string, sourceId: string }>}
  */
-export function buildMonitorEntries({ userId, keyword, discoveredUrls, mode = 'standard' }) {
-  const kwHash = Buffer.from(keyword).toString('base64url').slice(0, 12);
+/**
+ * 発見した URL を monitor 登録用のエントリ配列に変換する。
+ * canonical エンジン統合版。
+ *
+ * @param {object} opts
+ * @param {string} opts.userId
+ * @param {string} opts.keyword
+ * @param {string[]} opts.discoveredUrls
+ * @param {'sneaker'|'standard'} [opts.mode='standard']
+ * @param {object} [opts.product] - buildProductEntry の返り値
+ */
+export function buildMonitorEntries({ userId, keyword, discoveredUrls, mode = 'standard', product = null }) {
+  const kwHash      = Buffer.from(keyword).toString('base64url').slice(0, 12);
+  const canonicalName = product?.canonicalName || keyword;
+  const category    = product?.category || 'standard';
+  const resolvedMode = product?.mode || mode;
 
   if (discoveredUrls.length === 0) {
     // URL が見つからなくてもキーワード見守りエントリを1件返す
     return [{
       keyword,
+      canonicalName,
       userId,
       url: '',
-      mode,
-      itemId: `kwitem_${kwHash}`,
+      mode: resolvedMode,
+      category,
+      itemId:   `kwitem_${kwHash}`,
       sourceId: `kwsrc_${kwHash}`,
     }];
   }
@@ -120,10 +155,12 @@ export function buildMonitorEntries({ userId, keyword, discoveredUrls, mode = 's
     const urlHash = Buffer.from(url).toString('base64url').slice(0, 12);
     return {
       keyword,
+      canonicalName,
       userId,
       url,
-      mode,
-      itemId: `urlitem_${urlHash}`,
+      mode: resolvedMode,
+      category,
+      itemId:   `urlitem_${urlHash}`,
       sourceId: `kwsrc_${kwHash}_${i}`,
     };
   });

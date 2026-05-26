@@ -417,6 +417,11 @@ async function handleRegister(req, res) {
     // 登録時のキーワードから確定した色ワード（例: ["ピンク"]）。
     // 空配列 = 色指定なし（フィルタースキップ）
     colorKeywords: registeredColors,
+    // ── カテゴリ別監視モード ─────────────────────────────────────────────
+    // sneaker: PDPサイズ検証あり / standard: HTML在庫変化監視
+    mode:          body.mode === 'sneaker' ? 'sneaker' : 'standard',
+    category:      String(body.category || 'standard'),
+    canonicalName: String(body.canonicalName || keyword),
     status:        'OFF',
     addedAt:       Date.now(),
     lastCheckedAt: Date.now(),

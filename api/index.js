@@ -53,28 +53,78 @@ const ROUTES = {
   'discover':      { fn: discoverHandler,       rateTier: 'heavy'  },
 };
 
-// ── discover ハンドラ（キーワード → URL発見） ─────────
+// ── discover ハンドラ（キーワード → URL発見 → 自動登録） ──────────
 async function discoverHandler(req, res) {
-  const body = req.body || {};
-  const keyword = String(body.keyword || '').trim();
-  const userId  = String(body.userId  || '').trim();
-  const mode    = body.mode === 'sneaker' ? 'sneaker' : 'standard';
+  const body       = req.body || {};
+  const keyword    = String(body.keyword || '').trim();
+  const userId     = String(body.userId  || '').trim();
+  const mode       = body.mode === 'sneaker' ? 'sneaker' : 'standard';
+  // autoRegister=true の場合、トップ候補を自動で monitor.js に登録する
+  const autoRegister = body.autoRegister === true;
 
   if (!keyword || !userId) {
     return res.status(400).json({ ok: false, error: 'keyword, userId are required' });
   }
 
   const result  = await discoverUrlsForKeyword({ keyword, mode });
-  const entries = buildMonitorEntries({ userId, keyword, discoveredUrls: result.discoveredUrls, mode });
+  const entries = buildMonitorEntries({
+    userId,
+    keyword,
+    discoveredUrls: result.discoveredUrls,
+    mode,
+    product: result.product,
+  });
+
+  // ── 自動登録: 発見済みトップURLをmonitor.jsに直接登録 ──────────
+  let autoRegistered = [];
+  if (autoRegister && entries.length > 0) {
+    const topEntries = entries.slice(0, 3); // 上位3件まで自動登録
+    const monFn = (await import('../functions/api/monitor.js')).default;
+
+    for (const entry of topEntries) {
+      try {
+        const mockReq = {
+          method: 'POST',
+          body: {
+            keyword:  entry.keyword,
+            userId:   entry.userId,
+            itemId:   entry.itemId,
+            sourceId: entry.sourceId,
+            url:      entry.url || '',
+            title:    entry.canonicalName || entry.keyword,
+            mode:     entry.mode,
+            category: entry.category,
+          },
+          headers: {},
+        };
+        let regOk = false;
+        const mockRes = {
+          statusCode: 200,
+          writableEnded: false,
+          setHeader: () => {},
+          status(c) { this.statusCode = c; return this; },
+          json(d) { regOk = d?.registered !== false; this.writableEnded = true; return this; },
+          end(d)  { this.writableEnded = true; return this; },
+        };
+        await monFn(mockReq, mockRes);
+        if (regOk) autoRegistered.push(entry.sourceId);
+      } catch (e) {
+        console.warn('[discover/autoRegister] failed:', e.message);
+      }
+    }
+  }
 
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json({
     ok: true,
     keyword,
-    mode,
-    source: result.source,
+    mode:          result.mode,
+    category:      result.product?.category || 'standard',
+    canonicalName: result.product?.canonicalName || keyword,
+    source:        result.source,
     discoveredUrls: result.discoveredUrls,
     monitorEntries: entries,
+    autoRegistered,
   });
 }
 

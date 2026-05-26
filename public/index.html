@@ -1527,6 +1527,15 @@
 
             <!-- ── MONITOR INPUT ── -->
             <div class="transparent-box">
+                <!-- キャッチコピー -->
+                <div style="text-align:center;padding:8px 0 14px;border-bottom:1px solid rgba(155,89,182,0.2);margin-bottom:14px;">
+                    <p style="font-size:15px;font-weight:bold;color:var(--champagne-gold);letter-spacing:1px;margin:0 0 6px;">
+                        欲しい商品、気づいたら終わってた。<br>を防ぐ。
+                    </p>
+                    <p class="meta-11px" style="color:rgba(247,231,206,0.5);margin:0;letter-spacing:0.5px;">
+                        発見 → 見守り → 通知　争奪戦商品のDiscovery Engine
+                    </p>
+                </div>
                 <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:var(--gap-11);">
                     <span class="gold-label" style="margin-bottom:0;display:inline;">見守り設定</span>
                     <span id="mode-guide-hint" class="mode-guide-hint">（ひとつを選択）</span>
@@ -4744,14 +4753,14 @@ function presetSearch(keyword) {
     lastMonitorKeyword = keyword;
     // standard mode (intel scout) で発見探索を起動
     runIntelScout(keyword, false, true, false);
-    // URL発見も並行して実行
-    discoverAndShow(keyword);
+    // URL発見 + 自動登録（プリセットは autoRegister: true）
+    discoverAndShow(keyword, true);
 }
 
 // ── discover → monitor 自動接続 ──────────────────────────────────
 let _lastDiscoverResults = [];
 
-async function discoverAndShow(keyword) {
+async function discoverAndShow(keyword, autoRegister = false) {
     if (!keyword || restrictedKeywords.some(rk => keyword.includes(rk))) return;
 
     const wrap = document.getElementById('discover-results-wrap');
@@ -4768,7 +4777,12 @@ async function discoverAndShow(keyword) {
         const res = await fetchApi('/api/index?action=discover', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keyword, userId: getUserId(), mode: _currentMode === 'stock' ? 'sneaker' : 'standard' })
+            body: JSON.stringify({
+                keyword,
+                userId: getUserId(),
+                mode: _currentMode === 'stock' ? 'sneaker' : 'standard',
+                autoRegister,
+            })
         });
         if (!res.ok) throw new Error('discover failed');
         const data = await res.json();
@@ -4784,39 +4798,63 @@ function renderDiscoverResults(keyword, data) {
     const allBtn = document.getElementById('discover-watch-all-btn');
     if (!list) return;
 
-    const entries = data.monitorEntries || [];
+    const entries   = data.monitorEntries || [];
+    const autoReged = new Set(data.autoRegistered || []);
+    const canonical = data.canonicalName || keyword;
+    const category  = data.category || 'standard';
+
     if (entries.length === 0) {
         list.innerHTML = '<p class="meta-11px" style="color:rgba(247,231,206,0.4);margin:0;padding:4px 0;">候補URLが見つかりませんでした。キーワードで見守りを継続します。</p>';
-        // URLなしでもキーワード見守りとして登録
         addWatchedKeyword(keyword);
         _startMonitorCore(keyword);
         return;
     }
 
+    // canonical 名・カテゴリバッジを表示
+    const header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+    const canonBadge = document.createElement('span');
+    canonBadge.style.cssText = 'font-size:11px;color:var(--champagne-gold);letter-spacing:1px;font-weight:bold;';
+    canonBadge.textContent = canonical;
+    const catBadge = document.createElement('span');
+    catBadge.style.cssText = 'font-size:11px;color:var(--amethyst);letter-spacing:1px;padding:2px 6px;border:1px solid rgba(155,89,182,0.4);border-radius:2px;';
+    catBadge.textContent = category;
+    header.appendChild(canonBadge);
+    header.appendChild(catBadge);
     list.innerHTML = '';
+    list.appendChild(header);
+
+    let unregisteredCount = 0;
     entries.forEach((entry, i) => {
+        const alreadyDone = autoReged.has(entry.sourceId);
+        if (!alreadyDone) unregisteredCount++;
+
         const card = document.createElement('div');
         card.className = 'discover-url-card';
-        const titleEl = document.createElement('div');
-        titleEl.className = 'discover-url-title';
-        titleEl.textContent = entry.title || keyword;
+
         const metaEl = document.createElement('div');
         metaEl.className = 'discover-url-meta';
         metaEl.textContent = entry.url
-            ? entry.url.replace(/^https?:\/\//, '').slice(0, 60) + (entry.url.length > 60 ? '…' : '')
+            ? entry.url.replace(/^https?:\/\//, '').slice(0, 65) + (entry.url.length > 65 ? '…' : '')
             : 'キーワード見守り';
+
         const btn = document.createElement('button');
-        btn.className = 'discover-watch-btn';
+        btn.className = 'discover-watch-btn' + (alreadyDone ? ' done' : '');
         btn.dataset.idx = i;
-        btn.textContent = '見守りに追加';
-        btn.onclick = () => watchDiscoveredEntry(entry, btn);
-        card.appendChild(titleEl);
+        btn.textContent = alreadyDone ? '見守り中' : '見守りに追加';
+        if (alreadyDone) btn.disabled = true;
+        else btn.onclick = () => watchDiscoveredEntry(entry, btn);
+
         card.appendChild(metaEl);
         card.appendChild(btn);
         list.appendChild(card);
     });
 
-    if (allBtn && entries.length > 1) allBtn.style.display = 'block';
+    // 自動登録済みのキーワードを localStorage にも記録
+    if (autoReged.size > 0) addWatchedKeyword(keyword);
+
+    if (allBtn && unregisteredCount > 1) allBtn.style.display = 'block';
+    else if (allBtn) allBtn.style.display = 'none';
 }
 
 async function watchDiscoveredEntry(entry, btn) {
