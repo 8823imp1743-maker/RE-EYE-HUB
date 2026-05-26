@@ -152,6 +152,16 @@ export default async function handler(req, res) {
   attachExpressLikeResponse(res);
   ensureQuery(req);
 
+  // CORS プリフライト（Firebase Hosting → Vercel のクロスオリジン対応）
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin',  'https://re-eye-hub.web.app');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Cron-Secret');
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+
   const route  = resolveRoute(req);
   const config = route ? ROUTES[route] : null;
 

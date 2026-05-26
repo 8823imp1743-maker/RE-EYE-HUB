@@ -1263,7 +1263,7 @@ const pdpParallel = Math.max(
     const dedupeKey = notifySentDedupeKey(userId, item.sourceId || '', item.itemId || '');
     try {
       const nx = await withRedisRetry(
-        () => r.set(dedupeKey, '1', { ex: 600, nx: true }),
+        () => r.set(dedupeKey, '1', { ex: 14400, nx: true }), // 4時間（600s→14400s）: 同一商品の通知スパム防止
         { label: 'serp-notify-dedupe-nx' }
       );
       if (nx == null) {
