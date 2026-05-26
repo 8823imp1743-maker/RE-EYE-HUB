@@ -4760,6 +4760,31 @@ function presetSearch(keyword) {
 // ── discover → monitor 自動接続 ──────────────────────────────────
 let _lastDiscoverResults = [];
 
+// ── 探索状態プログレッシブUI ─────────────────────────────────────
+// ユーザーに「動いているか・止まっているか」を伝える。
+// APIレスポンスを待つ間、段階的なステータスメッセージを表示する。
+const _DISCOVER_STEPS = [
+    { ms:    0, text: '探索開始…' },
+    { ms:  600, text: 'RSSシグナルを確認中…' },
+    { ms: 1400, text: '楽天を確認中…' },
+    { ms: 2200, text: 'Yahooを確認中…' },
+    { ms: 3200, text: '候補URLを精査中…' },
+    { ms: 4400, text: '品質スコアを計算中…' },
+    { ms: 5800, text: '見守り候補を整理中…' },
+];
+
+function _startDiscoverProgress(listEl) {
+    const timers = [];
+    _DISCOVER_STEPS.forEach(({ ms, text }) => {
+        const t = setTimeout(() => {
+            if (!listEl.querySelector('[data-discover-progress]')) return;
+            listEl.querySelector('[data-discover-progress]').textContent = text;
+        }, ms);
+        timers.push(t);
+    });
+    return () => timers.forEach(clearTimeout);
+}
+
 async function discoverAndShow(keyword, autoRegister = false) {
     if (!keyword || restrictedKeywords.some(rk => keyword.includes(rk))) return;
 
@@ -4769,9 +4794,11 @@ async function discoverAndShow(keyword, autoRegister = false) {
     if (!wrap || !list) return;
 
     wrap.style.display = 'block';
-    list.innerHTML = '<p class="meta-11px" style="color:rgba(247,231,206,0.5);margin:0;padding:4px 0;">見守り候補を探索中...</p>';
+    list.innerHTML = '<p class="meta-11px" data-discover-progress style="color:rgba(247,231,206,0.55);margin:0;padding:4px 0;letter-spacing:0.5px;">探索開始…</p>';
     if (allBtn) allBtn.style.display = 'none';
     _lastDiscoverResults = [];
+
+    const stopProgress = _startDiscoverProgress(list);
 
     try {
         const res = await fetchApi('/api/index?action=discover', {
@@ -4784,12 +4811,17 @@ async function discoverAndShow(keyword, autoRegister = false) {
                 autoRegister,
             })
         });
+        stopProgress();
         if (!res.ok) throw new Error('discover failed');
         const data = await res.json();
         _lastDiscoverResults = data.monitorEntries || [];
         renderDiscoverResults(keyword, data);
     } catch (e) {
-        if (list) list.innerHTML = '<p class="meta-11px" style="color:rgba(247,231,206,0.4);margin:0;">候補URLの取得に失敗しました</p>';
+        stopProgress();
+        if (list) list.innerHTML = '<p class="meta-11px" style="color:rgba(247,231,206,0.4);margin:0;padding:4px 0;">候補URLの取得に失敗しました。キーワードで引き続き見守ります。</p>';
+        // フォールバック: URLなしでキーワード見守り登録
+        addWatchedKeyword(keyword);
+        _startMonitorCore(keyword);
     }
 }
 
