@@ -1138,7 +1138,7 @@
             border-radius: 2px; padding: 3px 8px;
             display: inline-block; margin-top: 6px;
         }
-        /* Deep Recon ラベル */
+        /* 情報確認ステータスラベル */
         .deep-recon-label {
             font-size: 11px; color: var(--amethyst);
             letter-spacing: 2px; opacity: 0.75;
@@ -1431,7 +1431,7 @@
                 </div>
                 <div id="home-setting-unconfigured-cta">
                     <span class="gold-label">ユーザーサイズ（家族分含む）</span>
-                    <span class="meta-11px" style="display:block;margin-top:8px;margin-bottom:10px;line-height:1.7;">在庫・索敵のサイズ合わせ用。靴と服のサイズを自分／お子様に分けて登録します（お子様は任意）。</span>
+                    <span class="meta-11px" style="display:block;margin-top:8px;margin-bottom:10px;line-height:1.7;">在庫・再販チェックのサイズ合わせ用。靴と服のサイズを自分／お子様に分けて登録します（お子様は任意）。</span>
                     <button type="button" class="sync-hub-btn" onclick="openUserSettingsBottomSheet()">設定を開く</button>
                 </div>
             </div>
@@ -1628,7 +1628,7 @@
                 <i data-lucide="video" class="lucide reward-icon" aria-hidden="true"></i>
                 <div class="reward-text-block">
                   <span class="reward-main-text">広告動画を視聴して、見守り枠を +1 追加</span>
-                  <span class="reward-sub-text">FREE/STANDARD限定 / 1視聴につき、トレンド探索枠を1つ追加（月最大：FREE 3枠・STANDARD 5枠）</span>
+                  <span class="reward-sub-text">FREE/STANDARD限定 / 1視聴につき、見守り枠を1つ追加（月最大：FREE 3枠・STANDARD 5枠）</span>
                 </div>
                 <span class="reward-badge">+1</span>
               </div>
@@ -1667,22 +1667,21 @@
     <div id="insight" class="screen">
         <div class="screen-content">
             <div class="transparent-box">
-                <span class="gold-label">トレンド探索</span>
-                <p class="trend-intro-11px">1日1回、未発売・予約情報を捉え、発売日が確定した瞬間に通知します。</p>
+                <span class="gold-label">新着情報を探す</span>
+                <p class="trend-intro-11px">気になる商品の再販・新着情報をまとめて確認できます。見守り候補を探すのに使ってください。</p>
                 <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
-                    <input type="text" id="insight-search" placeholder="ブランド名・カテゴリ・キーワードで絞り込み" onkeydown="if(event.key==='Enter')triggerInsightScout()">
+                    <input type="text" id="insight-search" placeholder="ブランド名・商品名・キーワードで探す" onkeydown="if(event.key==='Enter')triggerInsightScout()">
                     <span class="monitor-search-icon-wrap" onclick="triggerInsightScout()">
                         <i id="insight-search-fa" data-lucide="search" class="lucide monitor-search-icon" aria-hidden="true"></i>
                         <span id="insight-spinner"></span>
                     </span>
                 </div>
                 <div id="insight-scout-status"></div>
-                <p class="meta-11px" style="margin-top:6px;color:var(--amethyst);opacity:0.7;letter-spacing:1px;">Deep Recon: 60 Days / 再販探索中</p>
-                <p class="trend-intro-11px" style="margin-top: var(--gap-11);">最新（48h）のニュースへ索敵し、発売日が決まった瞬間に通知します</p>
-                <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで発売通知が届く。</p>
+                <p class="meta-11px" style="margin-top:6px;color:var(--amethyst);opacity:0.7;letter-spacing:1px;">過去60日間の情報を確認中</p>
+                <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで再販通知が届きます。</p>
             </div>
             <div class="transparent-box">
-                <span class="gold-label">懸賞・先取り</span>
+                <span class="gold-label">関連情報を探す</span>
                 <div class="chip-row" style="margin-bottom:var(--gap-11);justify-content:space-between;gap:8px;">
                     <span class="kw-chip campaign-chip" data-word="応募" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('応募')">応募</span>
                     <span class="kw-chip campaign-chip" data-word="抽選" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('抽選')">抽選</span>
@@ -1715,7 +1714,7 @@
                     <div id="settings-stock-requests" class="settings-stock-requests"></div>
                 </div>
                 <div id="settings-trend-watching" style="display: none; margin-top: var(--gap-11);">
-                    <span class="gold-label" style="font-size:11px;margin-bottom:6px;">トレンド探索</span>
+                    <span class="gold-label" style="font-size:11px;margin-bottom:6px;">新着情報から追加</span>
                     <div id="settings-trend-watching-list"></div>
                 </div>
             </div>
@@ -1730,23 +1729,23 @@
                 <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
                     <div class="category-item" onclick="selectPlan('FREE', this)">
                         <span>FREE / ¥0</span>
-                        <small>08:00–19:00 / 60分間隔 | 夜間スリープ<br>トレンド探索 3枠</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 6 アイテムを監視可能</span>
+                        <small>日中しっかり、夜間は省エネ見守り<br>08:00–19:00 / 30分間隔 | 19:00–08:00 / 60分間隔</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大5件まで登録可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('STANDARD', this)">
                         <span>STANDARD / ¥500</span>
-                        <small>08:00–19:00 / 15分間隔 | 19:00–08:00：60分間隔に変更 (5件)<br>トレンド探索 5枠</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 10 アイテムを監視可能</span>
+                        <small>日中は高頻度、夜間は自動省エネ<br>08:00–19:00 / 15分間隔 | 19:00–08:00 / 60分間隔</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大10件まで登録可能</span>
                     </div>
                     <div class="category-item selected" onclick="selectPlan('PRO', this)">
                         <span>PRO / ¥1,000</span>
-                        <small>08:00–19:00 / 5分間隔（Jitter）| 夜間：60分間隔<br>トレンド探索 5枠</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 15 アイテムを監視可能</span>
+                        <small>24時間しっかり見守り<br>24時間 / 30分間隔固定 — 深夜のゲリラ再販にも対応</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大15件まで登録可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('VIP', this)" style="border-color: var(--champagne-gold);">
                         <span style="color: var(--champagne-gold);">VIP / ¥1,500 <span style="font-size:10px;letter-spacing:1px;opacity:0.85;">● 100名限定</span></span>
-                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 / 5分間隔（Jitter付き）<br>トレンド探索 10枠</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大合計 20 アイテムを監視可能</span>
+                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 最優先見守り<br>24時間 / 5分間隔 — 最速で再販を検知</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大20件まで登録可能</span>
                     </div>
                 </div>
 
@@ -2127,7 +2126,7 @@ let userProfile = {
     hasChildren:false, childGender:'', childClothSize:'', childShoeSize:'', childGlovesSml:'',
     interests:[], timezone: TZ
 };
-/** 索敵 /api/search・/api/scout の forChild。見守り枠のトグルで更新・localStorage 永続化 */
+/** /api/search・/api/scout の forChild フラグ。見守り枠のトグルで更新・localStorage 永続化 */
 const RE_EYE_SCOUT_FOR_CHILD = 're_eye_scout_for_child';
 let _scoutTargetForChild = false;
 (function loadScoutTargetFlag() {
@@ -2933,7 +2932,7 @@ function watchRewardVideo() {
     const mx=getMaxRewardSlots();
     if(mx===0){alert('PRO/VIPプランでは広告報酬枠の追加はありません。');return;}
     rewardSlots=Math.min(mx,rewardSlots+1);
-    alert('広告動画を視聴しました。トレンド探索枠を +1 追加しました。');
+    alert('広告動画を視聴しました。見守り枠を +1 追加しました。');
     updateAdVisibility();
 }
 
@@ -3074,7 +3073,7 @@ function renderSettingsTrendWatching() {
     b.style.display='block';
     const night=isNightJP();
     let lbl;
-    if(currentPlan==='FREE') lbl=night?'夜間スリープ中':'トレンド探索中';
+    if(currentPlan==='FREE') lbl=night?'夜間省エネ見守り中':'見守り中';
     else if(currentPlan==='VIP') lbl='常時稼働（Jitter付き）';
     else lbl=night?'60分間隔（夜間）':'15分間隔';
     l.innerHTML=w.map(t=>'<div class="watch-item-row"><span class="watch-item-name">'+t.title+'</span><span class="meta-11px" style="color:var(--amethyst);opacity:1;white-space:nowrap;">● '+lbl+'</span></div>').join('');
@@ -4138,7 +4137,7 @@ function buildWatchMetaLine(forChild) {
     return parts.length ? parts.join(' / ') : '';
 }
 
-// ── 懸賞・先取り ──────────────────────────────────────────────
+// ── 関連情報を探す ──────────────────────────────────────────────
 function selectInsightCampaignChip(word){
     document.querySelectorAll('.campaign-chip').forEach(c=>c.classList.toggle('selected',c.dataset.word===word));
     _campaignEditMode=false;_campaignEditSelected.clear();
@@ -4148,7 +4147,7 @@ function selectInsightCampaignChip(word){
 }
 async function runCampaignScout(keywords){
     const c=document.getElementById('campaign-results-container');
-    if(c){c.innerHTML='<p class="trend-intro-11px" style="text-align:center;margin:12px 0;color:rgba(247,231,206,0.5);">索敵中...</p>';c.style.display='block';}
+    if(c){c.innerHTML='<p class="trend-intro-11px" style="text-align:center;margin:12px 0;color:rgba(247,231,206,0.5);">情報を確認中...</p>';c.style.display='block';}
     try{
         const res=await fetchApi('/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify({keywords:Array.isArray(keywords)?keywords:[keywords],mode:'campaign',limit:15,userId:getUserId(),bypassDedup:true,forChild:false})});
@@ -4160,7 +4159,7 @@ async function runCampaignScout(keywords){
         }
         if(!res.ok){
             console.error('[campaign-scout] phase=http',res.status,'bodyHead=',String(raw).slice(0,400),data&&data.error,data&&data.debug);
-            if(c)c.innerHTML='<p class="trend-intro-11px" style="text-align:center;color:rgba(247,231,206,0.45);margin:12px 0;">応募・ギフト索敵を取得できませんでした (HTTP '+res.status+')</p>';
+            if(c)c.innerHTML='<p class="trend-intro-11px" style="text-align:center;color:rgba(247,231,206,0.45);margin:12px 0;">関連情報を取得できませんでした (HTTP '+res.status+')</p>';
             campaignResults=[];renderCampaignResults();return;
         }
         campaignResults=dedupeByNormalizedTitle((data.items||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id))));
