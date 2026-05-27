@@ -1943,8 +1943,8 @@
 
 // ── UTC タイムエンジン ────────────────────────────────────────
 const TZ = 'Asia/Tokyo';
-// Firebase Hosting から Vercel API を直叩き（CORSはVercel側で許可）
-// この HTML を更新したら: firebase deploy --only hosting ／ API だけなら: vercel --prod
+// Vercel単一ホスティング構成（Frontend + API）
+// デプロイ: git push origin main → Vercel自動デプロイ
 const API_BASE = 'https://re-eye-hub.vercel.app';
 /** 304 防止: URL を毎回ユニークにし、fetch は no-store */
 function fetchApi(path, init) {

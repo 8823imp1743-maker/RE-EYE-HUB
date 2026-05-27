@@ -110,19 +110,14 @@ Cron は `every 1 minutes` で毎分起動するが、`checkAllWatched()` 内の
 # 依存インストール
 npm install
 
-# ローカル開発（Firebase エミュレータ起動）
-firebase serve
-# または（Hosting + Functions を同時に立ち上げる場合）
-firebase emulators:start
+# ローカル開発（Vercel Dev サーバー起動）
+vercel dev
 
-# Firebase へデプロイ
-firebase deploy
+# プロダクションデプロイ（Vercel 自動デプロイ）
+git push origin main
 
-# Hosting のみデプロイ（フロントのみ変更時）
-firebase deploy --only hosting
-
-# Functions のみデプロイ（API 変更時）
-firebase deploy --only functions
+# 手動で即時デプロイしたい場合
+vercel --prod
 ```
 
 テストフレームワークは未導入。動作確認は README.md の curl 例で行う。
@@ -480,7 +475,7 @@ HTML の `onclick` 属性と JS の関数定義が別々に追加され、対応
 - エラー検知時のアクション順序：
   1. エラーメッセージとスタックトレースを貼り付けて原因を日本語で説明
   2. 修正コードを提示（修正前に「何を変えるか」を説明）
-  3. ユーザー承認後に `firebase deploy` でデプロイ
+  3. ユーザー承認後に `git push origin main`（Vercel自動デプロイ）でデプロイ
 
 ### 2. 開発フロー（デフォルトルーチン）
 
@@ -489,9 +484,9 @@ HTML の `onclick` 属性と JS の関数定義が別々に追加され、対応
 ```
 1. 修正内容を日本語で説明（何を・なぜ変えるか）
 2. ファイル編集（Edit ツール）
-3. ローカル確認（firebase emulators:start が起動中であれば curl / ブラウザで動作確認を促す）
-4. エラーなし確認後 → firebase deploy でプロダクションデプロイ
-5. デプロイ完了 URL（https://re-eye-hub.web.app）を報告
+3. ローカル確認（vercel dev が起動中であれば curl / ブラウザで動作確認を促す）
+4. エラーなし確認後 → git push origin main でプロダクションデプロイ（Vercel自動デプロイ）
+5. デプロイ完了 URL（https://re-eye-hub.vercel.app）を報告
 ```
 
 - ローカルテストは `curl -s http://localhost:5001/re-eye-hub/asia-northeast1/api/<endpoint>` で API を叩いて確認する。
@@ -500,11 +495,10 @@ HTML の `onclick` 属性と JS の関数定義が別々に追加され、対応
 
 | 状態 | アクション |
 |------|-----------|
-| CSS / HTML の見た目のみの変更 | `firebase deploy --only hosting` |
-| JS フロントのロジック変更 | `firebase deploy --only hosting` |
-| `api/*.js` / `lib/*.js` 変更 | `firebase deploy --only functions` |
-| 両方変更 | `firebase deploy`（フル） |
-| 環境変数の追加・変更 | `.env` を更新後に `firebase deploy --only functions` |
+| CSS / HTML / JS フロントの変更 | `git push origin main`（Vercel自動デプロイ） |
+| `api/*.js` / `lib/*.js` 変更 | `git push origin main`（Vercel自動デプロイ） |
+| 両方変更 | `git push origin main`（Vercel自動デプロイ） |
+| 環境変数の追加・変更 | Vercel ダッシュボード → Environment Variables で設定 |
 
 ### 4. 禁止事項
 
