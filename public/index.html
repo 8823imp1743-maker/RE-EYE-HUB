@@ -1716,26 +1716,18 @@
 
             <div class="transparent-box">
                 <span class="gold-label">見守りプラン選択</span>
-                <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
-                    <div class="category-item" onclick="selectPlan('FREE', this)">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-bottom: 11px;">
+                    <!-- FREEプラン -->
+                    <div class="category-item" id="plan-FREE" onclick="selectPlan('FREE', this)">
                         <span>FREE / ¥0</span>
-                        <small>日中しっかり、夜間は自動停止<br>08:00–19:00 / 60分間隔 | 19:00–08:00 / 停止</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大5件まで登録可能</span>
+                        <small>08:00–19:00 / 60分間隔<br>19:00–08:00 / 完全停止</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;margin-top:5px;">最大5件まで</span>
                     </div>
-                    <div class="category-item" onclick="selectPlan('STANDARD', this)">
-                        <span>STANDARD / ¥500</span>
-                        <small>日中は高頻度、夜間は自動省エネ<br>08:00–19:00 / 15分間隔 | 19:00–08:00 / 60分間隔</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大10件まで登録可能</span>
-                    </div>
-                    <div class="category-item selected" onclick="selectPlan('PRO', this)">
-                        <span>PRO / ¥1,000</span>
-                        <small>24時間しっかり見守り<br>24時間 / 30分間隔固定 — 深夜のゲリラ再販にも対応</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大10件まで登録可能</span>
-                    </div>
-                    <div class="category-item" onclick="selectPlan('VIP', this)" style="border-color: var(--champagne-gold);">
-                        <span style="color: var(--champagne-gold);">VIP / ¥1,500 <span style="font-size:10px;letter-spacing:1px;opacity:0.85;">● 100名限定</span></span>
-                        <small style="color: var(--champagne-gold); opacity: 1;">24時間 最優先見守り<br>24時間 / 5分間隔 — 最速で再販を検知</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大20件まで登録可能</span>
+                    <!-- PROプラン -->
+                    <div class="category-item selected" id="plan-PRO" onclick="selectPlan('PRO', this)" style="border-color: var(--champagne-gold);">
+                        <span style="color: var(--champagne-gold);">PRO / ¥1,000</span>
+                        <small style="color: var(--champagne-gold); opacity: 0.9;">24時間・常に30分間隔<br>夜間ゲリラ再販も逃さない</small>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;margin-top:5px;">最大10件まで</span>
                     </div>
                 </div>
 
@@ -2069,10 +2061,8 @@ let _currentMode = 'stock';
 const restrictedKeywords = ['アダルト','18禁','成人','ポルノ','デリヘル','ソープ'];
 
 const PLAN_LIMITS = {
-    FREE:     { stock: 5,  trend: 3  },
-    STANDARD: { stock: 5,  trend: 5  },
-    PRO:      { stock: 10, trend: 5  },
-    VIP:      { stock: 10, trend: 10 }
+    FREE: { stock: 5,  trend: 5  },
+    PRO:  { stock: 10, trend: 10 }
 };
 function getTrendLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).trend; }
 function getStockLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).stock; }
@@ -2088,25 +2078,13 @@ function getUserId() {
 
 function getMonitoringIntervalMs() {
     const night = isNightJP();
-
-    // FREE
     if (currentPlan === 'FREE') {
-        // 夜間停止
-        return night
-            ? 24 * 60 * 60 * 1000
-            : 60 * 60 * 1000;
+        // 夜間（19:00〜08:00）は完全停止扱い。実質的に次の昼間まで再実行しない
+        return night ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+    } else {
+        // PRO: 24時間・常に30分間隔
+        return 30 * 60 * 1000;
     }
-
-    // PAID
-    if (currentPlan === 'PAID') {
-        // 夜間は軽く
-        return night
-            ? 60 * 60 * 1000
-            : 30 * 60 * 1000;
-    }
-
-    // fallback
-    return 60 * 60 * 1000;
 }
 
 // ── ユーザープロフィール ──────────────────────────────────────
@@ -3460,11 +3438,11 @@ function updateNightModeStatus() {
     }
     let it,bt;
     if(currentPlan==='FREE'){
-        it=night?'夜間スリープ中（08:00に再開）':'● 見守り中 / 60分間隔';
-        bt=night?'夜間スリープ：08:00に再開します':'● 08:00–19:00 稼働中 / 60分間隔';
+        it=night?'● 夜間停止中（08:00に再開）':'● 60分間隔で見守り中';
+        bt=night?'夜間停止中：08:00に再開します':'● 08:00–19:00 稼働中 / 60分間隔';
     } else {
-        it=night?'● 見守り中 / 30分間隔（夜間）':'● 見守り中 / 30分間隔';
-        bt='● 24時間稼働中 / 30分間隔';
+        it='● 常に30分間隔で監視中';
+        bt='24時間フル稼働中 / 30分間隔';
     }
     if(el)el.textContent=it; if(bn)bn.textContent=bt;
 }
