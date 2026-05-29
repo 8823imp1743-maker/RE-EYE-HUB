@@ -3849,68 +3849,60 @@ async function loadUserSettingsFromServerAndApply() {
         syncMonitorScoutCockpitChrome();
     } catch (e) {}
 }
-function saveUserSettings(explicit) {
+async function saveUserSettings(explicit) {
     if (explicit) {
-        (async () => {
-            if (isSettingsSaveLocked()) return;
-            setSettingsSaveLock(true);
-            try {
-                // DOM を先に正へ反映し、その状態を巻き戻し用に取る（デバウンス前の「保存」でもチップを失わない）
-                const prevP = JSON.parse(JSON.stringify(userProfile));
-                const prevPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
-                readProfileFromDials();
-                if (!String(userProfile.gender || '').trim()) {
-                    applyUserSettingsSnapshot(prevP, prevPr);
-                    alert('性別を選択してください。');
-                    return;
-                }
-                const snapP = JSON.parse(JSON.stringify(userProfile));
-                const snapPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
-                // ローカルに先行保存（サーバー失敗でもブロックしない）
-                try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
-                let r;
-                try {
-                    r = await postUserSettingsToRedis();
-                } catch (net) {
-                    r = { ok: false, data: {} };
-                }
-                // サーバー保存失敗はログのみ（ローカル保存済みなので処理続行）
-                if (!r || !r.ok) {
-                    console.warn('[settings] サーバー保存失敗。ローカルのみ保存済み。');
-                }
-                updateBannerAdContent(lastMonitorKeyword);
-                const st = buildHomeSettingSummary();
-                const se = document.getElementById('home-setting-summary-text');
-                const sw = document.getElementById('home-setting-summary-wrap');
-                if (se) se.textContent = st;
-                if (sw) sw.style.display = 'block';
-                const cta = document.getElementById('home-setting-unconfigured-cta');
-                if (cta) cta.style.display = 'none';
-                closeUserSettingsBottomSheet();
-                const mb = document.getElementById('monitor-section-body');
-                if (mb) mb.classList.remove('monitor-locked');
-                const uw = document.getElementById('user-setup-warning');
-                if (uw) uw.style.display = 'none';
-                checkUserSetup();
-                applyChildRevealedStateFromProfile();
-                alert('設定を保存しました。');
-            } catch (e) {
-                console.error('[settings] 予期しないエラー:', e);
-                alert('設定の保存中にエラーが発生しました。もう一度お試しください。');
-            } finally {
-                setSettingsSaveLock(false);
+        if (isSettingsSaveLocked()) return;
+        setSettingsSaveLock(true);
+        try {
+            // 1. 現在の入力内容を読み取る
+            readProfileFromDials();
+
+            // 2. バリデーション（性別は必須）
+            if (!String(userProfile.gender || '').trim()) {
+                alert('性別を選択してください。');
+                return;
             }
-        })();
+
+            // 3. 即座にローカル（LocalStorage）へ保存
+            localStorage.setItem('re_eye_profile', JSON.stringify(userProfile));
+
+            // 4. サマリー表示を即座に更新
+            const st = buildHomeSettingSummary();
+            const se = document.getElementById('home-setting-summary-text');
+            const sw = document.getElementById('home-setting-summary-wrap');
+            const cta = document.getElementById('home-setting-unconfigured-cta');
+            if (se) se.textContent = st;
+            if (sw) sw.style.display = 'block';
+            if (cta) cta.style.display = 'none';
+
+            // 5. サーバー（Redis）へバックグラウンド同期
+            try {
+                const r = await postUserSettingsToRedis();
+                if (!r || !r.ok) console.warn('[settings] サーバー同期失敗。ローカルのみ保存済み。');
+            } catch (e) {
+                console.warn('[settings] サーバー同期エラー:', e);
+            }
+
+            alert('設定を保存しました。');
+            closeUserSettingsBottomSheet();
+            checkUserSetup();
+            applyChildRevealedStateFromProfile();
+        } catch (e) {
+            console.error('[settings] 保存エラー:', e);
+            alert('保存中にエラーが発生しました。設定は維持されています。');
+        } finally {
+            setSettingsSaveLock(false);
+        }
         return;
     }
     if (isSettingsSaveLocked()) return;
     clearTimeout(_saveTimer);
-    _saveTimer=setTimeout(()=>{
+    _saveTimer = setTimeout(() => {
         readProfileFromDials();
-        try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
+        try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
         syncScoutTargetToggleUI();
         updateBannerAdContent(lastMonitorKeyword);
-    },80);
+    }, 80);
 }
 function checkUserSetup(){
     const mb=document.getElementById('monitor-section-body');
