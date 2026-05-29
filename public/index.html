@@ -927,6 +927,7 @@
         .home-setting-change-btn:hover { border-color: var(--amethyst); box-shadow: 0 0 8px rgba(155,89,182,0.4); }
         /* 設定未完了時：見守りセクションをロック */
         .monitor-locked { opacity: 0.3; pointer-events: none; user-select: none; }
+        .monitor-locked .monitor-mode-row { opacity: 1 !important; pointer-events: auto !important; user-select: auto !important; }
 
         /* ── マイサイズ：ボトムシート + カテゴリ切替 ── */
         .user-settings-bottom-sheet {
@@ -1753,15 +1754,15 @@
                 <div style="display:flex; gap:var(--gap-11); margin-top:var(--gap-11);">
                     <a href="https://www.rakuten.co.jp" target="_blank" rel="noopener" class="shop-logo-btn connected">
                         <div class="shop-logo-name">楽天市場</div>
-                        <div class="meta-11px" style="margin:0;color:var(--amethyst);">連携済み · ログイン</div>
+                        <div class="meta-11px" style="margin:0;color:var(--amethyst);">検索対象 · 監視中</div>
                     </a>
                     <a href="https://www.amazon.co.jp" target="_blank" rel="noopener" class="shop-logo-btn connected">
                         <div class="shop-logo-name">Amazon</div>
-                        <div class="meta-11px" style="margin:0;color:var(--amethyst);">連携済み · ログイン</div>
+                        <div class="meta-11px" style="margin:0;color:var(--amethyst);">検索対象 · 監視中</div>
                     </a>
-                    <a href="https://shopping.yahoo.co.jp" target="_blank" rel="noopener" class="shop-logo-btn">
-                        <div class="shop-logo-name" style="color:rgba(247,231,206,0.45);">Yahoo!</div>
-                        <div class="meta-11px" style="margin:0;opacity:0.5;">未連携</div>
+                    <a href="https://shopping.yahoo.co.jp" target="_blank" rel="noopener" class="shop-logo-btn connected">
+                        <div class="shop-logo-name">Yahoo!</div>
+                        <div class="meta-11px" style="margin:0;color:var(--amethyst);">検索対象 · 監視中</div>
                     </a>
                 </div>
             </div>
@@ -5004,9 +5005,9 @@ async function runIntelScout(forceKeyword,autoNavigate,homeInline,forChildScout)
                 if(intelScoutResults.length>0){
                     st.textContent=intelScoutResults.length+'件の情報を捕捉しました';
                 } else if(found>0){
-                    st.textContent='最新（48h）の記事にヒントあり。リンク先でご確認ください';
+                    st.textContent='過去60日間の記事にヒントあり。リンク先でご確認ください';
                 } else {
-                    st.textContent='最新（48h）をスキャン済み。有力な予兆は検知されませんでした。継続して哨戒します';
+                    st.textContent='過去60日間をスキャン済み。有力な再販情報は見つかりませんでした。引き続き確認を続けます';
                 }
                 st.classList.add('visible');
                 setTimeout(()=>st.classList.remove('visible'),6000);
@@ -5030,7 +5031,7 @@ function _renderHomeInlineList(){
     const wrap=document.getElementById('home-inline-results');
     if(!list||!wrap) return; list.innerHTML='';
     if(_homeInlineItems.length===0){
-        list.innerHTML='<div class="home-slot-empty">最新（48h）をスキャンしましたが、該当する予兆は見つかりませんでした。</div>';
+        list.innerHTML='<div class="home-slot-empty">過去60日間をスキャンしましたが、該当する再販情報は見つかりませんでした。</div>';
         wrap.style.display='block'; return;
     }
     _homeInlineItems.forEach(item=>{
