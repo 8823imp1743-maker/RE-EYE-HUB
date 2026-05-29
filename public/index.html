@@ -1575,17 +1575,6 @@
                         </div>
                         <span id="scout-target-child-blocked-hint" class="meta-11px" style="display:none;width:100%;color:var(--amethyst);">お子様の性別をユーザーサイズ設定で選ぶと、ここが使えます。</span>
                     </div>
-                    <!-- カテゴリプリセット：タップするだけで発見探索を開始 -->
-                    <div class="category-preset-row" id="category-preset-row" aria-label="カテゴリから探す">
-                        <button class="category-preset-chip" onclick="presetSearch('ちいかわ')">ちいかわ</button>
-                        <button class="category-preset-chip" onclick="presetSearch('サンリオ 限定')">サンリオ</button>
-                        <button class="category-preset-chip" onclick="presetSearch('ポケモン カード')">ポケカ</button>
-                        <button class="category-preset-chip" onclick="presetSearch('ガンプラ 限定')">ガンプラ</button>
-                        <button class="category-preset-chip" onclick="presetSearch('推し活 グッズ')">推し活</button>
-                        <button class="category-preset-chip" onclick="presetSearch('コスメ 限定 新作')">限定コスメ</button>
-                        <button class="category-preset-chip" onclick="presetSearch('フィギュア 限定')">フィギュア</button>
-                        <button class="category-preset-chip" onclick="presetSearch('スニーカー 限定')">スニーカー</button>
-                    </div>
                     <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
                     <div id="monitor-input-wrap" style="position:relative;">
                         <input type="text" id="monitor-input" placeholder="例：ちいかわ ぬいぐるみ / AJ1 シカゴ" onkeydown="if(event.key==='Enter')scoutAndShow()">
@@ -3462,11 +3451,21 @@ function updateNightModeStatus() {
     const el=document.getElementById('current-interval-text');
     const bn=document.getElementById('settings-plan-status');
     const night=isNightJP();
+    // 見守り登録が0件のときは「見守り中」と表示しない
+    const hasItems = (historyItems||[]).filter(i=>i.watchSource==='redis'||i.watchSource==='pending').length > 0
+                  || (typeof _watchedKeywords!=='undefined' && _watchedKeywords.size > 0);
+    if(!hasItems){
+        if(el)el.textContent=''; if(bn)bn.textContent='見守り登録なし';
+        return;
+    }
     let it,bt;
-    if(currentPlan==='FREE'){it=night?'夜間スリープ中':'● 60分間隔で見守り中';bt=night?'夜間スリープ：08:00に再開します':'● 08:00–19:00 稼働中 / 60分間隔';}
-    else if(currentPlan==='STANDARD'){it=night?'夜間：60分間隔に変更済み':'● 15分間隔で見守り中';bt=night?'夜間モード：60分間隔':'● 08:00–19:00 稼働中 / 15分間隔';}
-    else if(currentPlan==='PRO'){it=night?'夜間：60分間隔に変更済み':'● 5分間隔（Jitter）で見守り中';bt=night?'夜間モード：60分間隔':'● 08:00–19:00 稼働中 / 5分間隔';}
-    else if(currentPlan==='VIP'){it='● 5分間隔（Jitter）で常時稼働中';bt='ステルス常時稼働中 / 5分間隔';}
+    if(currentPlan==='FREE'){
+        it=night?'夜間スリープ中（08:00に再開）':'● 見守り中 / 60分間隔';
+        bt=night?'夜間スリープ：08:00に再開します':'● 08:00–19:00 稼働中 / 60分間隔';
+    } else {
+        it=night?'● 見守り中 / 30分間隔（夜間）':'● 見守り中 / 30分間隔';
+        bt='● 24時間稼働中 / 30分間隔';
+    }
     if(el)el.textContent=it; if(bn)bn.textContent=bt;
 }
 
@@ -3932,10 +3931,10 @@ function checkUserSetup(){
 // ── モード切替 ────────────────────────────────────────────────
 const MODE_KW_CHIPS={oshi:['チケット','グッズ','出演','特典','限定']};
 const MODE_HINTS={
-    stock:'プラン最短間隔で精密スキャン。在庫復活の瞬間を捉える。',
-    oshi:'プラン最短間隔。人物名・グループ名＋チップで公式情報を最速捕捉。'
+    stock:'楽天・Yahoo・Amazonで在庫を検索し、再入荷を監視します。',
+    oshi:'SNS・ニュースから公式情報・グッズ情報を収集します。'
 };
-const MODE_PLACEHOLDERS={stock:'ブランド名、商品名',oshi:'人物名、グループ名'};
+const MODE_PLACEHOLDERS={stock:'商品名・ブランド名（例：ちいかわ ぬいぐるみ）',oshi:'アーティスト名・グループ名（例：櫻坂46）'};
 function onModeChange(changed){
     _currentMode=changed;
     document.querySelectorAll('.monitor-mode-item').forEach(item=>{
