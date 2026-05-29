@@ -9,14 +9,11 @@
 import { checkAllWatched } from './monitor.js';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  // 認証チェック
+  // Vercel Cron は GET で送信してくるため POST チェックは行わない。
+  // Authorization: Bearer <CRON_SECRET> で正規リクエストかを検証する。
   const secret = process.env.CRON_SECRET;
-  const provided = req.headers['x-cron-secret'];
-  if (!secret || !provided || provided !== secret) {
+  const authHeader = req.headers.get ? req.headers.get('authorization') : req.headers.authorization;
+  if (!secret || authHeader !== `Bearer ${secret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
