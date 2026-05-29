@@ -1678,7 +1678,7 @@
                     </span>
                 </div>
                 <div id="insight-scout-status"></div>
-                <p class="meta-11px" style="margin-top:6px;color:var(--amethyst);opacity:0.7;letter-spacing:1px;">過去60日間の情報を確認中</p>
+                <p id="insight-idle-hint" class="meta-11px" style="margin-top:6px;color:var(--amethyst);opacity:0.7;letter-spacing:1px;">Enterキーまたは🔍を押して検索</p>
                 <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで再販通知が届きます。</p>
             </div>
             <div class="transparent-box">
@@ -3996,14 +3996,16 @@ function setScoutLoading(on){
     const sp=document.getElementById('monitor-spinner');
     const st=document.getElementById('scout-status-text');
     if(fa)fa.style.display=on?'none':''; if(sp)sp.style.display=on?'block':'none';
-    if(st){st.textContent=on?'偵察ルートを構築中...':'';st.classList.toggle('visible',on);}
+    if(st){st.textContent=on?'検索中...':'';st.classList.toggle('visible',on);}
 }
 function setInsightLoading(on){
     const fa=document.getElementById('insight-search-fa');
     const sp=document.getElementById('insight-spinner');
     const st=document.getElementById('insight-scout-status');
+    const hint=document.getElementById('insight-idle-hint');
     if(fa)fa.style.display=on?'none':''; if(sp)sp.style.display=on?'block':'none';
-    if(st){st.textContent=on?'偵察ルートを構築中...':'';st.classList.toggle('visible',on);}
+    if(st){st.textContent=on?'情報を確認中...':'';st.classList.toggle('visible',on);}
+    if(hint)hint.style.display=on?'none':'block';
 }
 function triggerInsightScout(){
     const word=document.getElementById('insight-search').value.trim();
@@ -4138,7 +4140,16 @@ function selectInsightCampaignChip(word){
     document.querySelectorAll('.campaign-chip').forEach(c=>c.classList.toggle('selected',c.dataset.word===word));
     _campaignEditMode=false;_campaignEditSelected.clear();
     const watched=[..._watchedKeywords].filter(Boolean).slice(0,5);
-    const keywords=watched.length>0?watched.map(k=>k+' '+word):[word];
+    // 見守りキーワードがなければ探索画面の入力値を使い、それもなければ汎用ワードで検索
+    const insightWord=document.getElementById('insight-search')?.value.trim();
+    let keywords;
+    if(watched.length>0){
+        keywords=watched.map(k=>k+' '+word);
+    } else if(insightWord){
+        keywords=[insightWord+' '+word];
+    } else {
+        keywords=[word+' 限定', word+' 新作'];
+    }
     runCampaignScout(keywords);
 }
 async function runCampaignScout(keywords){
