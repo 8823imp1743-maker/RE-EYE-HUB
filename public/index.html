@@ -1730,7 +1730,7 @@
                 <div style="display: flex; flex-direction: column; gap: 11px; margin-bottom: 11px;">
                     <div class="category-item" onclick="selectPlan('FREE', this)">
                         <span>FREE / ¥0</span>
-                        <small>日中しっかり、夜間は省エネ見守り<br>08:00–19:00 / 30分間隔 | 19:00–08:00 / 60分間隔</small>
+                        <small>日中しっかり、夜間は自動停止<br>08:00–19:00 / 60分間隔 | 19:00–08:00 / 停止</small>
                         <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大5件まで登録可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('STANDARD', this)">
@@ -1741,7 +1741,7 @@
                     <div class="category-item selected" onclick="selectPlan('PRO', this)">
                         <span>PRO / ¥1,000</span>
                         <small>24時間しっかり見守り<br>24時間 / 30分間隔固定 — 深夜のゲリラ再販にも対応</small>
-                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大15件まで登録可能</span>
+                        <span style="font-size:11px;color:var(--amethyst);opacity:1;letter-spacing:0.8px;text-shadow:0 0 8px rgba(155,89,182,0.5);">最大10件まで登録可能</span>
                     </div>
                     <div class="category-item" onclick="selectPlan('VIP', this)" style="border-color: var(--champagne-gold);">
                         <span style="color: var(--champagne-gold);">VIP / ¥1,500 <span style="font-size:10px;letter-spacing:1px;opacity:0.85;">● 100名限定</span></span>
@@ -2080,7 +2080,7 @@ let _currentMode = 'stock';
 const restrictedKeywords = ['アダルト','18禁','成人','ポルノ','デリヘル','ソープ'];
 
 const PLAN_LIMITS = {
-    FREE:     { stock: 3,  trend: 3  },
+    FREE:     { stock: 5,  trend: 3  },
     STANDARD: { stock: 5,  trend: 5  },
     PRO:      { stock: 10, trend: 5  },
     VIP:      { stock: 10, trend: 10 }

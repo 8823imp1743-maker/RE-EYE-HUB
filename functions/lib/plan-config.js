@@ -20,7 +20,7 @@ export const DEFAULT_MONITOR_INTERVAL_SEC = 0;
 export const STOCK_CONFIG = {
   FREE:     { dayInterval: 3600, nightInterval: null,  jitterSec: 0  },
   STANDARD: { dayInterval: 900,  nightInterval: 3600,  jitterSec: 0  },
-  PRO:      { dayInterval: 300,  nightInterval: 3600,  jitterSec: 60 },
+  PRO:      { dayInterval: 1800, nightInterval: 1800,  jitterSec: 0  },
   VIP:      { dayInterval: 300,  nightInterval: 300,   jitterSec: 60 },
 };
 
