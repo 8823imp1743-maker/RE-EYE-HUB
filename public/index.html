@@ -3472,7 +3472,8 @@ function updateNightModeStatus() {
 
 // ── ユーザー設定 ──────────────────────────────────────────────
 function isUserConfigured() {
-    return !!(userProfile.gender && userProfile.prefecture);
+    // 性別だけで十分（都道府県は任意）
+    return !!(userProfile.gender);
 }
 function goToUserSettings(){
     openUserSettingsBottomSheet();
@@ -3859,25 +3860,25 @@ function saveUserSettings(explicit) {
                 const prevP = JSON.parse(JSON.stringify(userProfile));
                 const prevPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
                 readProfileFromDials();
-                if (!String(userProfile.prefecture || '').trim() || !String(userProfile.gender || '').trim()) {
+                if (!String(userProfile.gender || '').trim()) {
                     applyUserSettingsSnapshot(prevP, prevPr);
-                    alert('お届け先と自分の性別は必須です。');
+                    alert('性別を選択してください。');
                     return;
                 }
                 const snapP = JSON.parse(JSON.stringify(userProfile));
                 const snapPr = (document.getElementById('dial-prefecture') && document.getElementById('dial-prefecture').value) || '';
+                // ローカルに先行保存（サーバー失敗でもブロックしない）
+                try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
                 let r;
                 try {
                     r = await postUserSettingsToRedis();
                 } catch (net) {
                     r = { ok: false, data: {} };
                 }
+                // サーバー保存失敗はログのみ（ローカル保存済みなので処理続行）
                 if (!r || !r.ok) {
-                    applyUserSettingsSnapshot(snapP, snapPr);
-                    alert('設定をサーバに保存できませんでした。通信を確認のうえ、もう一度お試しください。');
-                    return;
+                    console.warn('[settings] サーバー保存失敗。ローカルのみ保存済み。');
                 }
-                // Redis 永続 + localStorage 反映済み。以降の /api/search・/api/scout（userId 付き）は新しい靴 cm / 服を参照する
                 updateBannerAdContent(lastMonitorKeyword);
                 const st = buildHomeSettingSummary();
                 const se = document.getElementById('home-setting-summary-text');
@@ -3895,8 +3896,8 @@ function saveUserSettings(explicit) {
                 applyChildRevealedStateFromProfile();
                 alert('設定を保存しました。');
             } catch (e) {
-                applyUserSettingsSnapshot(snapP, snapPr);
-                alert('設定をサーバに保存できませんでした。通信を確認のうえ、もう一度お試しください。');
+                console.error('[settings] 予期しないエラー:', e);
+                alert('設定の保存中にエラーが発生しました。もう一度お試しください。');
             } finally {
                 setSettingsSaveLock(false);
             }
@@ -3916,15 +3917,9 @@ function checkUserSetup(){
     const mb=document.getElementById('monitor-section-body');
     const uw=document.getElementById('user-setup-warning');
     const sw=document.getElementById('monitor-search-wrap');
-    if(!isUserConfigured()){
-        if(mb)mb.classList.add('monitor-locked');
-        if(uw)uw.style.display='block';
-        if(sw){sw.style.display='none';sw.classList.remove('revealed');}
-        syncMonitorScoutCockpitChrome();
-        return;
-    }
+    // ユーザー未設定でも検索は常に使える。設定促進メッセージは表示するが検索をブロックしない
     if(mb)mb.classList.remove('monitor-locked');
-    if(uw)uw.style.display='none';
+    if(uw)uw.style.display=isUserConfigured()?'none':'block';
     const anyOn=document.querySelector('.monitor-mode-item.selected')!==null;
     if(!anyOn){if(sw){sw.style.display='none';sw.classList.remove('revealed');} syncMonitorScoutCockpitChrome(); return;}
     if(sw&&!sw.classList.contains('revealed')){
