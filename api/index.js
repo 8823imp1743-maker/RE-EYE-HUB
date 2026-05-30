@@ -189,11 +189,13 @@ export default async function handler(req, res) {
 
   // ── cron 特別ガード ──────────────────────────────
   if (config.specialAuth === 'cron') {
-    // Vercel Cron は GET で送信してくるため、メソッドチェックは行わない。
-    // 代わりに CRON_SECRET による Bearer 認証で正規リクエストかを検証する。
-    const authHeader = req.headers.get ? req.headers.get('authorization') : req.headers.authorization;
+    // cron-job.org（GET）もテスト（POST）も両方通す
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+    // Vercelに登録した CRON_SECRET（合言葉）と一致するかバチッと検証
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('[router/cron] auth failed. Got:', authHeader);
       return res.status(401).json({ error: 'Unauthorized' });
     }
     // cron 実行間隔ガード（55分未満はスキップ）
