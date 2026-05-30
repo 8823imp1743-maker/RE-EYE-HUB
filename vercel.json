@@ -1,7 +1,10 @@
 {
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" }
+  ],
   "crons": [
     {
-      "path": "/api/cron",
+      "path": "/api?action=cron",
       "schedule": "0 20 * * *"
     }
   ]
