@@ -2883,7 +2883,7 @@ function startHistoryObserver() {
 // ── 起動広告 ─────────────────────────────────────────────────
 function runStartupAd() {
     if(currentPlan!=='FREE') return;
-    const o=document.getElementById('startup-ad-overlay'); o.style.display='flex';
+    const o=document.getElementById('startup-ad-overlay'); if(!o)return; o.style.display='flex';
     let c=3; const iv=setInterval(()=>{c--;if(c<=0){clearInterval(iv);o.style.display='none';}},1000);
 }
 function updateAdVisibility() {
@@ -3519,12 +3519,11 @@ function syncMonitorScoutCockpitChrome() {
     if (showBar) syncScoutTargetToggleUI();
 }
 function openUserSettingsBottomSheet() {
+    // チップ初期化・UI復元をオーバーレイ表示より先に行い、黒画面を防ぐ
+    try { ensureSizeChipsRendered(); } catch(e) { console.warn('[sheet] chip init:', e); }
+    try { restoreDialUI(userProfile); } catch (e) { console.warn('[sheet] dial ui:', e); }
     const s = document.getElementById('user-settings-bottom-sheet');
     if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
-    ensureSizeChipsRendered();
-    try {
-        restoreDialUI(userProfile);
-    } catch (e) {}
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
 }
 function closeUserSettingsBottomSheet() {
@@ -5027,6 +5026,36 @@ function _renderHomeInlineList(){
         };
         card.appendChild(db);
         const isAv=item.status==='ON'||item.available===true;
+        if(_currentMode==='oshi'){
+            // 推し活モード：記事から日付を抽出してGoogleカレンダー追加ボタンを表示
+            const dateLabel=parseFutureDate(item.title)||parseFutureDate(item.description||'');
+            const btn=document.createElement('button'); btn.className='home-result-watch-btn';
+            if(dateLabel){
+                btn.textContent='📅 '+dateLabel+' カレンダーに追加';
+                btn.onclick=(e)=>{
+                    e.stopPropagation();
+                    // 日付文字列から Google Calendar URL を生成
+                    const m=(dateLabel||'').match(/(\d+)\/(\d+)/);
+                    let dates='';
+                    if(m){
+                        const now=nowJP();
+                        const y=now.getFullYear();
+                        const mo=String(parseInt(m[1])).padStart(2,'0');
+                        const d=String(parseInt(m[2])).padStart(2,'0');
+                        dates=y+mo+d+'/'+y+mo+d;
+                    }
+                    const gcUrl='https://calendar.google.com/calendar/render?action=TEMPLATE'
+                        +'&text='+encodeURIComponent(item.title||'')
+                        +(dates?'&dates='+dates:'')
+                        +'&details='+encodeURIComponent((item.url||''));
+                    window.open(gcUrl,'_blank','noopener,noreferrer');
+                };
+            } else {
+                btn.textContent='🔗 記事を開く';
+                btn.onclick=(e)=>{e.stopPropagation();if(item.url)openSafeUrl(item.url);};
+            }
+            card.appendChild(btn);
+        } else {
         const btn=document.createElement('button'); btn.className='home-result-watch-btn';
         btn.textContent=isAv?'購入可能リストに追加':'見守り開始';
         btn.onclick=(e)=>{
@@ -5039,7 +5068,9 @@ function _renderHomeInlineList(){
             _homeInlineItems=_homeInlineItems.filter(i=>String(i.id)!==String(item.id));
             _renderHomeInlineList(); if(_homeInlineItems.length===0)wrap.style.display='none';
         };
-        card.appendChild(btn); list.appendChild(card);
+        card.appendChild(btn);
+        }
+        list.appendChild(card);
     });
     wrap.style.display='block';
 }
