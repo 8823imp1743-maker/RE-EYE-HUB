@@ -7,7 +7,7 @@
  */
 
 // ── システムデフォルトプラン ────────────────────────────────
-export const CURRENT_PLAN = 'VIP';
+export const CURRENT_PLAN = 'FREE';
 
 // ── Stock Watch ─────────────────────────────────────────────
 //   テスト中: インターバル実質無効（checkAllWatched は elapsed >= 0 で常に対象）
@@ -60,13 +60,24 @@ export function jitterWait(baseSec, jitterSec = 0) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+/** JST現在時刻の時(0–23)を返す（サーバーロケールに依存しない） */
+function _jstHour() {
+  try {
+    const tok = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false,
+    }).formatToParts(new Date()).find(p => p.type === 'hour')?.value;
+    const h = Number(tok ?? 'NaN');
+    return Number.isFinite(h) ? h : new Date().getHours();
+  } catch { return new Date().getHours(); }
+}
+
 /**
  * 現プラン（CURRENT_PLAN）の Stock Watch インターバルを返す。
  * @param {number} [nowHour] 0–23。省略時は現在時刻。
  * @returns {{ intervalSec: number|null, jitterSec: number }}
  *          intervalSec が null の場合はスキップ指示。
  */
-export function getStockInterval(nowHour = new Date().getHours()) {
+export function getStockInterval(nowHour = _jstHour()) {
   const cfg = STOCK_CONFIG[CURRENT_PLAN] ?? STOCK_CONFIG.FREE;
   const isDay = nowHour >= 8 && nowHour < 19;
   return {
@@ -81,7 +92,7 @@ export function getStockInterval(nowHour = new Date().getHours()) {
  * @param {number} [nowHour]
  * @returns {{ intervalSec: number|null, jitterSec: number }}
  */
-export function getStockIntervalForPlan(plan, nowHour = new Date().getHours()) {
+export function getStockIntervalForPlan(plan, nowHour = _jstHour()) {
   const cfg = STOCK_CONFIG[plan] ?? STOCK_CONFIG.FREE;
   const isDay = nowHour >= 8 && nowHour < 19;
   return {

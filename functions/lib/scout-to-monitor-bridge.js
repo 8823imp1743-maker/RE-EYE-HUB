@@ -58,7 +58,9 @@ export async function discoverUrlsForKeyword({ keyword, mode = 'standard', bypas
       inStockOnly: false,
       skipCache: false,
     });
-    const items = Array.isArray(mallResult) ? mallResult : [];
+    const items = Array.isArray(mallResult?.items) ? mallResult.items
+                 : Array.isArray(mallResult)         ? mallResult
+                 : [];
     for (const item of items) {
       const u = item.url || item.affiliateUrl || item.itemUrl || '';
       if (u && u.startsWith('http')) {

@@ -3199,8 +3199,14 @@ async function loadWatchHistory(opts){
     let gotJson=false;
     for(let attempt=0;attempt<maxAttempts;attempt++){
         try{
-            const res=await fetchApi('/api?action=monitor&userId='+encodeURIComponent(getUserId()));
-            if(!res.ok) throw new Error('HTTP');
+            const uid = getUserId();
+            if (!uid) { throw new Error('userId未設定'); }
+            const res=await fetchApi('/api?action=monitor&userId='+encodeURIComponent(uid));
+            if(!res.ok) {
+                let errMsg = 'HTTP '+res.status;
+                try { const ed=await res.clone().json(); errMsg=ed.error||errMsg; } catch(e2){}
+                throw new Error(errMsg);
+            }
             const data=await res.json();
             lastItems=_dedupeWatchItems((data.items||[]).map(normalizeServerItemRow));
             gotJson=true;
@@ -3259,7 +3265,9 @@ async function loadWatchHistory(opts){
             const h2=document.getElementById('history');
             if(h2&&h2.classList.contains('active')) renderHistory(historyItems);
         }else if(!silent){
-            const err='<p class="meta-11px" style="color:rgba(255,120,120,0.85);">一覧を取得できませんでした（ネットワークまたはAPI）</p>';
+            const uid=getUserId();
+            const reason=!uid?'ユーザーIDが未生成（アプリを再起動してください）':'APIへの接続に失敗しました（ネットワークを確認してください）';
+            const err='<p class="meta-11px" style="color:rgba(255,120,120,0.85);">見守りリストを取得できませんでした — '+reason+'</p>';
             targets.forEach(c=>{ c.innerHTML=err; });
         }
         return;

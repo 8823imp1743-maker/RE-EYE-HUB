@@ -4,8 +4,8 @@
   ],
   "crons": [
     {
-      "path": "/api?action=cron",
-      "schedule": "0 20 * * *"
+      "path": "/api/cron",
+      "schedule": "0 9 * * *"
     }
   ]
 }

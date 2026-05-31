@@ -714,7 +714,7 @@ export async function checkAllWatched() {
     return;
   }
 
-  /** JST 21:00–09:00 は実運用上の負荷平準化・通知抑制（plan-config の昼/夜とは別レイヤ）。無効化: MONITOR_JST_QUIET_DISABLED=1 */
+  /** JST 19:00–08:00 は夜間停止（ユーザー指定スケジュール。plan-config の昼/夜とは別レイヤ）。無効化: MONITOR_JST_QUIET_DISABLED=1 */
   if (process.env.MONITOR_JST_QUIET_DISABLED !== '1') {
     try {
       const hourTok = new Intl.DateTimeFormat('en-GB', {
@@ -724,9 +724,9 @@ export async function checkAllWatched() {
       }).formatToParts(new Date())
         .find((p) => p.type === 'hour')?.value;
       const hj = Number(hourTok ?? 'NaN');
-      if (Number.isFinite(hj) && (hj >= 21 || hj < 9)) {
-        console.log('[monitor] JST 静粭時間（21–09）— checkAllWatched スキップ');
-        cliLog('[run-cli] JST 静粭時間のため処理しません');
+      if (Number.isFinite(hj) && (hj >= 19 || hj < 8)) {
+        console.log('[monitor] JST 夜間停止（19–08）— checkAllWatched スキップ');
+        cliLog('[run-cli] JST 夜間停止時間のため処理しません');
         return;
       }
     } catch {
@@ -812,11 +812,18 @@ export async function checkAllWatched() {
     return;
   }
 
+  // Vercel Hobby 10秒制限対策：1サイクルあたりの処理件数上限
+  const MAX_PER_CYCLE = Number(process.env.MONITOR_MAX_PER_CYCLE ?? 8);
+  const capped = entries.slice(0, MAX_PER_CYCLE);
+  if (capped.length < entries.length) {
+    console.log(`[monitor] Vercel制限対策: ${entries.length}件中 ${capped.length}件を処理（残り${entries.length - capped.length}件は次回）`);
+  }
+
   // アイテムごとに現在の在庫を確認（並列数 5 — API Rate Limit 対策。バッチ間の人工待機は入れない）
   const CONCURRENCY = 5;
-  const totalBatches = Math.ceil(entries.length / CONCURRENCY);
-  for (let i = 0; i < entries.length; i += CONCURRENCY) {
-    const batch = entries.slice(i, i + CONCURRENCY);
+  const totalBatches = Math.ceil(capped.length / CONCURRENCY);
+  for (let i = 0; i < capped.length; i += CONCURRENCY) {
+    const batch = capped.slice(i, i + CONCURRENCY);
     const batchNo = Math.floor(i / CONCURRENCY) + 1;
     cliLog(`[run-cli] バッチ ${batchNo}/${totalBatches}（${batch.length} 件）を処理中…`);
     const settled = await Promise.allSettled(batch.map(entry => checkAndNotify(r, entry)));
