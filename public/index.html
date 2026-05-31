@@ -2069,7 +2069,8 @@ function getStockLimit() { return (PLAN_LIMITS[currentPlan] || PLAN_LIMITS.PRO).
 
 function getUserId() {
     let uid = localStorage.getItem('re_eye_uid');
-    if (!uid) {
+    // 既存値が sanitize パターン（u_[a-z0-9]{6,32}）に合わない場合は再生成
+    if (!uid || !/^u_[a-z0-9]{6,32}$/.test(uid)) {
         uid = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
         localStorage.setItem('re_eye_uid', uid);
     }
@@ -3527,12 +3528,15 @@ function syncMonitorScoutCockpitChrome() {
     if (showBar) syncScoutTargetToggleUI();
 }
 function openUserSettingsBottomSheet() {
-    // チップ初期化・UI復元をオーバーレイ表示より先に行い、黒画面を防ぐ
-    try { ensureSizeChipsRendered(); } catch(e) { console.warn('[sheet] chip init:', e); }
-    try { restoreDialUI(userProfile); } catch (e) { console.warn('[sheet] dial ui:', e); }
     const s = document.getElementById('user-settings-bottom-sheet');
     if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
+    try {
+        ensureSizeChipsRendered();
+        restoreDialUI(userProfile);
+    } catch (e) {
+        console.error('UI Restore Error:', e);
+    }
 }
 function closeUserSettingsBottomSheet() {
     if (isSettingsSaveLocked()) return;

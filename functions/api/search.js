@@ -1060,12 +1060,11 @@ export default async function handler(req, res) {
     } catch {
       /* ignore */
     }
-    const settings = await loadUserSettings(safeUserId);
-    if (!settings) {
-      return res
-        .status(400)
-        .json({ error: 'SETTINGS_NOT_FOUND', msg: 'ユーザー設定を完了してください' });
-    }
+    // settings が Redis に存在しない場合はデフォルト空設定でフォールバック（サイズ指定なし検索）
+    const settings = (await loadUserSettings(safeUserId)) || {
+      shoeCm: null, clothing: null, numeric: null,
+      prefecture: null, childGender: null, childClothSize: null, childShoeSize: null,
+    };
     const effectivePlan = await resolveUserPlan(getRedis(), safeUserId, body.plan);
 
     const { isShoe, isCloth, isAccessoryGlove } = genresForKeyword(baseKeyword);
