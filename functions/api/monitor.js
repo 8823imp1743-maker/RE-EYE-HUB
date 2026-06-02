@@ -260,8 +260,14 @@ async function mgetChunked(r, keys, chunkSize = 120) {
   const out = [];
   for (let i = 0; i < keys.length; i += chunkSize) {
     const chunk = keys.slice(i, i + chunkSize);
-    const vals = await withRedisRetry(() => r.mget(...chunk), { label: 'watch:mget-chunk' });
-    if (Array.isArray(vals)) out.push(...vals);
+    for (const key of chunk) {
+      try {
+        const v = await withRedisRetry(() => r.get(key), { label: 'watch:get-chunk' });
+        out.push(v ?? null);
+      } catch {
+        out.push(null);
+      }
+    }
   }
   return out;
 }
@@ -1804,8 +1810,15 @@ async function getUserWatchItems(userId) {
 
 async function mgetWatchEntries(r, keys) {
   if (!keys.length) return [];
-  const values = await withRedisRetry(() => r.mget(...keys), { label: 'watch:mget' });
-  const rows = Array.isArray(values) ? values : [values];
+  const rows = [];
+  for (const key of keys) {
+    try {
+      const v = await withRedisRetry(() => r.get(key), { label: 'watch:get-entry' });
+      if (v) rows.push(v);
+    } catch (e) {
+      console.warn(`[monitor] GET entry failed key=${key}:`, e.message);
+    }
+  }
   return rows
     .filter(Boolean)
     .map((v) => {
