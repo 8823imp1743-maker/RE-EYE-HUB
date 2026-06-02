@@ -1671,12 +1671,17 @@
                 <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで再販通知が届きます。</p>
             </div>
             <div class="transparent-box">
-                <span class="gold-label">関連情報を探す</span>
-                <div class="chip-row" style="margin-bottom:var(--gap-11);justify-content:space-between;gap:8px;">
-                    <span class="kw-chip campaign-chip" data-word="応募" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('応募')">応募</span>
-                    <span class="kw-chip campaign-chip" data-word="抽選" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('抽選')">抽選</span>
-                    <span class="kw-chip campaign-chip" data-word="ギフト" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('ギフト')">ギフト</span>
-                    <span class="kw-chip campaign-chip" data-word="コラボ" style="font-size:13px;padding:8px 0;flex:1;text-align:center;" onclick="selectInsightCampaignChip('コラボ')">コラボ</span>
+                <span class="gold-label">懸賞・プレゼント情報を探す</span>
+                <p class="trend-intro-11px" style="color:rgba(247,231,206,0.55);margin-bottom:8px;">商品名・ブランド名を入力してから、下のカテゴリをタップしてください。懸賞・当選・プレゼント情報をまとめて検索します。</p>
+                <div style="position:relative;margin-bottom:var(--gap-11);">
+                    <input type="text" id="campaign-search-input" placeholder="商品名・ブランド名（例：ナイキ・ちいかわ）" style="width:100%;padding:10px 36px 10px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(155,89,182,0.3);border-radius:2px;color:var(--champagne-gold);font-size:13px;" onkeydown="if(event.key==='Enter'){const w=document.querySelector('.campaign-chip.selected');selectInsightCampaignChip(w?w.dataset.word:'懸賞');}">
+                    <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--amethyst);" onclick="const w=document.querySelector('.campaign-chip.selected');selectInsightCampaignChip(w?w.dataset.word:'懸賞');"><i data-lucide="search" style="width:14px;height:14px;" aria-hidden="true"></i></span>
+                </div>
+                <div class="chip-row" style="margin-bottom:var(--gap-11);justify-content:space-between;gap:6px;">
+                    <span class="kw-chip campaign-chip" data-word="懸賞" style="flex:1;text-align:center;" onclick="selectInsightCampaignChip('懸賞')">懸賞</span>
+                    <span class="kw-chip campaign-chip" data-word="プレゼント応募" style="flex:1;text-align:center;" onclick="selectInsightCampaignChip('プレゼント応募')">プレゼント</span>
+                    <span class="kw-chip campaign-chip" data-word="抽選 当選" style="flex:1;text-align:center;" onclick="selectInsightCampaignChip('抽選 当選')">抽選</span>
+                    <span class="kw-chip campaign-chip" data-word="無料 キャンペーン" style="flex:1;text-align:center;" onclick="selectInsightCampaignChip('無料 キャンペーン')">キャンペーン</span>
                 </div>
                 <div id="campaign-results-container" style="display:none;"></div>
             </div>
@@ -4114,20 +4119,25 @@ function buildWatchMetaLine(forChild) {
     return parts.length ? parts.join(' / ') : '';
 }
 
-// ── 関連情報を探す ──────────────────────────────────────────────
+// ── 懸賞・プレゼント情報を探す ──────────────────────────────────
 function selectInsightCampaignChip(word){
     document.querySelectorAll('.campaign-chip').forEach(c=>c.classList.toggle('selected',c.dataset.word===word));
     _campaignEditMode=false;_campaignEditSelected.clear();
-    const watched=[..._watchedKeywords].filter(Boolean).slice(0,5);
-    // 見守りキーワードがなければ探索画面の入力値を使い、それもなければ汎用ワードで検索
+    // 懸賞専用入力欄を最優先、次に新着検索欄、次に見守りキーワード
+    const campaignInput=document.getElementById('campaign-search-input')?.value.trim();
     const insightWord=document.getElementById('insight-search')?.value.trim();
+    const watched=[..._watchedKeywords].filter(Boolean).slice(0,3);
+    let base='';
+    if(campaignInput) base=campaignInput;
+    else if(insightWord) base=insightWord;
+    else if(watched.length>0) base=watched[0];
+    // 懸賞マニア向け複合クエリを組み立てる
     let keywords;
-    if(watched.length>0){
-        keywords=watched.map(k=>k+' '+word);
-    } else if(insightWord){
-        keywords=[insightWord+' '+word];
+    if(base){
+        keywords=[base+' '+word, base+' プレゼント 応募', base+' 懸賞 当選'];
     } else {
-        keywords=[word+' 限定', word+' 新作'];
+        // ブランド指定なし：純粋な懸賞情報を探す
+        keywords=[word, '懸賞 プレゼント 応募 当選', '懸賞情報 最新'];
     }
     runCampaignScout(keywords);
 }
