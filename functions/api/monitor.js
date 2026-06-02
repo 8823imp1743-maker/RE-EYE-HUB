@@ -1820,10 +1820,9 @@ async function mgetWatchEntries(r, keys) {
     }
   }
   return rows
-    .filter(Boolean)
     .map((v) => {
       try {
-        const o = JSON.parse(v);
+        const o = typeof v === 'string' ? JSON.parse(v) : v;
         if (!o || typeof o !== 'object') return null;
         return {
           ...o,
