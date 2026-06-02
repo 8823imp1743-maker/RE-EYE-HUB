@@ -642,6 +642,16 @@ async function handleStatus(req, res) {
       verify.globalForUser = Array.isArray(g)
         ? g.filter((k) => typeof k === 'string' && k.startsWith(`${MONITOR_ENTRY_PREFIX}${uid}:`)).length
         : -1;
+      const sampleKey = Array.isArray(g)
+        ? g.find((k) => typeof k === 'string' && k.startsWith(`${MONITOR_ENTRY_PREFIX}${uid}:`))
+        : null;
+      if (sampleKey) {
+        const sampleGet = await r.get(sampleKey);
+        const sampleMget = await r.mget(sampleKey);
+        verify.sampleKey = sampleKey;
+        verify.sampleGetOk = !!sampleGet;
+        verify.sampleMgetLen = Array.isArray(sampleMget) ? sampleMget[0]?.length : String(sampleMget || '').length;
+      }
     } catch (e) {
       verify.readError = e.message;
     }
