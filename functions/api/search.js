@@ -125,19 +125,30 @@ function resolveShoeCmTargetsStrict(settings, opts = {}) {
     const n = normalizeCm(v);
     if (n === null) return;
     if (n < MIN || n > MAX) return;
-
     const key = String(n);
     if (seen.has(key)) return;
-
     seen.add(key);
     out.push(n);
   };
 
+  // 1. 明示的マルチターゲット（UI から直接送られたサイズ配列）
   (opts.multiTargetCm || []).forEach(add);
 
+  // 2. キーワードから抽出（cm付き: "26.5cm" / cm無し裸数値: "26.5"）
   const kw = String(opts.keyword != null ? opts.keyword : opts.rawKeyword || '');
-  const match = kw.match(/(\d{2}(?:\.\d)?)\s*(cm|㎝)/);
-  if (match) add(match[1]);
+  // cm付き表記（最優先）
+  const cmMatch = kw.match(/(\d{2}(?:\.\d)?)\s*(?:cm|㎝)/i);
+  if (cmMatch) add(cmMatch[1]);
+  // 裸の小数値（例: "26.5" "27.0"）— cm 付き既検出済みなら重複は seen で除外
+  const bareMatches = kw.matchAll(/\b(\d{2}\.\d)\b/g);
+  for (const m of bareMatches) add(m[1]);
+
+  // 3. Redis ユーザー設定（settings.shoeCm / childShoeSize）
+  if (isChild) {
+    if (settings?.childShoeSize != null && settings.childShoeSize !== '') add(settings.childShoeSize);
+  } else {
+    if (settings?.shoeCm != null) add(settings.shoeCm);
+  }
 
   return out;
 }
@@ -1061,9 +1072,18 @@ export default async function handler(req, res) {
       /* ignore */
     }
     // settings が Redis に存在しない場合はデフォルト空設定でフォールバック（サイズ指定なし検索）
-    const settings = (await loadUserSettings(safeUserId)) || {
-      shoeCm: null, clothing: null, numeric: null,
-      prefecture: null, childGender: null, childClothSize: null, childShoeSize: null,
+    // body から直接送られた shoeCm / childShoeSize もフォールバックに使用（Redis 未登録ユーザー対応）
+    const _redisSettings = await loadUserSettings(safeUserId);
+    const _bodyShoe = body.shoeCm != null ? parseFloat(body.shoeCm) : null;
+    const _bodyChildShoe = body.childShoeCm != null ? parseFloat(body.childShoeCm) : null;
+    const settings = _redisSettings || {
+      shoeCm: Number.isFinite(_bodyShoe) ? _bodyShoe : null,
+      childShoeSize: Number.isFinite(_bodyChildShoe) ? String(_bodyChildShoe) : null,
+      clothing: body.clothing || null,
+      numeric: null,
+      prefecture: null,
+      childGender: null,
+      childClothSize: null,
     };
     const effectivePlan = await resolveUserPlan(getRedis(), safeUserId, body.plan);
 

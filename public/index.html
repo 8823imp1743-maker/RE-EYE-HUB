@@ -886,7 +886,7 @@
             background: rgba(155,89,182,0.04);
             border: 1px solid rgba(155,89,182,0.25); border-radius: 2px;
             cursor: pointer; transition: 0.2s ease; user-select: none;
-            white-space: nowrap;
+            white-space: nowrap; pointer-events: auto;
         }
         .setting-chip.active, .size-chip.active {
             color: var(--amethyst);
@@ -3531,12 +3531,9 @@ function openUserSettingsBottomSheet() {
     const s = document.getElementById('user-settings-bottom-sheet');
     if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
-    try {
-        ensureSizeChipsRendered();
-        restoreDialUI(userProfile);
-    } catch (e) {
-        console.error('UI Restore Error:', e);
-    }
+    // 毎回強制再初期化でチップのクリックハンドラーを確実にリセット（「再選択できない」バグ根絶）
+    try { initIndependentChips(); } catch (e) { console.error('[sheet] chip init:', e); }
+    try { restoreDialUI(userProfile); } catch (e) { console.error('[sheet] restoreDialUI:', e); }
 }
 function closeUserSettingsBottomSheet() {
     if (isSettingsSaveLocked()) return;
@@ -4059,6 +4056,8 @@ function buildSizeAwareKeyword(keyword,forChild){
     const treatShoe=isShoe||likelySneaker||SHOE_SKU_HINT_RE.test(keyword);
     const isCloth=CLOTH_KW.some(w=>kl.includes(w.toLowerCase()));
     const isAcc=_kwHasGloveAccessory(kl);
+    // キーワードに既に cm 表記のサイズが含まれている場合は重複追記しない
+    const alreadyHasSize=/\b\d{2,3}(?:\.\d)?\s*cm\b/i.test(keyword)||/\b\d{2}\.\d\b/.test(keyword);
     if(forChild){
         const cg=userProfile.childGender==='girl'?'女の子':(userProfile.childGender==='boy'?'男の子':'');
         if(cg)kw+=' '+cg;
@@ -4067,14 +4066,14 @@ function buildSizeAwareKeyword(keyword,forChild){
         } else {
             if(isCloth&&userProfile.childClothSize)kw+=' '+userProfile.childClothSize;
         }
-        if(treatShoe&&userProfile.childShoeSize)kw+=' '+userProfile.childShoeSize+'cm';
+        if(treatShoe&&userProfile.childShoeSize&&!alreadyHasSize)kw+=' '+userProfile.childShoeSize+'cm';
     } else {
         if(isAcc){
             if(userProfile.glovesSml)kw+=' '+userProfile.glovesSml;
         } else {
             if(isCloth&&userProfile.clothSize)kw+=' '+userProfile.clothSize;
         }
-        if(treatShoe&&userProfile.shoeSize)kw+=' '+userProfile.shoeSize+'cm';
+        if(treatShoe&&userProfile.shoeSize&&!alreadyHasSize)kw+=' '+userProfile.shoeSize+'cm';
     }
     return kw.trim();
 }
@@ -4224,7 +4223,14 @@ async function runStockSearch(keyword, forChild, loadMore) {
         return c && c.staged && c.staged.sequentialPdp;
     }
     // 1 当たり 1 品＋1 PDP 往復（YouTube 型ポン出し; サーバは searchMeta.carrier=sequential-one-pdp）
-    const baseBody = { keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 1, sequentialPdp: true };
+    // shoeCm: Redis 未登録ユーザーのために LocalStorage のサイズを直接送信する
+    const _shoeCmNum = forChild
+        ? parseFloat(String(userProfile.childShoeSize || '').replace(/cm$/i,'').trim())
+        : parseFloat(String(userProfile.shoeSize || '').replace(/cm$/i,'').trim());
+    const baseBody = {
+        keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 1, sequentialPdp: true,
+        ...(Number.isFinite(_shoeCmNum) && { shoeCm: _shoeCmNum }),
+    };
     if (append) {
         baseBody.excludeKeys = Array.from(_stockPageState.seenKeys);
         baseBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
