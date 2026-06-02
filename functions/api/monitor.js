@@ -631,8 +631,23 @@ async function handleStatus(req, res) {
 
   try {
     res.setHeader('Cache-Control', 'no-store');
-    const items = await getUserWatchItems(userId);
-    return res.status(200).json({ items });
+    const uid = String(userId).trim();
+    let verify = {};
+    try {
+      const r = getRedis();
+      const hashes = await r.smembers(userWatchIndexKey(uid));
+      verify.indexHashes = Array.isArray(hashes) ? hashes.length : -1;
+      const g = await r.smembers(GLOBAL_MONITOR_KEYS_SET);
+      verify.globalTotal = Array.isArray(g) ? g.length : -1;
+      verify.globalForUser = Array.isArray(g)
+        ? g.filter((k) => typeof k === 'string' && k.startsWith(`${MONITOR_ENTRY_PREFIX}${uid}:`)).length
+        : -1;
+    } catch (e) {
+      verify.readError = e.message;
+    }
+    const items = await getUserWatchItems(uid);
+    verify.itemsOut = items.length;
+    return res.status(200).json({ items, verify });
   } catch (e) {
     console.error('[monitor] GET status:', e.message);
     return res.status(503).json({
