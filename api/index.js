@@ -193,9 +193,15 @@ export default async function handler(req, res) {
     if (req.method !== 'GET' && req.method !== 'POST') {
       return res.status(405).json({ error: 'Method Not Allowed' });
     }
-    // Vercelに登録した CRON_SECRET（合言葉）と一致するかバチッと検証
-    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // Vercelに登録した CRON_SECRET と一致するかを検証
+    // GH Actions は "X-Cron-Secret: <secret>" / Vercel内部は "Authorization: Bearer <secret>" の両方を受け付ける
+    const secret = process.env.CRON_SECRET;
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'] || '';
+    const xCronSecret = req.headers['x-cron-secret'] || req.headers['X-Cron-Secret'] || '';
+    const bearerOk = authHeader === `Bearer ${secret}`;
+    const xSecretOk = xCronSecret === secret;
+    if (!secret || (!bearerOk && !xSecretOk)) {
+      console.warn('[router/cron] 認証失敗 — authHeader:', authHeader.slice(0, 20), 'xCronSecret:', xCronSecret.slice(0, 8));
       return res.status(401).json({ error: 'Unauthorized' });
     }
     // cron 実行間隔ガード（55分未満はスキップ）

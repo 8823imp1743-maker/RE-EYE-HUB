@@ -707,32 +707,19 @@ export async function checkAllWatched() {
     return;
   }
 
-  const { intervalSec } = getStockInterval();
-  if (intervalSec === null) {
-    console.log('[monitor][VIP] 夜間スリープ期間 — スキップ');
-    cliLog('[run-cli] 夜間スリープのため在庫監視はスキップされました');
-    return;
-  }
+  // JST 時刻を取得してグローバル夜間変数として保持（ユーザー別プラン判定で使う）
+  let _jstHourNow = -1;
+  try {
+    const hourTok = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false,
+    }).formatToParts(new Date()).find((p) => p.type === 'hour')?.value;
+    _jstHourNow = Number(hourTok ?? '-1');
+  } catch { /* noop */ }
 
-  /** JST 19:00–08:00 は夜間停止（ユーザー指定スケジュール。plan-config の昼/夜とは別レイヤ）。無効化: MONITOR_JST_QUIET_DISABLED=1 */
-  if (process.env.MONITOR_JST_QUIET_DISABLED !== '1') {
-    try {
-      const hourTok = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Tokyo',
-        hour: 'numeric',
-        hour12: false,
-      }).formatToParts(new Date())
-        .find((p) => p.type === 'hour')?.value;
-      const hj = Number(hourTok ?? 'NaN');
-      if (Number.isFinite(hj) && (hj >= 19 || hj < 8)) {
-        console.log('[monitor] JST 夜間停止（19–08）— checkAllWatched スキップ');
-        cliLog('[run-cli] JST 夜間停止時間のため処理しません');
-        return;
-      }
-    } catch {
-      // noop
-    }
-  }
+  // PRO は 24h 稼働、FREE は昼間のみ（08-19）
+  // どちらかのプランユーザーが存在する可能性があるため全体スキップは行わない
+  // → ユーザー別プランフィルター（後段）に委ねる
+  console.log(`[monitor] checkAllWatched 開始 JST=${_jstHourNow}:xx`);
 
   const r = getRedis();
   let keys = [];
@@ -801,13 +788,16 @@ export async function checkAllWatched() {
     return elapsedSec >= target;
   });
 
+  // ── 本番ログ（Vercel Functions ログで確認できる集計） ───────────────
+  console.log(`[monitor] サイクルサマリ keys=${keys.length} allEntries=${allEntries.length} intervalOk=${entries.length}`);
   if (entries.length < allEntries.length) {
-    console.log(`[monitor] プラン別フィルター: ${entries.length}/${allEntries.length}件を対象（残りはインターバル未達）`);
+    console.log(`[monitor] プラン別フィルター: ${entries.length}/${allEntries.length}件を対象（残りはインターバル未達 or 夜間FREE）`);
   }
 
   cliLog(`[run-cli] 今回チェックする監視対象: ${entries.length} 件（プラン・インターバル適用後）`);
 
   if (entries.length === 0) {
+    console.log('[monitor] 全件がインターバル待ちのためスキップ（keys=' + keys.length + '）');
     cliLog('[run-cli] 全件がインターバル待ちのため、今回は API を呼びません');
     return;
   }
@@ -815,6 +805,7 @@ export async function checkAllWatched() {
   // Vercel Hobby 10秒制限対策：1サイクルあたりの処理件数上限
   const MAX_PER_CYCLE = Number(process.env.MONITOR_MAX_PER_CYCLE ?? 8);
   const capped = entries.slice(0, MAX_PER_CYCLE);
+  console.log(`[monitor] 処理実行: ${capped.length}件（cap=${MAX_PER_CYCLE} entries=${entries.length}）`);
   if (capped.length < entries.length) {
     console.log(`[monitor] Vercel制限対策: ${entries.length}件中 ${capped.length}件を処理（残り${entries.length - capped.length}件は次回）`);
   }
