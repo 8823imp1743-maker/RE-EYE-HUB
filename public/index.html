@@ -1503,11 +1503,37 @@
                         <div class="settings-section">
                             <div class="section-title"><i data-lucide="user" aria-hidden="true"></i> 自分のサイズ</div>
                             <label class="chip-label-row">性別</label>
-                            <div id="dial-adult-gender" class="chip-row"></div>
+                            <div id="dial-adult-gender" class="chip-row">
+                                <div class="size-chip" data-val="male" onclick="staticChipSelect('dial-adult-gender',this)">男性</div>
+                                <div class="size-chip" data-val="female" onclick="staticChipSelect('dial-adult-gender',this)">女性</div>
+                            </div>
                             <label class="chip-label-row">靴 (cm)</label>
-                            <div id="dial-adult-shoe" class="chip-row"></div>
+                            <div id="dial-adult-shoe" class="chip-row">
+                                <div class="size-chip" data-val="23.0" onclick="staticChipSelect('dial-adult-shoe',this)">23.0</div>
+                                <div class="size-chip" data-val="23.5" onclick="staticChipSelect('dial-adult-shoe',this)">23.5</div>
+                                <div class="size-chip" data-val="24.0" onclick="staticChipSelect('dial-adult-shoe',this)">24.0</div>
+                                <div class="size-chip" data-val="24.5" onclick="staticChipSelect('dial-adult-shoe',this)">24.5</div>
+                                <div class="size-chip" data-val="25.0" onclick="staticChipSelect('dial-adult-shoe',this)">25.0</div>
+                                <div class="size-chip" data-val="25.5" onclick="staticChipSelect('dial-adult-shoe',this)">25.5</div>
+                                <div class="size-chip" data-val="26.0" onclick="staticChipSelect('dial-adult-shoe',this)">26.0</div>
+                                <div class="size-chip" data-val="26.5" onclick="staticChipSelect('dial-adult-shoe',this)">26.5</div>
+                                <div class="size-chip" data-val="27.0" onclick="staticChipSelect('dial-adult-shoe',this)">27.0</div>
+                                <div class="size-chip" data-val="27.5" onclick="staticChipSelect('dial-adult-shoe',this)">27.5</div>
+                                <div class="size-chip" data-val="28.0" onclick="staticChipSelect('dial-adult-shoe',this)">28.0</div>
+                                <div class="size-chip" data-val="28.5" onclick="staticChipSelect('dial-adult-shoe',this)">28.5</div>
+                                <div class="size-chip" data-val="29.0" onclick="staticChipSelect('dial-adult-shoe',this)">29.0</div>
+                                <div class="size-chip" data-val="29.5" onclick="staticChipSelect('dial-adult-shoe',this)">29.5</div>
+                                <div class="size-chip" data-val="30.0" onclick="staticChipSelect('dial-adult-shoe',this)">30.0</div>
+                            </div>
                             <label class="chip-label-row">服</label>
-                            <div id="dial-adult-cloth" class="chip-row"></div>
+                            <div id="dial-adult-cloth" class="chip-row">
+                                <div class="size-chip" data-val="XS" onclick="staticChipSelect('dial-adult-cloth',this)">XS</div>
+                                <div class="size-chip" data-val="S" onclick="staticChipSelect('dial-adult-cloth',this)">S</div>
+                                <div class="size-chip" data-val="M" onclick="staticChipSelect('dial-adult-cloth',this)">M</div>
+                                <div class="size-chip" data-val="L" onclick="staticChipSelect('dial-adult-cloth',this)">L</div>
+                                <div class="size-chip" data-val="XL" onclick="staticChipSelect('dial-adult-cloth',this)">XL</div>
+                                <div class="size-chip" data-val="XXL" onclick="staticChipSelect('dial-adult-cloth',this)">XXL</div>
+                            </div>
                         </div>
                         <div id="add-child-btn" class="optional-add-btn" onclick="handleExpandChildSettings();" role="button" tabindex="0" aria-expanded="false" aria-controls="user-settings-child-cockpit" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleExpandChildSettings();}">
                             <i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>お子様のサイズを登録する（任意）</span>
@@ -1515,11 +1541,41 @@
                         <div id="user-settings-child-cockpit" class="settings-section hidden" style="display:none" role="region" aria-label="お子様のサイズ（任意）">
                             <div class="section-title"><i data-lucide="baby" aria-hidden="true"></i> お子様のサイズ設定（任意）</div>
                             <label class="chip-label-row">お子様の性別</label>
-                            <div id="dial-child-gender" class="chip-row"></div>
+                            <div id="dial-child-gender" class="chip-row">
+                                <div class="size-chip" data-val="boy" onclick="staticChipSelect('dial-child-gender',this)">男の子</div>
+                                <div class="size-chip" data-val="girl" onclick="staticChipSelect('dial-child-gender',this)">女の子</div>
+                            </div>
                             <label class="chip-label-row">靴 (cm)</label>
-                            <div id="dial-child-shoe" class="chip-row"></div>
+                            <div id="dial-child-shoe" class="chip-row">
+                                <div class="size-chip" data-val="13.0" onclick="staticChipSelect('dial-child-shoe',this)">13.0</div>
+                                <div class="size-chip" data-val="13.5" onclick="staticChipSelect('dial-child-shoe',this)">13.5</div>
+                                <div class="size-chip" data-val="14.0" onclick="staticChipSelect('dial-child-shoe',this)">14.0</div>
+                                <div class="size-chip" data-val="14.5" onclick="staticChipSelect('dial-child-shoe',this)">14.5</div>
+                                <div class="size-chip" data-val="15.0" onclick="staticChipSelect('dial-child-shoe',this)">15.0</div>
+                                <div class="size-chip" data-val="15.5" onclick="staticChipSelect('dial-child-shoe',this)">15.5</div>
+                                <div class="size-chip" data-val="16.0" onclick="staticChipSelect('dial-child-shoe',this)">16.0</div>
+                                <div class="size-chip" data-val="16.5" onclick="staticChipSelect('dial-child-shoe',this)">16.5</div>
+                                <div class="size-chip" data-val="17.0" onclick="staticChipSelect('dial-child-shoe',this)">17.0</div>
+                                <div class="size-chip" data-val="17.5" onclick="staticChipSelect('dial-child-shoe',this)">17.5</div>
+                                <div class="size-chip" data-val="18.0" onclick="staticChipSelect('dial-child-shoe',this)">18.0</div>
+                                <div class="size-chip" data-val="18.5" onclick="staticChipSelect('dial-child-shoe',this)">18.5</div>
+                                <div class="size-chip" data-val="19.0" onclick="staticChipSelect('dial-child-shoe',this)">19.0</div>
+                                <div class="size-chip" data-val="19.5" onclick="staticChipSelect('dial-child-shoe',this)">19.5</div>
+                                <div class="size-chip" data-val="20.0" onclick="staticChipSelect('dial-child-shoe',this)">20.0</div>
+                                <div class="size-chip" data-val="21.0" onclick="staticChipSelect('dial-child-shoe',this)">21.0</div>
+                            </div>
                             <label class="chip-label-row">服</label>
-                            <div id="dial-child-cloth" class="chip-row"></div>
+                            <div id="dial-child-cloth" class="chip-row">
+                                <div class="size-chip" data-val="80" onclick="staticChipSelect('dial-child-cloth',this)">80</div>
+                                <div class="size-chip" data-val="90" onclick="staticChipSelect('dial-child-cloth',this)">90</div>
+                                <div class="size-chip" data-val="100" onclick="staticChipSelect('dial-child-cloth',this)">100</div>
+                                <div class="size-chip" data-val="110" onclick="staticChipSelect('dial-child-cloth',this)">110</div>
+                                <div class="size-chip" data-val="120" onclick="staticChipSelect('dial-child-cloth',this)">120</div>
+                                <div class="size-chip" data-val="130" onclick="staticChipSelect('dial-child-cloth',this)">130</div>
+                                <div class="size-chip" data-val="140" onclick="staticChipSelect('dial-child-cloth',this)">140</div>
+                                <div class="size-chip" data-val="150" onclick="staticChipSelect('dial-child-cloth',this)">150</div>
+                                <div class="size-chip" data-val="160" onclick="staticChipSelect('dial-child-cloth',this)">160</div>
+                            </div>
                         </div>
                         <button type="button" id="save-settings-btn" class="main-save-btn" onclick="saveUserSettings(true)">設定を保存する</button>
                     </div>
@@ -3536,8 +3592,7 @@ function openUserSettingsBottomSheet() {
     const s = document.getElementById('user-settings-bottom-sheet');
     if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
-    // 毎回強制再初期化でチップのクリックハンドラーを確実にリセット（「再選択できない」バグ根絶）
-    try { initIndependentChips(); } catch (e) { console.error('[sheet] chip init:', e); }
+    // チップは静的HTMLで常に存在するので、現在の設定値を active に反映するだけ
     try { restoreDialUI(userProfile); } catch (e) { console.error('[sheet] restoreDialUI:', e); }
 }
 function closeUserSettingsBottomSheet() {
@@ -3552,6 +3607,16 @@ function toggleHomeSettings(){
 function selectChip(type,el){
     if (isSettingsSaveLocked()) return;
     el.parentElement.querySelectorAll('.setting-chip').forEach(i=>i.classList.remove('active'));
+    el.classList.add('active');
+    readProfileFromDials();
+    syncScoutTargetToggleUI();
+    saveUserSettings();
+}
+/** 静的 HTML チップ用：完全独立クリックハンドラー（JS動的生成に依存しない） */
+function staticChipSelect(rowId, el) {
+    if (isSettingsSaveLocked()) return;
+    const row = document.getElementById(rowId);
+    if (row) row.querySelectorAll('.size-chip,.setting-chip').forEach(c => c.classList.remove('active'));
     el.classList.add('active');
     readProfileFromDials();
     syncScoutTargetToggleUI();
