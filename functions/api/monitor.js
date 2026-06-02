@@ -460,15 +460,23 @@ async function handleRegister(req, res) {
       () => {}
     );
     let indexCount = 0;
+    let readBackOk = false;
+    let globalHasKey = false;
     try {
       const idx = await r.smembers(userWatchIndexKey(userId));
       indexCount = Array.isArray(idx) ? idx.length : 0;
-    } catch {
-      /* noop */
+      readBackOk = !!(await r.get(key));
+      const g = await r.smembers(GLOBAL_MONITOR_KEYS_SET);
+      globalHasKey = Array.isArray(g) && g.includes(key);
+    } catch (e) {
+      console.warn('[monitor] Redis登録直後検証失敗:', e.message);
     }
     console.log(
-      `[monitor] Redis登録成功 userId=${userId} key=${key} hash=${hash} indexCount=${indexCount} keyword="${keyword.slice(0, 48)}"`
+      `[monitor] Redis登録成功 userId=${userId} key=${key} hash=${hash} indexCount=${indexCount} readBack=${readBackOk} globalHasKey=${globalHasKey} keyword="${keyword.slice(0, 48)}"`
     );
+    if (!readBackOk) {
+      console.error(`[monitor] Redis登録異常: SET直後のGETが空 key=${key}`);
+    }
     return res.status(200).json({
       registered: true,
       hash,
@@ -477,6 +485,7 @@ async function handleRegister(req, res) {
       listPrice: resolvedListPrice,
       modelNumbers: registeredModels,
       colorKeywords: registeredColors,
+      verify: { readBack: readBackOk, indexCount, globalHasKey, key },
     });
   } catch (e) {
     console.error('[monitor] register Redis:', e.message);
