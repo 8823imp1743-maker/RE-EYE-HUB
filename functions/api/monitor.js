@@ -458,6 +458,9 @@ async function handleRegister(req, res) {
     await withRedisRetry(() => r.expire(GLOBAL_MONITOR_KEYS_SET, GLOBAL_MONITOR_KEYS_SET_TTL_SEC), { label: 'register:global-ttl' }).catch(
       () => {}
     );
+    console.log(
+      `[monitor] Redis登録成功 userId=${userId} key=${key} hash=${hash} keyword="${keyword.slice(0, 48)}"`
+    );
     return res.status(200).json({
       registered: true,
       hash,
@@ -689,6 +692,19 @@ async function getUserPlanBatch(r, userIds) {
  * 全ユーザーの見守りアイテムをチェックし、在庫変化があれば通知する
  * CLI（run-cli.mjs）または外部スケジューラから呼び出す。人工待機（sleep/jitter）は入れない。
  */
+function makeMonitorCycleStats(overrides = {}) {
+  return {
+    keys: 0,
+    allEntries: 0,
+    intervalOk: 0,
+    processed: 0,
+    errors: 0,
+    skipped: null,
+    jstHour: -1,
+    ...overrides,
+  };
+}
+
 export async function checkAllWatched() {
   cliLog('[run-cli] Upstash（Redis）に接続して監視エントリを読み込みます');
 
@@ -696,7 +712,7 @@ export async function checkAllWatched() {
   if (!quotaCheck('cron')) {
     const qs = quotaStatus();
     console.warn(`[monitor] cron quota exceeded — skip (${qs.cron?.count}/${qs.cron?.limit})`);
-    return;
+    return makeMonitorCycleStats({ skipped: 'CRON_QUOTA' });
   }
   quotaConsume('cron');
 
@@ -704,7 +720,7 @@ export async function checkAllWatched() {
   if (!guardRedisWrite('checkAllWatched-cycle', 40)) {
     const s = redisGuardStatus();
     console.warn(`[monitor] Redis 予算超過によりサイクルをスキップ (${s.count}/${s.limit})`);
-    return;
+    return makeMonitorCycleStats({ skipped: 'REDIS_BUDGET' });
   }
 
   // JST 時刻を取得してグローバル夜間変数として保持（ユーザー別プラン判定で使う）
@@ -728,14 +744,15 @@ export async function checkAllWatched() {
   } catch (e) {
     console.error('[monitor] 監視キー列挙エラー:', e.message);
     cliLog('[run-cli] 監視キーの列挙に失敗しました:', e.message);
-    return;
+    return makeMonitorCycleStats({ skipped: 'KEY_ENUM_ERROR', jstHour: _jstHourNow });
   }
 
   cliLog(`[run-cli] Upstash から読み込んだ監視キー数: ${keys.length} 件`);
 
   if (keys.length === 0) {
     cliLog('[run-cli] 監視対象が空っぽです');
-    return;
+    console.log('[monitor] 監視対象0件 — Redisに登録済みアイテムがありません');
+    return makeMonitorCycleStats({ keys: 0, skipped: 'NO_KEYS', jstHour: _jstHourNow });
   }
 
   const values = await mgetChunked(r, keys);
@@ -761,7 +778,7 @@ export async function checkAllWatched() {
 
   if (keys.length > 0 && allEntries.length === 0) {
     cliLog('[run-cli] 監視キーはありますが有効データが 0 件です。直前の [monitor] 警告に原因が出ています。');
-    return;
+    return makeMonitorCycleStats({ keys: keys.length, skipped: 'PARSE_FAILED', jstHour: _jstHourNow });
   }
 
   // ── プラン別インターバルフィルター ──────────────────────────────────────
@@ -799,7 +816,13 @@ export async function checkAllWatched() {
   if (entries.length === 0) {
     console.log('[monitor] 全件がインターバル待ちのためスキップ（keys=' + keys.length + '）');
     cliLog('[run-cli] 全件がインターバル待ちのため、今回は API を呼びません');
-    return;
+    return makeMonitorCycleStats({
+      keys: keys.length,
+      allEntries: allEntries.length,
+      intervalOk: 0,
+      skipped: 'INTERVAL_WAIT',
+      jstHour: _jstHourNow,
+    });
   }
 
   // Vercel Hobby 10秒制限対策：1サイクルあたりの処理件数上限
@@ -813,6 +836,7 @@ export async function checkAllWatched() {
   // アイテムごとに現在の在庫を確認（並列数 5 — API Rate Limit 対策。バッチ間の人工待機は入れない）
   const CONCURRENCY = 5;
   const totalBatches = Math.ceil(capped.length / CONCURRENCY);
+  let errorCount = 0;
   for (let i = 0; i < capped.length; i += CONCURRENCY) {
     const batch = capped.slice(i, i + CONCURRENCY);
     const batchNo = Math.floor(i / CONCURRENCY) + 1;
@@ -822,6 +846,8 @@ export async function checkAllWatched() {
       const entry = batch[j];
       const name = (entry.title || entry.keyword || entry.itemId || '?').slice(0, 56);
       if (res.status === 'rejected') {
+        errorCount += 1;
+        console.warn(`[monitor] 監視エラー: 「${name}」— ${res.reason?.message || res.reason}`);
         cliLog(`[run-cli] 監視: 「${name}」→ エラー: ${res.reason?.message || res.reason}`);
         return;
       }
@@ -832,6 +858,17 @@ export async function checkAllWatched() {
       }
     });
   }
+
+  const stats = makeMonitorCycleStats({
+    keys: keys.length,
+    allEntries: allEntries.length,
+    intervalOk: entries.length,
+    processed: capped.length,
+    errors: errorCount,
+    jstHour: _jstHourNow,
+  });
+  console.log(`[monitor] サイクル完了 processed=${stats.processed} errors=${stats.errors} keys=${stats.keys}`);
+  return stats;
 }
 
 // ─────────────────────────────────────────────────────────
