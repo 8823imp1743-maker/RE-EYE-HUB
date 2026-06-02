@@ -80,6 +80,7 @@ import {
   isMonitorEntryRedisKey,
   monitorEntryKeysGlobPattern,
   monitorUserEntryKeysPattern,
+  MONITOR_ENTRY_PREFIX,
 } from '../lib/monitor-constants.js';
 
 const PLAN_STOCK_LIMIT = {
@@ -458,8 +459,15 @@ async function handleRegister(req, res) {
     await withRedisRetry(() => r.expire(GLOBAL_MONITOR_KEYS_SET, GLOBAL_MONITOR_KEYS_SET_TTL_SEC), { label: 'register:global-ttl' }).catch(
       () => {}
     );
+    let indexCount = 0;
+    try {
+      const idx = await r.smembers(userWatchIndexKey(userId));
+      indexCount = Array.isArray(idx) ? idx.length : 0;
+    } catch {
+      /* noop */
+    }
     console.log(
-      `[monitor] Redis登録成功 userId=${userId} key=${key} hash=${hash} keyword="${keyword.slice(0, 48)}"`
+      `[monitor] Redis登録成功 userId=${userId} key=${key} hash=${hash} indexCount=${indexCount} keyword="${keyword.slice(0, 48)}"`
     );
     return res.status(200).json({
       registered: true,
@@ -613,6 +621,7 @@ async function handleStatus(req, res) {
   }
 
   try {
+    res.setHeader('Cache-Control', 'no-store');
     const items = await getUserWatchItems(userId);
     return res.status(200).json({ items });
   } catch (e) {
@@ -1688,14 +1697,47 @@ async function checkAndNotify(r, entry) {
 
 async function getUserWatchItems(userId) {
   const r = getRedis();
-  const indexKey = userWatchIndexKey(userId);
+  const uid = String(userId ?? '').trim();
+  if (!uid) return [];
+  const indexKey = userWatchIndexKey(uid);
+  const prefix = `${MONITOR_ENTRY_PREFIX}${uid}:`;
   let keys = [];
-  const hashes = await withRedisRetry(() => r.smembers(indexKey), { label: 'watch:smembers' }).catch(() => []);
-  if (Array.isArray(hashes) && hashes.length > 0) {
-    keys = hashes.map((h) => watchKey(userId, h));
-  } else {
-    keys = await withRedisRetry(() => r.keys(monitorUserEntryKeysPattern(userId)), { label: 'watch:keys' });
+  let hashes = [];
+
+  try {
+    hashes = await withRedisRetry(() => r.smembers(indexKey), { label: 'watch:smembers' });
+  } catch (e) {
+    console.warn(`[monitor] GET smembers failed userId=${uid}:`, e.message);
+    hashes = [];
   }
+
+  if (Array.isArray(hashes) && hashes.length > 0) {
+    keys = hashes.map((h) => watchKey(uid, String(h)));
+  }
+
+  if (keys.length === 0) {
+    try {
+      const fromKeys = await withRedisRetry(() => r.keys(monitorUserEntryKeysPattern(uid)), { label: 'watch:keys' });
+      if (Array.isArray(fromKeys) && fromKeys.length > 0) keys = fromKeys;
+    } catch (e) {
+      console.warn(`[monitor] GET keys() failed userId=${uid}:`, e.message);
+    }
+  }
+
+  // ユーザー索引が空でも global 集合に載っていれば拾う（cron と同じ経路）
+  if (keys.length === 0) {
+    try {
+      const globalKeys = await withRedisRetry(() => r.smembers(GLOBAL_MONITOR_KEYS_SET), { label: 'watch:global-fallback' });
+      if (Array.isArray(globalKeys)) {
+        keys = globalKeys.filter((k) => typeof k === 'string' && k.startsWith(prefix));
+      }
+    } catch (e) {
+      console.warn(`[monitor] GET global fallback failed userId=${uid}:`, e.message);
+    }
+  }
+
+  console.log(`[monitor] GET userId=${uid} keys=${keys.length} indexHashes=${Array.isArray(hashes) ? hashes.length : 0}`);
+
   if (keys.length === 0) return [];
   const values = await withRedisRetry(() => r.mget(...keys), { label: 'watch:mget' });
   return values
