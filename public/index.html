@@ -29,8 +29,8 @@
       OneSignalDeferred.push(async function(OneSignal) {
         await OneSignal.init({
           appId: "9fb344ba-8b77-4508-a7c5-0009959c3561",
-          // 既存の /sw.js と共存: OneSignal 専用 SW は使わない
-          serviceWorkerParam: { scope: "/onesignal/" },
+          // OneSignalSDKWorker.js を /（ルート）に配置済み
+          serviceWorkerParam: { scope: "/" },
           notifyButton: { enable: false },
           allowLocalhostAsSecureOrigin: true,
         });
@@ -1590,12 +1590,12 @@
                         欲しい商品、気づいたら終わってた。<br>を防ぐ。
                     </p>
                     <p class="meta-11px" style="color:rgba(247,231,206,0.5);margin:0;letter-spacing:0.5px;">
-                        発見 → 見守り → 通知　争奪戦商品のDiscovery Engine
+                        商品名・品番を入れる → 見守り登録 → 再入荷で即通知
                     </p>
                 </div>
                 <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:var(--gap-11);">
-                    <span class="gold-label" style="margin-bottom:0;display:inline;">見守り設定</span>
-                    <span id="mode-guide-hint" class="mode-guide-hint">（ひとつを選択）</span>
+                    <span class="gold-label" style="margin-bottom:0;display:inline;">見守りモード</span>
+                    <span id="mode-guide-hint" class="mode-guide-hint" style="font-size:11px;color:rgba(247,231,206,0.5);">在庫復活通知 or 推し活ニュース</span>
                 </div>
                 <div id="monitor-section-body">
                 <div class="monitor-mode-row">
@@ -1713,8 +1713,8 @@
     <div id="insight" class="screen">
         <div class="screen-content">
             <div class="transparent-box">
-                <span class="gold-label">新着情報を探す</span>
-                <p class="trend-intro-11px">気になる商品の再販・新着情報をまとめて確認できます。見守り候補を探すのに使ってください。</p>
+                <span class="gold-label">新着情報を探す <span style="font-size:10px;color:var(--amethyst);letter-spacing:1px;font-weight:normal;vertical-align:middle;">β</span></span>
+                <p class="trend-intro-11px">商品名・ブランド名でGoogle Newsを横断検索します。見守り候補の発掘に使ってください。</p>
                 <div style="position:relative; margin-top: var(--gap-11); margin-bottom: 0;">
                     <input type="text" id="insight-search" placeholder="ブランド名・商品名・キーワードで探す" onkeydown="if(event.key==='Enter')triggerInsightScout()">
                     <span class="monitor-search-icon-wrap" onclick="triggerInsightScout()">
@@ -1970,7 +1970,7 @@
     <div class="nav-bar">
         <button class="nav-item active" onclick="show('home', this)"><i data-lucide="home" class="lucide" aria-hidden="true"></i><span>ホーム</span></button>
         <button class="nav-item" onclick="show('history', this)"><i data-lucide="bell" class="lucide" aria-hidden="true"></i><span>履歴</span></button>
-        <button class="nav-item" onclick="show('insight', this)"><i data-lucide="search" class="lucide" aria-hidden="true"></i><span>探索</span></button>
+        <button class="nav-item" onclick="show('insight', this)"><i data-lucide="search" class="lucide" aria-hidden="true"></i><span>探索<sup style="font-size:8px;color:var(--amethyst);letter-spacing:0;margin-left:1px;">β</sup></span></button>
         <button class="nav-item" onclick="show('settings', this)"><i data-lucide="crosshair" class="lucide" aria-hidden="true"></i><span>見守り</span></button>
         <button class="nav-item" onclick="show('link', this)"><i data-lucide="gem" class="lucide" aria-hidden="true"></i><span>プラン</span></button>
         <button class="nav-item" onclick="show('chat', this)"><i data-lucide="message-circle" class="lucide" aria-hidden="true"></i><span>交流</span></button>
