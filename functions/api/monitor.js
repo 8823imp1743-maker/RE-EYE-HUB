@@ -1719,6 +1719,13 @@ async function checkAndNotify(r, entry) {
 //  内部ヘルパー
 // ─────────────────────────────────────────────────────────
 
+function resolveWatchEntryKey(userId, member) {
+  const s = String(member ?? '').trim();
+  if (!s) return null;
+  if (isMonitorEntryRedisKey(s)) return s;
+  return watchKey(userId, s);
+}
+
 async function getUserWatchItems(userId) {
   const r = getRedis();
   const uid = String(userId ?? '').trim();
@@ -1736,7 +1743,7 @@ async function getUserWatchItems(userId) {
   }
 
   if (Array.isArray(hashes) && hashes.length > 0) {
-    keys = hashes.map((h) => watchKey(uid, String(h)));
+    keys = hashes.map((h) => resolveWatchEntryKey(uid, h)).filter(Boolean);
   }
 
   if (keys.length === 0) {
@@ -1763,10 +1770,35 @@ async function getUserWatchItems(userId) {
   console.log(`[monitor] GET userId=${uid} keys=${keys.length} indexHashes=${Array.isArray(hashes) ? hashes.length : 0}`);
 
   if (keys.length === 0) return [];
+
+  let items = await mgetWatchEntries(r, keys);
+
+  // 索引メンバー形式ズレ（hash vs フルキー）で mget が空になる場合、global から再取得
+  if (items.length === 0 && Array.isArray(hashes) && hashes.length > 0) {
+    try {
+      const globalKeys = await withRedisRetry(() => r.smembers(GLOBAL_MONITOR_KEYS_SET), { label: 'watch:global-fallback2' });
+      const altKeys = Array.isArray(globalKeys)
+        ? globalKeys.filter((k) => typeof k === 'string' && k.startsWith(prefix))
+        : [];
+      if (altKeys.length > 0) {
+        console.warn(`[monitor] GET index→mget空のため global 再取得 userId=${uid} altKeys=${altKeys.length}`);
+        items = await mgetWatchEntries(r, altKeys);
+      }
+    } catch (e) {
+      console.warn(`[monitor] GET global retry failed userId=${uid}:`, e.message);
+    }
+  }
+
+  return items;
+}
+
+async function mgetWatchEntries(r, keys) {
+  if (!keys.length) return [];
   const values = await withRedisRetry(() => r.mget(...keys), { label: 'watch:mget' });
-  return values
+  const rows = Array.isArray(values) ? values : [values];
+  return rows
     .filter(Boolean)
-    .map(v => {
+    .map((v) => {
       try {
         const o = JSON.parse(v);
         if (!o || typeof o !== 'object') return null;
