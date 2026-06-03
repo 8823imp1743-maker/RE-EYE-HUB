@@ -2,7 +2,28 @@
  * 靴在庫ゲートの診断ログ — Vercel Logs で「どの段階で落ちたか」を追跡する。
  * タグ: [RE_EYE_STOCK_AUDIT][<stage>]
  */
-import { coerceTargetCmStrings } from './pdp-shoe-stock.js';
+
+/** 診断表示用（pdp-shoe-stock の coerceTargetCmStrings と同等の最小実装） */
+function coerceTargetCmStringsForAudit(inp) {
+  const out = [];
+  const seen = new Set();
+  const add = (v) => {
+    const n = parseFloat(String(v).replace(/[^\d.]/g, ''));
+    if (!Number.isFinite(n) || n < 10 || n > 35) return;
+    const k = String(n);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(k);
+  };
+  const arr = Array.isArray(inp) ? inp : inp != null ? [inp] : [];
+  arr.forEach((x) => {
+    const st = String(x ?? '').trim();
+    if (!st) return;
+    if (st.includes(',')) st.split(/[,、]/).forEach((p) => add(p));
+    else add(st);
+  });
+  return out;
+}
 
 function normalizeCm(v) {
   const n = parseFloat(String(v).replace(/[^\d.]/g, ''));
@@ -73,8 +94,8 @@ export function logStockAuditTargets({ shoeTargetNums, shoeSizeRaw, plan, keywor
   const userTargets = (shoeTargetNums || []).map((n) => normalizeCm(n)).filter((n) => n !== null);
   const pdpCoerced =
     shoeTargetNums?.length >= 1
-      ? coerceTargetCmStrings(shoeTargetNums.map((n) => String(n)).join(','))
-      : coerceTargetCmStrings(shoeSizeRaw);
+      ? coerceTargetCmStringsForAudit(shoeTargetNums.map((n) => String(n)).join(','))
+      : coerceTargetCmStringsForAudit(shoeSizeRaw);
   logStockAudit('targets', {
     userTargets,
     userTargetsRaw: shoeTargetNums,
