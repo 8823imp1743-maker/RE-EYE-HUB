@@ -931,14 +931,17 @@
 
         /* ── マイサイズ：ボトムシート + カテゴリ切替 ── */
         .user-settings-bottom-sheet {
-            position: fixed; inset: 0; z-index: 9980; display: none; align-items: flex-end; justify-content: center;
+            position: fixed; inset: 0; z-index: 10050; display: none; align-items: flex-end; justify-content: center;
+            background: rgba(0,0,0,0.65);
         }
         .user-settings-bottom-sheet[aria-hidden="true"] { pointer-events: none; }
+        /* タップを奪わない（チップが押せなくなる原因）。暗幕は親 .user-settings-bottom-sheet の背景 */
         .user-settings-bs-backdrop {
-            position: absolute; inset: 0; background: rgba(0,0,0,0.65);
+            position: absolute; inset: 0; z-index: 0; pointer-events: none;
         }
         .user-settings-bs-panel {
-            position: relative; width: 100%; max-width: 480px; max-height: 90vh; overflow: hidden;
+            position: relative; z-index: 1; width: 100%; max-width: 480px; max-height: 90vh; overflow: hidden;
+            pointer-events: auto;
             display: flex; flex-direction: column;
             background: #08040c;
             border-top: 1px solid var(--amethyst);
@@ -964,6 +967,14 @@
         }
         .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-close { opacity: 0.5; pointer-events: none; }
         .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-backdrop { pointer-events: none; }
+        /* 保存中もチップ・都道府県・保存ボタンは操作可能（閉じるだけロック） */
+        .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-body,
+        .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-body .size-chip,
+        .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-body .setting-chip,
+        .user-settings-bottom-sheet.settings-ui-locked .user-settings-bs-body select,
+        .user-settings-bottom-sheet.settings-ui-locked #save-settings-btn {
+            pointer-events: auto !important;
+        }
         .settings-section-divider { margin: 10px 0; padding-top: 8px; border-top: 1px solid rgba(155,89,182,0.2); }
         .cockpit-block {
             border: 1px solid rgba(155,89,182,0.22);
@@ -1438,9 +1449,9 @@
             </div>
 
             <!-- マイサイズ編集：ボトムシート（id=home-setting-form は保存ロック・成否で参照） -->
-            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet" style="display:none" aria-hidden="true">
-                <div class="user-settings-bs-backdrop" onclick="if(!isSettingsSaveLocked())closeUserSettingsBottomSheet()"></div>
-                <div class="user-settings-bs-panel" role="dialog" aria-label="マイサイズ">
+            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet" style="display:none" aria-hidden="true" onclick="onSettingsSheetBackdropClick(event)">
+                <div class="user-settings-bs-backdrop" aria-hidden="true"></div>
+                <div class="user-settings-bs-panel" role="dialog" aria-label="マイサイズ" onclick="event.stopPropagation()">
                     <div class="user-settings-bs-header">
                         <span class="gold-label" style="margin:0;">ユーザーサイズ設定（家族分含む）</span>
                         <button type="button" class="user-settings-bs-close" onclick="closeUserSettingsBottomSheet()">閉じる</button>
@@ -2211,7 +2222,7 @@ function applyChildRevealedStateFromProfile() {
 /** 「子ども用サイズを登録」— 展開＋チップ再生成＋選択の復元 */
 window.handleExpandChildSettings = function () {
     try { localStorage.setItem(RE_EYE_CHILD_SETTINGS_EXPANDED, '1'); } catch (e) {}
-    if (typeof initIndependentChips === 'function') initIndependentChips();
+    try { ensureSizeChipsRendered(); } catch (e) {}
     try {
         if (userProfile.childGender) act('dial-child-gender', userProfile.childGender);
         if (userProfile.childShoeSize) act('dial-child-shoe', userProfile.childShoeSize);
@@ -3588,11 +3599,39 @@ function syncMonitorScoutCockpitChrome() {
     if (hint) hint.style.display = showBar ? 'block' : 'none';
     if (showBar) syncScoutTargetToggleUI();
 }
+/** 開発者ツールの Console に貼って Enter → 設定UIの状態を表示 */
+window.reEyeSettingsDiag = function reEyeSettingsDiag() {
+    const rows = ['dial-adult-gender', 'dial-adult-shoe', 'dial-adult-cloth', 'dial-child-gender', 'dial-child-shoe', 'dial-child-cloth'];
+    const out = {};
+    rows.forEach((id) => {
+        const row = document.getElementById(id);
+        const chips = row ? row.querySelectorAll('.size-chip, .setting-chip') : [];
+        out[id] = row ? chips.length : '行なし';
+    });
+    const sheet = document.getElementById('user-settings-bottom-sheet');
+    out['シート表示中'] = !!(sheet && sheet.style.display !== 'none' && sheet.getAttribute('aria-hidden') === 'false');
+    out['保存ロック'] = typeof isSettingsSaveLocked === 'function' && isSettingsSaveLocked();
+    out['性別'] = userProfile && userProfile.gender;
+    out['靴'] = userProfile && userProfile.shoeSize;
+    console.log('[reEyeSettingsDiag]', out);
+    return out;
+};
+
+function onSettingsSheetBackdropClick(ev) {
+    if (ev.target.closest('.user-settings-bs-panel')) return;
+    if (!isSettingsSaveLocked()) closeUserSettingsBottomSheet();
+}
+
 function openUserSettingsBottomSheet() {
+    setSettingsSaveLock(false);
     const s = document.getElementById('user-settings-bottom-sheet');
-    if (s) { s.style.display = 'flex'; s.setAttribute('aria-hidden', 'false'); }
+    if (s) {
+        s.style.display = 'flex';
+        s.setAttribute('aria-hidden', 'false');
+        s.classList.remove('settings-ui-locked');
+    }
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
-    // チップは静的HTMLで常に存在するので、現在の設定値を active に反映するだけ
+    try { ensureSizeChipsRendered(); } catch (e) { console.warn('[sheet] ensureSizeChipsRendered:', e); }
     try { restoreDialUI(userProfile); } catch (e) { console.error('[sheet] restoreDialUI:', e); }
 }
 function closeUserSettingsBottomSheet() {
@@ -3614,7 +3653,7 @@ function selectChip(type,el){
 }
 /** 静的 HTML チップ用：完全独立クリックハンドラー（JS動的生成に依存しない） */
 function staticChipSelect(rowId, el) {
-    if (isSettingsSaveLocked()) return;
+    if (!el) return;
     const row = document.getElementById(rowId);
     if (row) row.querySelectorAll('.size-chip,.setting-chip').forEach(c => c.classList.remove('active'));
     el.classList.add('active');
@@ -3708,9 +3747,9 @@ function initIndependentChips() {
         });
     };
     const adultShoes = [];
-    for (let s = 23.0; s <= 28.0; s += 0.5) adultShoes.push(s.toFixed(1));
+    for (let s = 23.0; s <= 30.0; s += 0.5) adultShoes.push(s.toFixed(1));
     fill('dial-adult-shoe', adultShoes, 're_eye_my_shoe');
-    fill('dial-adult-cloth', ['S', 'M', 'L', 'XL'], 're_eye_my_cloth');
+    fill('dial-adult-cloth', ['XS', 'S', 'M', 'L', 'XL', 'XXL'], 're_eye_my_cloth');
     fillLabeled('dial-adult-gender', [['男性', 'male'], ['女性', 'female']], 're_eye_my_gender');
     const childShoes = [];
     for (let s = 13.0; s <= 21.0; s += 0.5) childShoes.push(s.toFixed(1));
@@ -3729,7 +3768,8 @@ function ensureSizeChipsRendered() {
     if (anyEmpty) initIndependentChips();
 }
 function initDials() {
-    initIndependentChips();
+    // 静的HTMLチップを消さない。空の行だけ動的生成（ensureSizeChipsRendered）
+    ensureSizeChipsRendered();
 }
 function act(rowId, val) {
     if (val == null || val === '') return;
@@ -3792,7 +3832,7 @@ function setSettingsSaveLock(on) {
     if (btn) btn.disabled = on;
 }
 function onPrefectureDialChange() {
-    if (isSettingsSaveLocked()) return;
+    readProfileFromDials();
     saveUserSettings();
 }
 /** 子ども枠のチップを全外し（巻き戻しで hasChildren false のとき必須） */
