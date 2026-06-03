@@ -34,3 +34,4 @@ npm-debug.log*
 .vercel
 .env*.local
 .env.vercel.production
+.cron-secret.local
