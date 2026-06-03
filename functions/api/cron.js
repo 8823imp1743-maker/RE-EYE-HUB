@@ -7,18 +7,7 @@
  */
 
 import { checkAllWatched } from './monitor.js';
-
-function cronAuthOk(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const authHeader = req.headers.get
-    ? (req.headers.get('authorization') || req.headers.get('Authorization') || '')
-    : (req.headers.authorization || req.headers['Authorization'] || '');
-  const xCronSecret = req.headers.get
-    ? (req.headers.get('x-cron-secret') || req.headers.get('X-Cron-Secret') || '')
-    : (req.headers['x-cron-secret'] || req.headers['X-Cron-Secret'] || '');
-  return authHeader === `Bearer ${secret}` || xCronSecret === secret;
-}
+import { cronAuthOk } from '../lib/cron-auth.js';
 
 export default async function handler(req, res) {
   // api/index.js でも認証済みだが、直接到達時のためここでも両方式を受け付ける

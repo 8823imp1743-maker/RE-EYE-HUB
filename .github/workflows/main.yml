@@ -10,7 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Vercel Cron
+        env:
+          CRON_URL: ${{ secrets.MONITOR_CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl --fail -X POST "${{ secrets.MONITOR_CRON_URL }}" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json"
+          set -euo pipefail
+          if [ -z "${CRON_URL}" ] || [ -z "${CRON_SECRET}" ]; then
+            echo "MONITOR_CRON_URL or CRON_SECRET is empty in GitHub Actions secrets"
+            exit 1
+          fi
+          # X-Cron-Secret と Bearer の両方を送る（Vercel / GH どちらの経路でも通る）
+          HTTP_CODE=$(curl -sS -o /tmp/cron-body.json -w "%{http_code}" -X POST "${CRON_URL}" \
+            -H "X-Cron-Secret: ${CRON_SECRET}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json")
+          echo "cron response HTTP ${HTTP_CODE}"
+          cat /tmp/cron-body.json
+          test "${HTTP_CODE}" = "200"

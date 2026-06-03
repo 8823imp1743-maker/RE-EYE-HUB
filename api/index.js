@@ -13,6 +13,7 @@
  */
 
 import { attachExpressLikeResponse, ensureJsonBody, ensureQuery } from './_compat.js';
+import { verifyCronAuth } from '../functions/lib/cron-auth.js';
 import { guardVercelApi } from './_security.js';
 import { captureIfCritical } from './_sentry.js';
 import { applySearchMemoryShield } from './_search-vercel-memory.js';
@@ -199,30 +200,32 @@ export default async function handler(req, res) {
     if (req.method !== 'GET' && req.method !== 'POST') {
       return res.status(405).json({ error: 'Method Not Allowed' });
     }
-    // Vercelに登録した CRON_SECRET と一致するかを検証
-    // GH Actions は "X-Cron-Secret: <secret>" / Vercel内部は "Authorization: Bearer <secret>" の両方を受け付ける
-    const secret = process.env.CRON_SECRET;
-    const authHeader = req.headers['authorization'] || req.headers['Authorization'] || '';
-    const xCronSecret = req.headers['x-cron-secret'] || req.headers['X-Cron-Secret'] || '';
-    const bearerOk = authHeader === `Bearer ${secret}`;
-    const xSecretOk = xCronSecret === secret;
-    if (!secret || (!bearerOk && !xSecretOk)) {
-      // 値そのものは出さない。Vercel で CRON_SECRET 未設定 or Redeploy 忘れを判別する
+    // GH Actions: X-Cron-Secret / Vercel Cron: Authorization Bearer（trim 比較）
+    const auth = verifyCronAuth(req);
+    if (!auth.ok) {
       console.warn('[router/cron] 401 Unauthorized', {
-        hasEnvSecret: !!secret,
-        envSecretLen: secret ? secret.length : 0,
-        hasAuthHeader: !!authHeader,
-        hasXCronHeader: !!xCronSecret,
-        bearerOk,
-        xSecretOk,
+        hasEnvSecret: auth.envSecretLen > 0,
+        envSecretLen: auth.envSecretLen,
+        headerSecretLen: auth.headerSecretLen,
+        hasAuthHeader: auth.bearerOk || auth.headerSecretLen > 0,
+        hasXCronHeader: auth.xSecretOk || (auth.headerSecretLen > 0 && !auth.bearerOk),
+        bearerOk: auth.bearerOk,
+        xSecretOk: auth.xSecretOk,
+        lenMismatch: auth.envSecretLen > 0 && auth.headerSecretLen > 0 && auth.envSecretLen !== auth.headerSecretLen,
       });
       return res.status(401).json({
         error: 'Unauthorized',
-        hint: !secret
+        hint: auth.envSecretLen === 0
           ? 'CRON_SECRET is not set on Vercel (or redeploy after adding it)'
-          : 'CRON_SECRET mismatch — check GitHub Actions secret vs Vercel env',
+          : 'CRON_SECRET mismatch — set GitHub secrets.CRON_SECRET identical to Vercel CRON_SECRET (no extra spaces/newlines)',
       });
     }
+    console.log('[router/cron] auth ok', {
+      method: auth.method,
+      bearerOk: auth.bearerOk,
+      xSecretOk: auth.xSecretOk,
+      envSecretLen: auth.envSecretLen,
+    });
     // cron 実行間隔ガード（55分未満はスキップ）
     const now = Date.now();
     if (_lastCronMs > 0 && now - _lastCronMs < CRON_COOLDOWN_MS) {
