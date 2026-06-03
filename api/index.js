@@ -75,11 +75,10 @@ async function discoverHandler(req, res) {
     product: result.product,
   });
 
-  // ── 自動登録: 発見済みトップURLをmonitor.jsに直接登録 ──────────
+  // ── 自動登録: 発見済みトップURLを monitor.js（Redis）へ直接登録 ──────────
   let autoRegistered = [];
   if (autoRegister && entries.length > 0) {
-    const topEntries = entries.slice(0, 3); // 上位3件まで自動登録
-    const monFn = (await import('../functions/api/monitor.js')).default;
+    const topEntries = entries.slice(0, 3);
 
     for (const entry of topEntries) {
       try {
@@ -98,16 +97,23 @@ async function discoverHandler(req, res) {
           headers: {},
         };
         let regOk = false;
+        let regStatus = 200;
         const mockRes = {
           statusCode: 200,
           writableEnded: false,
           setHeader: () => {},
-          status(c) { this.statusCode = c; return this; },
-          json(d) { regOk = d?.registered !== false; this.writableEnded = true; return this; },
-          end(d)  { this.writableEnded = true; return this; },
+          status(c) { this.statusCode = c; regStatus = c; return this; },
+          json(d) {
+            regOk = d?.registered === true || (d?.registered !== false && regStatus < 400);
+            this.writableEnded = true;
+            return this;
+          },
+          end() { this.writableEnded = true; return this; },
         };
-        await monFn(mockReq, mockRes);
+        attachExpressLikeResponse(mockRes);
+        await monitorHandler(mockReq, mockRes);
         if (regOk) autoRegistered.push(entry.sourceId);
+        else console.warn('[discover/autoRegister] monitor rejected:', entry.sourceId, 'status=', regStatus);
       } catch (e) {
         console.warn('[discover/autoRegister] failed:', e.message);
       }
@@ -201,8 +207,21 @@ export default async function handler(req, res) {
     const bearerOk = authHeader === `Bearer ${secret}`;
     const xSecretOk = xCronSecret === secret;
     if (!secret || (!bearerOk && !xSecretOk)) {
-      console.warn('[router/cron] 認証失敗 — authHeader:', authHeader.slice(0, 20), 'xCronSecret:', xCronSecret.slice(0, 8));
-      return res.status(401).json({ error: 'Unauthorized' });
+      // 値そのものは出さない。Vercel で CRON_SECRET 未設定 or Redeploy 忘れを判別する
+      console.warn('[router/cron] 401 Unauthorized', {
+        hasEnvSecret: !!secret,
+        envSecretLen: secret ? secret.length : 0,
+        hasAuthHeader: !!authHeader,
+        hasXCronHeader: !!xCronSecret,
+        bearerOk,
+        xSecretOk,
+      });
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: !secret
+          ? 'CRON_SECRET is not set on Vercel (or redeploy after adding it)'
+          : 'CRON_SECRET mismatch — check GitHub Actions secret vs Vercel env',
+      });
     }
     // cron 実行間隔ガード（55分未満はスキップ）
     const now = Date.now();
