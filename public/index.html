@@ -1319,6 +1319,9 @@
         .stock-shop-meta { font-size: 11px; color: var(--amethyst); opacity: 0.8; letter-spacing: 0.5px; }
         /* 在庫検索：見つからないエラー */
         .stock-not-found { font-size: 11px; color: rgba(247,231,206,0.55); text-align: center; padding: 16px 8px; letter-spacing: 0.8px; border: 1px solid rgba(247,231,206,0.15); border-radius: 2px; background: rgba(247,231,206,0.02); margin-top: 8px; }
+        .re-eye-audit-wrap { margin-top: 12px; border: 1px solid rgba(155,89,182,0.35); border-radius: 2px; background: rgba(255,255,255,0.02); }
+        .re-eye-audit-wrap summary { cursor: pointer; padding: 8px 10px; color: var(--champagne-gold); font-size: 11px; letter-spacing: 0.6px; list-style: none; }
+        .re-eye-audit-pre { margin: 0; padding: 8px 10px 10px; font-size: 11px; line-height: 1.45; color: rgba(247,231,206,0.72); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; border-top: 1px solid rgba(155,89,182,0.2); }
 
         /* ── 「諦め」バッジ（入手困難アナウンス）── */
         .give-up-badge {
@@ -1591,6 +1594,10 @@
                             </div>
                         </div>
                         <button type="button" id="save-settings-btn" class="main-save-btn" onclick="saveUserSettings(true)">設定を保存する</button>
+                        <details id="settings-profile-audit-wrap" class="re-eye-audit-wrap" open>
+                            <summary class="meta-11px">設定同期診断（localStorage ⇔ userProfile ⇔ UI）</summary>
+                            <pre id="settings-profile-audit" class="re-eye-audit-pre" aria-live="polite">診断待機: チップ操作・保存・シート再表示で記録されます。</pre>
+                        </details>
                     </div>
                 </div>
             </div>
@@ -2276,6 +2283,93 @@ function _reEyeDebugMonitor() {
 function _reEyeDbg() {
     if (!_reEyeDebugMonitor()) return;
     console.log.apply(console, ['%c[re-eye monitor]', 'color:#9b59b6;font-weight:bold;'].concat([].slice.call(arguments)));
+}
+/** 設定保存/復元の原因調査用（画面内 pre 表示。console ではなく実機で追う） */
+const _settingsAuditBuf = [];
+const _SETTINGS_AUDIT_MAX = 40;
+function _snapshotProfileFields(p) {
+    const o = p || userProfile || {};
+    return {
+        gender: o.gender != null ? String(o.gender) : '',
+        shoeSize: o.shoeSize != null ? String(o.shoeSize) : '',
+        clothSize: o.clothSize != null ? String(o.clothSize) : '',
+        prefecture: o.prefecture != null ? String(o.prefecture) : '',
+        childGender: o.childGender != null ? String(o.childGender) : '',
+        childShoeSize: o.childShoeSize != null ? String(o.childShoeSize) : '',
+        childClothSize: o.childClothSize != null ? String(o.childClothSize) : '',
+        hasChildren: !!o.hasChildren,
+        myGender: o.myGender != null ? String(o.myGender) : '(field absent)',
+    };
+}
+function _readLsProfileParsed() {
+    try {
+        const s = localStorage.getItem('re_eye_profile');
+        if (!s) return null;
+        return JSON.parse(s);
+    } catch (e) {
+        return { _parseError: String(e && e.message ? e.message : e) };
+    }
+}
+function _profileDiffAgainst(a, b, labelA, labelB) {
+    const keys = ['gender', 'shoeSize', 'clothSize', 'prefecture', 'childGender', 'childShoeSize', 'childClothSize', 'hasChildren'];
+    const diff = {};
+    keys.forEach((k) => {
+        const va = a && a[k] != null ? String(a[k]) : '';
+        const vb = b && b[k] != null ? String(b[k]) : '';
+        if (va !== vb) diff[k] = { [labelA]: va, [labelB]: vb };
+    });
+    const ma = a && a.myGender != null ? String(a.myGender) : '';
+    const mb = b && b.myGender != null ? String(b.myGender) : '';
+    if (ma !== mb) diff.myGender = { [labelA]: ma || '(absent)', [labelB]: mb || '(absent)' };
+    return diff;
+}
+function _activeChipsSnapshot() {
+    const snap = {};
+    ['dial-adult-gender', 'dial-adult-shoe', 'dial-adult-cloth', 'dial-child-gender', 'dial-child-shoe', 'dial-child-cloth'].forEach((id) => {
+        const row = document.getElementById(id);
+        if (!row) { snap[id] = '(row missing)'; return; }
+        const act = row.querySelector('.size-chip.active, .setting-chip.active');
+        snap[id] = act && act.dataset && act.dataset.val != null ? act.dataset.val : (act ? (act.textContent || '').trim() : '(none)');
+    });
+    return snap;
+}
+function appendSettingsAudit(stage, extra) {
+    const ls = _readLsProfileParsed();
+    const mem = _snapshotProfileFields(userProfile);
+    const line = {
+        t: new Date().toISOString().slice(11, 23),
+        stage: stage,
+        mem: mem,
+        ls: ls ? _snapshotProfileFields(ls) : null,
+        lsVsMem: ls ? _profileDiffAgainst(ls, userProfile, 'localStorage', 'userProfile') : {},
+        chips: _activeChipsSnapshot(),
+        extra: extra || null,
+    };
+    _settingsAuditBuf.push(line);
+    if (_settingsAuditBuf.length > _SETTINGS_AUDIT_MAX) _settingsAuditBuf.shift();
+    const pre = document.getElementById('settings-profile-audit');
+    if (pre) {
+        pre.textContent = _settingsAuditBuf.map((x) => JSON.stringify(x)).join('\n');
+    }
+    try { sessionStorage.setItem('re_eye_settings_audit_last', JSON.stringify(line)); } catch (e) {}
+}
+/** 在庫検索パイプライン診断（0件時に画面表示） */
+function renderStockSearchAuditPanel(data, reqMeta) {
+    const trace = data && data.searchTrace ? data.searchTrace : null;
+    const audit = data && (data.stockSizeAudit || (data.debug && data.debug.audit && data.debug.audit.stockSizeAudit));
+    if (!trace && !audit) return null;
+    const det = document.createElement('details');
+    det.className = 're-eye-audit-wrap';
+    det.open = true;
+    const sum = document.createElement('summary');
+    sum.className = 'meta-11px';
+    sum.textContent = '在庫判定診断（検索→サイズ→PDP→表示）';
+    const pre = document.createElement('pre');
+    pre.className = 're-eye-audit-pre';
+    pre.textContent = JSON.stringify({ request: reqMeta || null, searchTrace: trace, stockSizeAudit: audit }, null, 2);
+    det.appendChild(sum);
+    det.appendChild(pre);
+    return det;
 }
 /** expectKey とサーバー各行キーの差分（見えない空白・大小文字など） */
 function _explainWatchKeyMismatch(expectKey, lastItems) {
@@ -3635,8 +3729,12 @@ function openUserSettingsBottomSheet() {
         s.classList.remove('settings-ui-locked');
     }
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
+    appendSettingsAudit('openUserSettingsBottomSheet:beforeRestore', {
+        profileArg: _snapshotProfileFields(userProfile),
+    });
     try { ensureSizeChipsRendered(); } catch (e) { console.warn('[sheet] ensureSizeChipsRendered:', e); }
     try { restoreDialUI(userProfile); } catch (e) { console.error('[sheet] restoreDialUI:', e); }
+    appendSettingsAudit('openUserSettingsBottomSheet:afterRestore', null);
 }
 function closeUserSettingsBottomSheet() {
     if (isSettingsSaveLocked()) return;
@@ -3663,6 +3761,7 @@ function staticChipSelect(rowId, el) {
     const row = document.getElementById(rowId);
     if (row) row.querySelectorAll('.size-chip,.setting-chip').forEach(c => c.classList.remove('active'));
     el.classList.add('active');
+    appendSettingsAudit('staticChipSelect', { rowId: rowId, val: el.dataset ? el.dataset.val : null });
     readProfileFromDials();
     syncScoutTargetToggleUI();
     saveUserSettings();
@@ -3817,6 +3916,7 @@ function readProfileFromDials() {
     userProfile.childClothSize = sel('dial-child-cloth');
     userProfile.childShoeSize = sel('dial-child-shoe');
     userProfile.childGlovesSml = '';
+    appendSettingsAudit('readProfileFromDials', null);
 }
 function actDialPrefecture() {
     const pr = document.getElementById('dial-prefecture');
@@ -3871,6 +3971,7 @@ function applyUserSettingsSnapshot(snapP, snapPr) {
         localStorage.setItem('re_eye_profile', JSON.stringify(userProfile));
     } catch (e) {}
     restoreDialUI(userProfile);
+    appendSettingsAudit('applyUserSettingsSnapshot', { snapGender: snapP && snapP.gender });
 }
 let _saveTimer;
 async function postUserSettingsToRedis() {
@@ -3892,7 +3993,10 @@ async function postUserSettingsToRedis() {
         body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.saved || !data.settings) return { ok: false, data };
+    if (!res.ok || !data.saved || !data.settings) {
+        appendSettingsAudit('postUserSettingsToRedis:fail', { httpOk: res.ok, saved: !!(data && data.saved) });
+        return { ok: false, data };
+    }
     if (data.settings.shoeCm != null) userProfile.shoeSize = String(data.settings.shoeCm);
     if (data.settings.clothing) userProfile.clothSize = data.settings.clothing;
     if (data.settings.prefecture != null && data.settings.prefecture !== '') {
@@ -3914,15 +4018,23 @@ async function postUserSettingsToRedis() {
         try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
     }
     try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+    appendSettingsAudit('postUserSettingsToRedis:ok', {
+        serverShoeCm: data.settings && data.settings.shoeCm,
+        serverClothing: data.settings && data.settings.clothing,
+    });
     return { ok: true, data };
 }
 async function loadUserSettingsFromServerAndApply() {
     const uid = getUserId();
     if (!uid) return;
+    appendSettingsAudit('loadUserSettingsFromServer:before', { userId: uid.slice(0, 8) + '…' });
     try {
         const res = await fetchApi('/api?action=user-settings&userId=' + encodeURIComponent(uid), { method: 'GET' });
         const data = await res.json();
-        if (!res.ok || !data.found || !data.settings) return;
+        if (!res.ok || !data.found || !data.settings) {
+            appendSettingsAudit('loadUserSettingsFromServer:skip', { ok: res.ok, found: !!(data && data.found) });
+            return;
+        }
         const st = data.settings;
         if (st.shoeCm != null) userProfile.shoeSize = String(st.shoeCm);
         if (st.clothing) userProfile.clothSize = st.clothing;
@@ -3938,7 +4050,16 @@ async function loadUserSettingsFromServerAndApply() {
         userProfile.childGlovesSml = '';
         userProfile.hasChildren = !!userProfile.childGender;
         try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+        appendSettingsAudit('loadUserSettingsFromServer:beforeRestoreDialUI', {
+            server: {
+                shoeCm: st.shoeCm,
+                clothing: st.clothing,
+                childGender: st.childGender,
+                childShoeSize: st.childShoeSize,
+            },
+        });
         restoreDialUI(userProfile);
+        appendSettingsAudit('loadUserSettingsFromServer:afterRestoreDialUI', null);
         const cta2 = document.getElementById('home-setting-unconfigured-cta');
         if (isUserConfigured()) {
             const se0 = document.getElementById('home-setting-summary-text');
@@ -3949,12 +4070,15 @@ async function loadUserSettingsFromServerAndApply() {
         }
         syncScoutTargetToggleUI();
         syncMonitorScoutCockpitChrome();
-    } catch (e) {}
+    } catch (e) {
+        appendSettingsAudit('loadUserSettingsFromServer:error', { msg: String(e && e.message ? e.message : e) });
+    }
 }
 async function saveUserSettings(explicit) {
     if (explicit) {
         if (isSettingsSaveLocked()) return;
         setSettingsSaveLock(true);
+        appendSettingsAudit('saveUserSettings:explicit:start', null);
         try {
             // 1. 現在の入力内容を読み取る
             readProfileFromDials();
@@ -3967,6 +4091,9 @@ async function saveUserSettings(explicit) {
 
             // 3. 即座にローカル（LocalStorage）へ保存
             localStorage.setItem('re_eye_profile', JSON.stringify(userProfile));
+            appendSettingsAudit('saveUserSettings:explicit:afterLocalStorage', {
+                lsRaw: localStorage.getItem('re_eye_profile'),
+            });
 
             // 4. サマリー表示を即座に更新
             const st = buildHomeSettingSummary();
@@ -3980,10 +4107,13 @@ async function saveUserSettings(explicit) {
             // 5. サーバー（Redis）へバックグラウンド同期
             try {
                 const r = await postUserSettingsToRedis();
-                if (!r || !r.ok) console.warn('[settings] サーバー同期失敗。ローカルのみ保存済み。');
+                if (!r || !r.ok) {
+                    appendSettingsAudit('saveUserSettings:explicit:redisFail', { r: r || null });
+                }
             } catch (e) {
-                console.warn('[settings] サーバー同期エラー:', e);
+                appendSettingsAudit('saveUserSettings:explicit:redisError', { msg: String(e && e.message ? e.message : e) });
             }
+            appendSettingsAudit('saveUserSettings:explicit:done', null);
 
             alert('設定を保存しました。');
             closeUserSettingsBottomSheet();
@@ -4002,6 +4132,7 @@ async function saveUserSettings(explicit) {
     _saveTimer = setTimeout(() => {
         readProfileFromDials();
         try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+        appendSettingsAudit('saveUserSettings:debounced', null);
         syncScoutTargetToggleUI();
         updateBannerAdContent(lastMonitorKeyword);
     }, 80);
@@ -4443,6 +4574,13 @@ async function runStockSearch(keyword, forChild, loadMore) {
             const seq = isSeqPdpCursor(data.searchCursor);
             if (data.items && data.items[0] && data.items[0].pdpSizeVerified) _stockPageState.isPdp = true;
             if (!data.items || data.items.length === 0) {
+                const reqMeta = {
+                    keyword: sk,
+                    shoeCm: reqBody.shoeCm,
+                    forChild: !!forChild,
+                    prePdpScanIndex: reqBody.prePdpScanIndex,
+                    step: step,
+                };
                 if (first && !append) {
                     list.innerHTML = '';
                     const nf = document.createElement('div');
@@ -4466,6 +4604,11 @@ async function runStockSearch(keyword, forChild, loadMore) {
                     nf.appendChild(p);
                     nf.appendChild(btn);
                     list.appendChild(nf);
+                    const auditEl = renderStockSearchAuditPanel(data, reqMeta);
+                    if (auditEl) list.appendChild(auditEl);
+                } else if (!append || first) {
+                    const auditEl = renderStockSearchAuditPanel(data, reqMeta);
+                    if (auditEl) list.appendChild(auditEl);
                 }
                 _stockPageState.cursor = data.searchCursor || null;
                 if (ir) ir.style.display = 'block';
@@ -5258,6 +5401,11 @@ function closeCoachMark(permanent){
 function restoreDialUI(profile) {
     try {
     if (!profile) profile = userProfile;
+    appendSettingsAudit('restoreDialUI:before', {
+        profileArg: _snapshotProfileFields(profile),
+        userProfileMem: _snapshotProfileFields(userProfile),
+        lsVsProfileArg: _profileDiffAgainst(_readLsProfileParsed(), profile, 'localStorage', 'profileArg'),
+    });
     const setSafe = (id, val) => {
         const container = document.getElementById(id);
         if (!container) return;
@@ -5306,7 +5454,11 @@ function restoreDialUI(profile) {
     syncMonitorScoutCockpitChrome();
     checkUserSetup();
     applyChildRevealedStateFromProfile();
-    } catch(e) { console.warn('[restoreDialUI] error:', e); }
+    appendSettingsAudit('restoreDialUI:after', null);
+    } catch(e) {
+        appendSettingsAudit('restoreDialUI:error', { msg: String(e && e.message ? e.message : e) });
+        console.warn('[restoreDialUI] error:', e);
+    }
 }
 
 // ── Service Worker ────────────────────────────────────────────
@@ -5353,6 +5505,7 @@ window.onload=()=>{
     startHistoryObserver();
     initDials();
     restoreDialUI();
+    try { appendSettingsAudit('boot:onload', { hadLs: !!localStorage.getItem('re_eye_profile') }); } catch (e) {}
     void loadUserSettingsFromServerAndApply();
     initModeUI();
 

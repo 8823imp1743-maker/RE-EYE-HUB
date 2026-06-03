@@ -27,6 +27,12 @@ import { itemCanonicalKey, sellerModelDedupeKey } from '../lib/stock-dedupe.js';
 import { fetchMallPageSliceForKeywordList, pushUniqueMallItems } from '../lib/search-mall-fetch.js';
 import { userPlanKey } from '../lib/monitor-constants.js';
 import { getCircuit } from '../lib/re-eye-circuit.js';
+import {
+  logStockAudit,
+  logStockAuditTargets,
+  logStockAuditMallRaw,
+  buildShoeGateAuditBatch,
+} from '../lib/stock-size-audit.js';
 
 async function getCircuitStateSafe() {
   try {
@@ -228,6 +234,19 @@ async function runShoePdpBatchedInChunks(batch, rawCmTargets, limit = SHOE_PDP_C
               ? rawCmTargets.map((n) => String(n))
               : rawCmTargets
           );
+          try {
+            logStockAudit('pdp-verify', {
+              title: String(b.item?.title || '').slice(0, 100),
+              url: String(b.item?.url || '').slice(0, 90),
+              targets: Array.isArray(rawCmTargets) ? rawCmTargets : [rawCmTargets],
+              ok: v?.ok === true,
+              reason: v?.reason || null,
+              method: v?.method || null,
+              ms: v?.ms,
+            });
+          } catch (_) {
+            /* */
+          }
           return { key: itemCanonicalKey(b.item), item: b.item, v };
         } catch (e) {
           return {
@@ -811,6 +830,7 @@ async function runPdpShoeWithMallPaging({
     lastShopResults = shopResults;
     lastPerKw = toPerKwLog(shopResults, kwList);
     lastMallMeta = meta || lastMallMeta;
+    logStockAuditMallRaw(allItems, { mallPage: mallP, kwHint: kwList[0] });
     mallP++;
     if (!allItems || allItems.length === 0) {
       lastPageHadItems = false;
@@ -866,6 +886,7 @@ async function runPdpShoeWithMallPaging({
       pdpCalls: 0,
       allVerified: [],
       stopReason: 'no_mall_raw',
+      stockSizeAudit: { rows: [], passed: 0, failed: 0 },
     };
   }
 
@@ -906,6 +927,7 @@ async function runPdpShoeWithMallPaging({
         pdpRejected: 0,
       },
       stopReason: 'pool_short',
+      stockSizeAudit: { rows: [], passed: 0, failed: 0 },
     };
   }
 
@@ -955,7 +977,22 @@ async function runPdpShoeWithMallPaging({
       if (d !== 0) return d;
       return newUnopenedPriorityScore(b) - newUnopenedPriorityScore(a);
     });
+  const stockSizeAudit = buildShoeGateAuditBatch(
+    finalOrdered,
+    shoeTargetNums,
+    buildFullHaystack,
+    mapShoeSearchItemForClient,
+    12
+  );
   const gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums);
+  logStockAudit('gate-summary', {
+    poolLen: finalOrdered.length,
+    gatedPass: gatedAll.length,
+    displayCap,
+    plan,
+    pdpCalls: pdpOut.length,
+    shoeTargets: shoeTargetNums,
+  });
   const displayItems = gatedAll.slice(0, displayCap);
   const nextStartingItem = sequentialPdp ? null : gatedAll[displayCap] ?? null;
 
@@ -1029,6 +1066,7 @@ async function runPdpShoeWithMallPaging({
       pdpRejected,
     },
     stopReason,
+    stockSizeAudit,
     staged: {
       maxMallPagesThisRequest: maxMallThisRequest,
       maxPdpThisRequest: maxPdp,
@@ -1039,6 +1077,65 @@ async function runPdpShoeWithMallPaging({
       sequentialPdp: !!sequentialPdp,
       plan,
     },
+  };
+}
+
+/** クライアント診断パネル用（Network / 画面内 details。修正ではなく経路特定） */
+function buildClientSearchTrace(ctx) {
+  const r = ctx.r || {};
+  const audit = r.stockSizeAudit || {};
+  const rows = Array.isArray(audit.rows) ? audit.rows : [];
+  return {
+    keyword: ctx.baseKeyword,
+    normalizedKeyword: ctx.displayTrim,
+    shoeTargets: ctx.shoeTargetNums,
+    plan: ctx.effectivePlan,
+    stopReason: r.stopReason || null,
+    poolLength: r.poolLength ?? null,
+    pdpCalls: r.pdpCalls ?? null,
+    itemsOutBeforePlan: ctx.itemsOutLen ?? null,
+    itemsFinalLen: ctx.itemsFinalLen ?? null,
+    freePlanSuppressed: ctx.freePlanSuppressed === true,
+    inventoryRuleNoHits: (r.poolLength || 0) > 0 && (ctx.itemsOutLen || 0) === 0,
+    mallPerKw: (r.perKw || []).map((x) => ({
+      kw: x.kw,
+      items: x.items,
+      error: x.error || null,
+    })),
+    pdpResults: (r.pdpShoeLog || []).map((l) => ({
+      sourceId: l.sourceId,
+      itemId: l.itemId,
+      ok: l.ok,
+      reason: l.reason,
+    })),
+    gateSummary: {
+      audited: rows.length,
+      passed: audit.passed ?? rows.filter((x) => x.gatePass).length,
+      failed: audit.failed ?? rows.filter((x) => !x.gatePass).length,
+    },
+    topExclusions: rows
+      .filter((row) => row.excludeReason)
+      .slice(0, 8)
+      .map((row) => ({
+        title: row.title,
+        url: row.url,
+        excludeReason: row.excludeReason,
+        sizeMatchExact: row.sizeMatchExact,
+        extractedSizesApproved: row.extractedSizesApproved,
+        bareNumericInHay: row.bareNumericInHay,
+        jpUsTokens: row.jpUsTokens,
+        userTargets: row.userTargets,
+        mallAvailable: row.mallAvailable,
+        pdpOk: row.pdpOk,
+        pdpReason: row.pdpReason,
+      })),
+    displayedItems: (ctx.itemsFinal || []).map((it) => ({
+      title: String(it.title || '').slice(0, 100),
+      url: String(it.url || '').slice(0, 90),
+      available: it.available === true,
+      pdpSizeVerified: it.pdpSizeVerified === true,
+      pdpSizeCheck: it.pdpSizeCheck || null,
+    })),
   };
 }
 
@@ -1184,6 +1281,13 @@ export default async function handler(req, res) {
     const sequentialPdp = !!body.sequentialPdp;
 
     if (pdpShoeMode) {
+      logStockAuditTargets({
+        shoeTargetNums,
+        shoeSizeRaw,
+        plan: effectivePlan,
+        keyword: baseKeyword,
+        forChild,
+      });
       const r = await runPdpShoeWithMallPaging({
         kwList,
         baseKeyword,
@@ -1212,6 +1316,13 @@ export default async function handler(req, res) {
       const itemsOut = (r.displayItems || []).map(mapItem);
       /* AND 規約: PDP 未取得は表示不可 → FREE は PDP を叩かず常にサイズ門前で不一致 */
       const itemsFinal = effectivePlan === 'FREE' ? [] : itemsOut;
+      if (effectivePlan === 'FREE' && itemsOut.length > 0) {
+        logStockAudit('plan-free-suppress', {
+          itemsOutLen: itemsOut.length,
+          excludeReason: 'FREE_plan_forces_empty_items_array',
+          note: 'PDPは実行されずゲート後の候補もクライアントへ送らない',
+        });
+      }
       const nextStartingItem =
         effectivePlan === 'FREE' ? null : r.nextStartingItem ? mapItem(r.nextStartingItem) : null;
       const inventorySizeVerifyAtPdp =
@@ -1242,6 +1353,18 @@ export default async function handler(req, res) {
 
       setNoStore(res);
       const us = userSettingsForResponse(settings);
+      const searchTrace = buildClientSearchTrace({
+        r,
+        baseKeyword,
+        displayTrim,
+        shoeTargetNums,
+        effectivePlan,
+        itemsOutLen: itemsOut.length,
+        itemsFinalLen: itemsFinal.length,
+        freePlanSuppressed: effectivePlan === 'FREE' && itemsOut.length > 0,
+        itemsFinal,
+      });
+      logStockAudit('search-trace', searchTrace);
       return res.status(200).json({
         found: itemsFinal.length > 0,
         items: itemsFinal,
@@ -1249,6 +1372,7 @@ export default async function handler(req, res) {
         userSettings: us,
         marketNewFound: marketNewCount > 0,
         marketNewCount,
+        searchTrace,
         rejectReasonSummary: r.rejectReasonSummary || null,
         /** 運び屋メタ: debug 以外でも都道府県等を追える（将来送料 API 用に prefecture 同梱） */
         searchMeta: {
@@ -1309,8 +1433,10 @@ export default async function handler(req, res) {
             shoeSizeRaw,
             pdpShoe: { mode: true, prePdpScan: r.prePdpScanIndex, stopReason: r.stopReason, sequentialPdp: !!sequentialPdp },
             marketNewCount,
+            stockSizeAudit: r.stockSizeAudit || null,
           },
         },
+        stockSizeAudit: r.stockSizeAudit || null,
       });
     }
 
