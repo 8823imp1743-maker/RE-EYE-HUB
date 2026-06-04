@@ -1453,78 +1453,25 @@
                 </div>
             </div>
 
-            <!-- マイサイズ編集：ボトムシート（id=home-setting-form は保存ロック・成否で参照） -->
-            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet" style="display:none" aria-hidden="true" onclick="onSettingsSheetBackdropClick(event)">
-                <div class="user-settings-bs-backdrop" aria-hidden="true"></div>
+            <!-- ユーザー設定ボトムシート：完全固定版 -->
+            <div id="user-settings-bottom-sheet" class="user-settings-bottom-sheet" style="display:none" aria-hidden="true">
+                <div class="user-settings-bs-backdrop" onclick="closeUserSettingsBottomSheet()"></div>
                 <div class="user-settings-bs-panel" role="dialog" aria-label="マイサイズ" onclick="event.stopPropagation()">
                     <div class="user-settings-bs-header">
-                        <span class="gold-label" style="margin:0;">ユーザーサイズ設定（家族分含む）</span>
+                        <span class="gold-label">ユーザーサイズ設定</span>
                         <button type="button" class="user-settings-bs-close" onclick="closeUserSettingsBottomSheet()">閉じる</button>
                     </div>
                     <div class="user-settings-bs-body" id="home-setting-form">
                         <div class="settings-section">
-                            <div class="section-title"><i data-lucide="map-pin" aria-hidden="true"></i> お届け先（都道府県）</div>
-                            <label class="chip-label-row" for="dial-prefecture">価格・送料の目安に使用します</label>
-                            <select id="dial-prefecture" class="dial-pref-select" onchange="onPrefectureDialChange();">
-                            <option value="">（未設定）</option>
-                            <option value="北海道">北海道</option>
-                            <option value="青森県">青森</option>
-                            <option value="岩手県">岩手</option>
-                            <option value="宮城県">宮城</option>
-                            <option value="秋田県">秋田</option>
-                            <option value="山形県">山形</option>
-                            <option value="福島県">福島</option>
-                            <option value="茨城県">茨城</option>
-                            <option value="栃木県">栃木</option>
-                            <option value="群馬県">群馬</option>
-                            <option value="埼玉県">埼玉</option>
-                            <option value="千葉県">千葉</option>
-                            <option value="東京都">東京</option>
-                            <option value="神奈川県">神奈川</option>
-                            <option value="新潟県">新潟</option>
-                            <option value="富山県">富山</option>
-                            <option value="石川県">石川</option>
-                            <option value="福井県">福井</option>
-                            <option value="山梨県">山梨</option>
-                            <option value="長野県">長野</option>
-                            <option value="岐阜県">岐阜</option>
-                            <option value="静岡県">静岡</option>
-                            <option value="愛知県">愛知</option>
-                            <option value="三重県">三重</option>
-                            <option value="滋賀県">滋賀</option>
-                            <option value="京都府">京都</option>
-                            <option value="大阪府">大阪</option>
-                            <option value="兵庫県">兵庫</option>
-                            <option value="奈良県">奈良</option>
-                            <option value="和歌山県">和歌山</option>
-                            <option value="鳥取県">鳥取</option>
-                            <option value="島根県">島根</option>
-                            <option value="岡山県">岡山</option>
-                            <option value="広島県">広島</option>
-                            <option value="山口県">山口</option>
-                            <option value="徳島県">徳島</option>
-                            <option value="香川県">香川</option>
-                            <option value="愛媛県">愛媛</option>
-                            <option value="高知県">高知</option>
-                            <option value="福岡県">福岡</option>
-                            <option value="佐賀県">佐賀</option>
-                            <option value="長崎県">長崎</option>
-                            <option value="熊本県">熊本</option>
-                            <option value="大分県">大分</option>
-                            <option value="宮崎県">宮崎</option>
-                            <option value="鹿児島県">鹿児島</option>
-                            <option value="沖縄県">沖縄</option>
-                        </select>
-                        </div>
-                        <div class="settings-section">
-                            <div class="section-title"><i data-lucide="user" aria-hidden="true"></i> 自分のサイズ</div>
-                            <label class="chip-label-row">性別</label>
+                            <div class="section-title"><i data-lucide="user"></i> 性別</div>
                             <div id="dial-adult-gender" class="chip-row">
                                 <div class="size-chip" data-val="male" onclick="staticChipSelect('dial-adult-gender',this)">男性</div>
                                 <div class="size-chip" data-val="female" onclick="staticChipSelect('dial-adult-gender',this)">女性</div>
                             </div>
-                            <label class="chip-label-row">靴 (cm)</label>
-                            <div id="dial-adult-shoe" class="chip-row">
+                        </div>
+                        <div class="settings-section">
+                            <div class="section-title"><i data-lucide="ruler"></i> 靴のサイズ (cm)</div>
+                            <div id="dial-adult-shoe" class="chip-row" style="flex-wrap: wrap;">
                                 <div class="size-chip" data-val="23.0" onclick="staticChipSelect('dial-adult-shoe',this)">23.0</div>
                                 <div class="size-chip" data-val="23.5" onclick="staticChipSelect('dial-adult-shoe',this)">23.5</div>
                                 <div class="size-chip" data-val="24.0" onclick="staticChipSelect('dial-adult-shoe',this)">24.0</div>
@@ -1540,7 +1487,9 @@
                                 <div class="size-chip" data-val="29.0" onclick="staticChipSelect('dial-adult-shoe',this)">29.0</div>
                                 <div class="size-chip" data-val="30.0" onclick="staticChipSelect('dial-adult-shoe',this)">30.0</div>
                             </div>
-                            <label class="chip-label-row">服</label>
+                        </div>
+                        <div class="settings-section">
+                            <div class="section-title"><i data-lucide="shirt"></i> 服のサイズ</div>
                             <div id="dial-adult-cloth" class="chip-row">
                                 <div class="size-chip" data-val="S" onclick="staticChipSelect('dial-adult-cloth',this)">S</div>
                                 <div class="size-chip" data-val="M" onclick="staticChipSelect('dial-adult-cloth',this)">M</div>
@@ -1548,53 +1497,7 @@
                                 <div class="size-chip" data-val="XL" onclick="staticChipSelect('dial-adult-cloth',this)">XL</div>
                             </div>
                         </div>
-                        <div id="add-child-btn" class="optional-add-btn" onclick="handleExpandChildSettings();" role="button" tabindex="0" aria-expanded="false" aria-controls="user-settings-child-cockpit" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleExpandChildSettings();}">
-                            <i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>お子様のサイズを登録する（任意）</span>
-                        </div>
-                        <div id="user-settings-child-cockpit" class="settings-section hidden" style="display:none" role="region" aria-label="お子様のサイズ（任意）">
-                            <div class="section-title"><i data-lucide="baby" aria-hidden="true"></i> お子様のサイズ設定（任意）</div>
-                            <label class="chip-label-row">お子様の性別</label>
-                            <div id="dial-child-gender" class="chip-row">
-                                <div class="size-chip" data-val="boy" onclick="staticChipSelect('dial-child-gender',this)">男の子</div>
-                                <div class="size-chip" data-val="girl" onclick="staticChipSelect('dial-child-gender',this)">女の子</div>
-                            </div>
-                            <label class="chip-label-row">靴 (cm)</label>
-                            <div id="dial-child-shoe" class="chip-row">
-                                <div class="size-chip" data-val="13.0" onclick="staticChipSelect('dial-child-shoe',this)">13.0</div>
-                                <div class="size-chip" data-val="13.5" onclick="staticChipSelect('dial-child-shoe',this)">13.5</div>
-                                <div class="size-chip" data-val="14.0" onclick="staticChipSelect('dial-child-shoe',this)">14.0</div>
-                                <div class="size-chip" data-val="14.5" onclick="staticChipSelect('dial-child-shoe',this)">14.5</div>
-                                <div class="size-chip" data-val="15.0" onclick="staticChipSelect('dial-child-shoe',this)">15.0</div>
-                                <div class="size-chip" data-val="15.5" onclick="staticChipSelect('dial-child-shoe',this)">15.5</div>
-                                <div class="size-chip" data-val="16.0" onclick="staticChipSelect('dial-child-shoe',this)">16.0</div>
-                                <div class="size-chip" data-val="16.5" onclick="staticChipSelect('dial-child-shoe',this)">16.5</div>
-                                <div class="size-chip" data-val="17.0" onclick="staticChipSelect('dial-child-shoe',this)">17.0</div>
-                                <div class="size-chip" data-val="17.5" onclick="staticChipSelect('dial-child-shoe',this)">17.5</div>
-                                <div class="size-chip" data-val="18.0" onclick="staticChipSelect('dial-child-shoe',this)">18.0</div>
-                                <div class="size-chip" data-val="18.5" onclick="staticChipSelect('dial-child-shoe',this)">18.5</div>
-                                <div class="size-chip" data-val="19.0" onclick="staticChipSelect('dial-child-shoe',this)">19.0</div>
-                                <div class="size-chip" data-val="19.5" onclick="staticChipSelect('dial-child-shoe',this)">19.5</div>
-                                <div class="size-chip" data-val="20.0" onclick="staticChipSelect('dial-child-shoe',this)">20.0</div>
-                                <div class="size-chip" data-val="21.0" onclick="staticChipSelect('dial-child-shoe',this)">21.0</div>
-                            </div>
-                            <label class="chip-label-row">服</label>
-                            <div id="dial-child-cloth" class="chip-row">
-                                <div class="size-chip" data-val="80" onclick="staticChipSelect('dial-child-cloth',this)">80</div>
-                                <div class="size-chip" data-val="90" onclick="staticChipSelect('dial-child-cloth',this)">90</div>
-                                <div class="size-chip" data-val="100" onclick="staticChipSelect('dial-child-cloth',this)">100</div>
-                                <div class="size-chip" data-val="110" onclick="staticChipSelect('dial-child-cloth',this)">110</div>
-                                <div class="size-chip" data-val="120" onclick="staticChipSelect('dial-child-cloth',this)">120</div>
-                                <div class="size-chip" data-val="130" onclick="staticChipSelect('dial-child-cloth',this)">130</div>
-                                <div class="size-chip" data-val="140" onclick="staticChipSelect('dial-child-cloth',this)">140</div>
-                                <div class="size-chip" data-val="150" onclick="staticChipSelect('dial-child-cloth',this)">150</div>
-                                <div class="size-chip" data-val="160" onclick="staticChipSelect('dial-child-cloth',this)">160</div>
-                            </div>
-                        </div>
-                        <button type="button" id="save-settings-btn" class="main-save-btn" onclick="saveUserSettings(true)">設定を保存する</button>
-                        <details id="settings-profile-audit-wrap" class="re-eye-audit-wrap" open>
-                            <summary class="meta-11px">設定同期診断（localStorage ⇔ userProfile ⇔ UI）</summary>
-                            <pre id="settings-profile-audit" class="re-eye-audit-pre" aria-live="polite">診断待機: チップ操作・保存・シート再表示で記録されます。</pre>
-                        </details>
+                        <button type="button" id="save-settings-btn" class="btn-purple" style="margin-top:20px;" onclick="saveUserSettings(true)">設定を保存して閉じる</button>
                     </div>
                 </div>
             </div>
@@ -2004,7 +1907,7 @@
 const TZ = 'Asia/Tokyo';
 // Vercel単一ホスティング構成（Frontend + API）
 // デプロイ: git push origin main → Vercel自動デプロイ
-const API_BASE = 'https://re-eye-hub.vercel.app';
+const API_BASE = ''; // 相対パス：今開いているオリジンの /api を叩く
 /** 304 防止: URL を毎回ユニークにし、fetch は no-store */
 function fetchApi(path, init) {
     const bust = (String(path).indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
