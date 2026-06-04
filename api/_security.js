@@ -60,6 +60,9 @@ function isAllowedClientOrigin(origin) {
   if (!origin) return false;
   const list = getAllowedOrigins();
   if (list.includes(origin)) return true;
+  // Vercel プレビュー（例: re-eye-xxx-imps-projects.vercel.app）— 旧正規表現は -imps-projects 付きに非対応だった
+  if (/^https:\/\/[a-z0-9][a-z0-9.-]*\.vercel\.app$/i.test(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
   if (process.env.RE_EYE_ALLOW_VERCEL_PREV === '1' && /https:\/\/re-eye-[a-z0-9-]+\.vercel\.app$/i.test(origin)) {
     return true;
   }
