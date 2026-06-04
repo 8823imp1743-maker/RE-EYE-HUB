@@ -1538,17 +1538,14 @@
                                 <div class="size-chip" data-val="28.0" onclick="staticChipSelect('dial-adult-shoe',this)">28.0</div>
                                 <div class="size-chip" data-val="28.5" onclick="staticChipSelect('dial-adult-shoe',this)">28.5</div>
                                 <div class="size-chip" data-val="29.0" onclick="staticChipSelect('dial-adult-shoe',this)">29.0</div>
-                                <div class="size-chip" data-val="29.5" onclick="staticChipSelect('dial-adult-shoe',this)">29.5</div>
                                 <div class="size-chip" data-val="30.0" onclick="staticChipSelect('dial-adult-shoe',this)">30.0</div>
                             </div>
                             <label class="chip-label-row">服</label>
                             <div id="dial-adult-cloth" class="chip-row">
-                                <div class="size-chip" data-val="XS" onclick="staticChipSelect('dial-adult-cloth',this)">XS</div>
                                 <div class="size-chip" data-val="S" onclick="staticChipSelect('dial-adult-cloth',this)">S</div>
                                 <div class="size-chip" data-val="M" onclick="staticChipSelect('dial-adult-cloth',this)">M</div>
                                 <div class="size-chip" data-val="L" onclick="staticChipSelect('dial-adult-cloth',this)">L</div>
                                 <div class="size-chip" data-val="XL" onclick="staticChipSelect('dial-adult-cloth',this)">XL</div>
-                                <div class="size-chip" data-val="XXL" onclick="staticChipSelect('dial-adult-cloth',this)">XXL</div>
                             </div>
                         </div>
                         <div id="add-child-btn" class="optional-add-btn" onclick="handleExpandChildSettings();" role="button" tabindex="0" aria-expanded="false" aria-controls="user-settings-child-cockpit" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleExpandChildSettings();}">
@@ -3732,7 +3729,6 @@ function openUserSettingsBottomSheet() {
     appendSettingsAudit('openUserSettingsBottomSheet:beforeRestore', {
         profileArg: _snapshotProfileFields(userProfile),
     });
-    try { ensureSizeChipsRendered(); } catch (e) { console.warn('[sheet] ensureSizeChipsRendered:', e); }
     try { restoreDialUI(userProfile); } catch (e) { console.error('[sheet] restoreDialUI:', e); }
     appendSettingsAudit('openUserSettingsBottomSheet:afterRestore', null);
 }
@@ -3755,13 +3751,14 @@ function selectChip(type,el){
     syncScoutTargetToggleUI();
     saveUserSettings();
 }
-/** 静的 HTML チップ用：完全独立クリックハンドラー（JS動的生成に依存しない） */
+/** 静的 HTML チップ用（動的生成に依存しない） */
 function staticChipSelect(rowId, el) {
     if (!el) return;
     const row = document.getElementById(rowId);
-    if (row) row.querySelectorAll('.size-chip,.setting-chip').forEach(c => c.classList.remove('active'));
+    if (row) {
+        row.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
+    }
     el.classList.add('active');
-    appendSettingsAudit('staticChipSelect', { rowId: rowId, val: el.dataset ? el.dataset.val : null });
     readProfileFromDials();
     syncScoutTargetToggleUI();
     saveUserSettings();
@@ -3808,73 +3805,16 @@ function initFormChipRowsOnly() {
  * localStorage の補助キーと既存 readProfileFromDials を同期。
  */
 function initIndependentChips() {
-    const fill = (id, values, key) => {
-        const container = document.getElementById(id);
-        if (!container) return;
-        container.innerHTML = '';
-        values.forEach((v) => {
-            const chip = document.createElement('div');
-            chip.className = 'size-chip';
-            const vs = String(v);
-            chip.innerText = vs;
-            chip.dataset.val = vs;
-            chip.onclick = () => {
-                if (typeof isSettingsSaveLocked === 'function' && isSettingsSaveLocked()) return;
-                container.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
-                chip.classList.add('active');
-                try { localStorage.setItem(key, vs); } catch (e) {}
-                readProfileFromDials();
-                syncScoutTargetToggleUI();
-                saveUserSettings();
-            };
-            container.appendChild(chip);
-        });
-    };
-    const fillLabeled = (id, pairs, key) => {
-        const container = document.getElementById(id);
-        if (!container) return;
-        container.innerHTML = '';
-        pairs.forEach(([label, val]) => {
-            const chip = document.createElement('div');
-            chip.className = 'size-chip';
-            chip.innerText = label;
-            chip.dataset.val = val;
-            chip.onclick = () => {
-                if (typeof isSettingsSaveLocked === 'function' && isSettingsSaveLocked()) return;
-                container.querySelectorAll('.size-chip, .setting-chip').forEach((c) => c.classList.remove('active'));
-                chip.classList.add('active');
-                try { localStorage.setItem(key, val); } catch (e) {}
-                readProfileFromDials();
-                syncScoutTargetToggleUI();
-                saveUserSettings();
-            };
-            container.appendChild(chip);
-        });
-    };
-    const adultShoes = [];
-    for (let s = 23.0; s <= 30.0; s += 0.5) adultShoes.push(s.toFixed(1));
-    fill('dial-adult-shoe', adultShoes, 're_eye_my_shoe');
-    fill('dial-adult-cloth', ['XS', 'S', 'M', 'L', 'XL', 'XXL'], 're_eye_my_cloth');
-    fillLabeled('dial-adult-gender', [['男性', 'male'], ['女性', 'female']], 're_eye_my_gender');
-    const childShoes = [];
-    for (let s = 13.0; s <= 21.0; s += 0.5) childShoes.push(s.toFixed(1));
-    fill('dial-child-shoe', childShoes, 're_eye_child_shoe');
-    fill('dial-child-cloth', ['80', '90', '100', '110', '120', '130', '140', '150', '160'], 're_eye_child_cloth');
-    fillLabeled('dial-child-gender', [['男の子', 'boy'], ['女の子', 'girl']], 're_eye_child_gender');
-    initFormChipRowsOnly();
+    // 動的生成を完全に廃止。HTML 側の静的 size-chip を優先する
+    console.log('[Setup] Using static HTML chips.');
 }
-/** 非表示タブ内の行が空のとき用：いずれかの行にチップが無ければ一括再生成 */
+/** 旧: 空行検知で initIndependentChips を呼び HTML を消していた。静的チップ運用では no-op */
 function ensureSizeChipsRendered() {
-    const ids = ['dial-adult-gender', 'dial-adult-shoe', 'dial-adult-cloth', 'dial-child-gender', 'dial-child-shoe', 'dial-child-cloth'];
-    const anyEmpty = ids.some((id) => {
-        const r = document.getElementById(id);
-        return r && !r.querySelector('.setting-chip, .size-chip');
-    });
-    if (anyEmpty) initIndependentChips();
+    /* static chips only */
 }
 function initDials() {
-    // 静的HTMLチップを消さない。空の行だけ動的生成（ensureSizeChipsRendered）
-    ensureSizeChipsRendered();
+    initIndependentChips();
+    initFormChipRowsOnly();
 }
 function act(rowId, val) {
     if (val == null || val === '') return;
