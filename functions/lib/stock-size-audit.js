@@ -73,6 +73,11 @@ function computeExactCmMatch(hay, targets) {
 
 function resolveExcludeReason({ invalidHay, exact, extractedApproved, targets, pdpScanned, pdpOk, pdpReason, pdpTentative }) {
   if (invalidHay) return 'invalid_size_expression_in_hay';
+  // PDP 確定なら SERP cm 字面不一致でも pass（ゲート bypass と整合）
+  if (pdpOk === true) {
+    if (pdpTentative) return 'pdp_tentative';
+    return null;
+  }
   if (!extractedApproved.length) return 'serp_no_approved_cm_token';
   if (!exact) return 'serp_cm_mismatch';
   if (!pdpScanned) return 'pdp_not_scanned';

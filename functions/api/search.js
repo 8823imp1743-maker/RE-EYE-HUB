@@ -57,7 +57,7 @@ const STOCK_DISPLAY = 7;
 const STOCK_SEEK_PEEK = 1;
 const STOCK_CHUNK_SEEK = STOCK_DISPLAY + STOCK_SEEK_PEEK; // 8
 /** 順次モード: 1リクエストあたりの上限（PDP 回数＝この値まで。Vercel 時間との折衷で最大5） */
-const STOCK_SEQUENTIAL_CAP_DEFAULT = 2;
+const STOCK_SEQUENTIAL_CAP_DEFAULT = 3;
 const STOCK_SEQUENTIAL_CAP_MAX = 3;
 /** 1リクエスト当たり PDP(実HTTP) 上限（= chunkSeek に同期） */
 const MAX_PDP_INSPECTIONS = STOCK_CHUNK_SEEK;
@@ -477,10 +477,10 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets) {
 
   if (isInvalidSizeExpression(hay)) return null;
 
-  const exact = computeExactCmMatch(hay, targets);
   const pdp = isPdpSizeConfirmed(mapped);
 
-  if (!(exact && pdp)) return null;
+  // PDP 確定なら SERP cm 字面チェックをスキップ（楽天等タイトルに cm が無いケース）
+  if (!pdp) return null;
 
   return {
     ...mapped,
@@ -941,7 +941,8 @@ async function runPdpShoeWithMallPaging({
   const batch = [];
   let idx = scan;
   if (shoePdpN > 0) {
-    while (idx < poolOrdered.length && batch.length < shoePdpN) {
+    const eligible = [];
+    while (idx < poolOrdered.length) {
       const item = poolOrdered[idx];
       const k0 = itemCanonicalKey(item);
       if (excludeKeys.has(k0)) {
@@ -953,9 +954,28 @@ async function runPdpShoeWithMallPaging({
         idx++;
         continue;
       }
-      smSeen.add(sm0);
-      batch.push({ item, poolIndex: idx });
+      const hay = buildFullHaystack(item);
+      eligible.push({
+        item,
+        poolIndex: idx,
+        serpCmPrior: computeExactCmMatch(hay, shoeTargetNums),
+        baseScore: item.baseScore || 0,
+      });
       idx++;
+    }
+    eligible.sort((a, b) => {
+      if (a.serpCmPrior !== b.serpCmPrior) return (b.serpCmPrior ? 1 : 0) - (a.serpCmPrior ? 1 : 0);
+      if (b.baseScore !== a.baseScore) return b.baseScore - a.baseScore;
+      return a.poolIndex - b.poolIndex;
+    });
+    const batchSm = new Set();
+    for (const e of eligible) {
+      if (batch.length >= shoePdpN) break;
+      const sm0 = sellerModelDedupeKey(e.item);
+      if (batchSm.has(sm0)) continue;
+      batchSm.add(sm0);
+      smSeen.add(sm0);
+      batch.push({ item: e.item, poolIndex: e.poolIndex });
     }
   }
   const nextPrePdpScanIndex = shoePdpN > 0 ? idx : Math.min(poolOrdered.length, scan + displayCap);

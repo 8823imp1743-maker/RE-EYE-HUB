@@ -563,7 +563,6 @@ export function analyzePdpHtmlForShoeCm(html, rawCm, pdpUrl = '') {
   }
 
   const bodyText = getBodyTextFlat(doc);
-  const commerceText = getBodyTextMinusGlobalChrome(doc);
 
   if (!bodyText || bodyText.length < 20) {
     logPdpStrictReject('body_too_small', { pdpUrl });
@@ -574,18 +573,7 @@ export function analyzePdpHtmlForShoeCm(html, rawCm, pdpUrl = '') {
     return { ok: false, reason: 'pdp_page_error', method: 'none' };
   }
 
-  const commerceStripped = stripBannedSizeRanges(commerceText);
-
-  if (pdpSignalsHardOutOfStock(commerceStripped)) {
-    logPdpStrictReject('hard_out_of_stock_commerce', { pdpUrl });
-    return {
-      ok: false,
-      reason: 'pdp_explicit_out_of_stock',
-      method: 'none',
-      pdpTentative: false,
-      targetCms: targets,
-    };
-  }
+  // 品切れ判定は全文ではなくサイズノード＋親コンテナ内（hasShoeSizeUiWithBuyInSameContainer）に限定
 
   const structuralCmHit = targets.find((cm) => hasShoeSizeUiWithBuyInSameContainer(doc, cm));
   if (!structuralCmHit) {
@@ -667,7 +655,7 @@ export async function verifyShoeSizeOnPdp(item, rawCm) {
 
   const promise = (async () => {
     const t0 = Date.now();
-    const html = await fetchPdpHtml(url, 3000);
+    const html = await fetchPdpHtml(url, 5000);
 
     let result;
     if (!html) {
