@@ -105,6 +105,65 @@ function buildFullHaystack(raw) {
   );
 }
 
+/** 性別クロスチェック（靴 SERP / 表示ゲート） */
+const WOMENS_PRODUCT_TITLE_RE =
+  /ウィメンズ|レディース|women'?s|wmns|ladies|ガールズ|女の子用|キッズガール|for\s*women/i;
+const MENS_PRODUCT_TITLE_RE =
+  /メンズ|men'?s|mens|男性用|ボーイズ|男の子用|for\s*men/i;
+
+function normalizeProfileGender(raw) {
+  const g = String(raw || '')
+    .trim()
+    .toLowerCase();
+  if (g === 'male' || g === 'men' || g === 'mens' || g === 'boy') return 'male';
+  if (g === 'female' || g === 'women' || g === 'womens' || g === 'girl') return 'female';
+  return 'unknown';
+}
+
+function resolveSearchUserGender(settings, body, forChild) {
+  if (forChild) {
+    if (settings?.childGender === 'boy') return 'male';
+    if (settings?.childGender === 'girl') return 'female';
+  }
+  return normalizeProfileGender(
+    body?.gender ?? body?.profileGender ?? settings?.gender ?? settings?.profileGender
+  );
+}
+
+function itemHaystackSignalsWomen(hay) {
+  return WOMENS_PRODUCT_TITLE_RE.test(String(hay || ''));
+}
+
+function itemHaystackSignalsMen(hay) {
+  return MENS_PRODUCT_TITLE_RE.test(String(hay || ''));
+}
+
+/** PDP 確定済みかつメンズ成人域 cm（既定 25cm 以上） */
+function pdpItemConfirmsMensAdultShoe(item, minCm = 25) {
+  if (!item || item.ok !== true || item.pdpTentative) return false;
+  const raw = item.matchedCm != null ? item.matchedCm : item.pdpSizeCheck?.matchedCm;
+  const cm = parseFloat(String(raw ?? '').replace(/cm$/i, '').trim());
+  return Number.isFinite(cm) && cm >= minCm;
+}
+
+/**
+ * 男性設定時: ウィメンズ系タイトルは PDP でメンズ cm 確定が無い限り除外
+ * @param {object} item
+ * @param {string} userGender male|female|unknown
+ * @param {boolean} [forChild]
+ */
+function passesGenderShoeFilter(item, userGender, forChild = false) {
+  const u = normalizeProfileGender(userGender);
+  if (u === 'unknown') return true;
+  const hay = buildFullHaystack(item);
+  const women = itemHaystackSignalsWomen(hay);
+  const men = itemHaystackSignalsMen(hay);
+  if (u === 'male' && women && !men) {
+    return pdpItemConfirmsMensAdultShoe(item, 25);
+  }
+  return true;
+}
+
 /** ③ 不正サイズ遮断（入口）— `!hay` は不正 */
 function isInvalidSizeExpression(hay) {
   if (!hay) return true;
@@ -470,7 +529,9 @@ function computeExactCmMatch(hay, targets) {
 }
 
 /** ⑧ 靴ゲート */
-function mapShoeSearchItemWithSizeGate(rawIt, targets) {
+function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', forChild = false) {
+  if (!passesGenderShoeFilter(rawIt, userGender, forChild)) return null;
+
   const mapped = mapShoeSearchItemForClient(rawIt);
 
   const hay = buildFullHaystack(rawIt);
@@ -489,21 +550,22 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets) {
 }
 
 /** ⑨ 靴: 最終フィルター — cm ターゲット空なら無理に出さず空配列（意図を明確化） */
-function buildGatedShoeSortedList(items, targets) {
+function buildGatedShoeSortedList(items, targets, userGender = 'unknown', forChild = false) {
   if (!Array.isArray(targets) || !targets.length) return [];
 
   return (items || [])
-    .map((it) => mapShoeSearchItemWithSizeGate(it, targets))
+    .map((it) => mapShoeSearchItemWithSizeGate(it, targets, userGender, forChild))
     .filter(Boolean);
 }
 
 /** ⑩ PDP 確定ゼロ時: モール候補を「サイズ要確認」で返す（偽0件防止） */
-function buildShoeMallFallbackList(finalOrdered, displayCap) {
+function buildShoeMallFallbackList(finalOrdered, displayCap, userGender = 'unknown', forChild = false) {
   const cap = Math.max(1, Math.floor(Number(displayCap) || STOCK_DISPLAY));
   return (finalOrdered || [])
     .filter((it) => {
       if (!it || typeof it.title !== 'string' || !it.url) return false;
       if (it.available === false) return false;
+      if (!passesGenderShoeFilter(it, userGender, forChild)) return false;
       return true;
     })
     .slice(0, cap)
@@ -730,7 +792,9 @@ function applyMallItemFilters(
   requiredModels,
   isCloth,
   settings,
-  forChild
+  forChild,
+  userGender = 'unknown',
+  shoeGenderFilter = false
 ) {
   let pool = cleanItems;
   const summary = {
@@ -740,6 +804,7 @@ function applyMallItemFilters(
     colorMismatch: 0,
     clothSizeMismatch: 0,
     keywordMismatch: 0,
+    genderMismatch: 0,
     pdpRejected: 0,
   };
   if (requiredModels.length > 0) {
@@ -772,6 +837,13 @@ function applyMallItemFilters(
     pool = pool.filter((item) => matchesProductKeyword(item, nameOnly, norm));
     summary.keywordMismatch += Math.max(0, before - pool.length);
   }
+
+  if (shoeGenderFilter && userGender && userGender !== 'unknown') {
+    const before = pool.length;
+    pool = pool.filter((item) => passesGenderShoeFilter(item, userGender, forChild));
+    summary.genderMismatch += Math.max(0, before - pool.length);
+  }
+
   return { pool, rejectReasonSummary: summary };
 }
 
@@ -796,6 +868,7 @@ async function runPdpShoeWithMallPaging({
   isCloth,
   settings,
   forChild,
+  userGender = 'unknown',
   shoeSizeRaw,
   shoeTargetNums = [],
   plan = 'STANDARD',
@@ -838,7 +911,9 @@ async function runPdpShoeWithMallPaging({
       requiredModels,
       isCloth,
       settings,
-      forChild
+      forChild,
+      userGender,
+      true
     );
     lastPool = pool;
     lastRejectSummary = rejectReasonSummary;
@@ -1025,10 +1100,10 @@ async function runPdpShoeWithMallPaging({
     mapShoeSearchItemForClient,
     12
   );
-  const gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums);
+  const gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums, userGender, forChild);
   let displayItems = gatedAll.slice(0, displayCap);
   if (displayItems.length === 0 && finalOrdered.length > 0) {
-    displayItems = buildShoeMallFallbackList(finalOrdered, displayCap);
+    displayItems = buildShoeMallFallbackList(finalOrdered, displayCap, userGender, forChild);
     logStockAudit('gate-fallback', {
       poolLen: finalOrdered.length,
       fallbackLen: displayItems.length,
@@ -1233,6 +1308,7 @@ export default async function handler(req, res) {
       childClothSize: null,
     };
     const effectivePlan = await resolveUserPlan(getRedis(), safeUserId, body.plan);
+    const userGender = resolveSearchUserGender(settings, body, forChild);
 
     const { isShoe, isCloth, isAccessoryGlove } = genresForKeyword(baseKeyword);
 
@@ -1335,6 +1411,7 @@ export default async function handler(req, res) {
         isCloth,
         settings,
         forChild,
+        userGender,
         shoeSizeRaw,
         shoeTargetNums,
         plan: effectivePlan,

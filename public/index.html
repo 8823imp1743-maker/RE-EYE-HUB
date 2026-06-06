@@ -4519,6 +4519,7 @@ async function runStockSearch(keyword, forChild, loadMore) {
     const baseBody = {
         keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 3, sequentialPdp: true,
         ...(Number.isFinite(_shoeCmNum) && { shoeCm: _shoeCmNum }),
+        ...(userProfile.gender === 'male' || userProfile.gender === 'female' ? { gender: userProfile.gender } : {}),
     };
     if (append) {
         baseBody.excludeKeys = Array.from(_stockPageState.seenKeys);

@@ -148,6 +148,24 @@ describe('analyzePdpHtmlForShoeCm fail-close', () => {
     assert.equal(r.reason, 'no_structural_size');
   });
 
+  it('レンジ最大 < 希望 cm → size_range_excludes_target（構造判定前）', () => {
+    const html = longHtml(
+      '<main>カートに入れる 対応サイズ 22.0〜25.0cm<select><option>24.0cm</option><option>25.0cm</option></select></main>',
+    );
+    const r = analyzePdpHtmlForShoeCm(html, '26.5', 'https://example.com/p');
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'size_range_excludes_target');
+  });
+
+  it('選択肢に希望 cm が無い → target_size_not_selectable', () => {
+    const html = longHtml(
+      '<main>カートに入れる<select><option>24.0cm</option><option>25.0cm</option><option>26.0cm</option></select></main>',
+    );
+    const r = analyzePdpHtmlForShoeCm(html, '26.5', 'https://example.com/p');
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'target_size_not_selectable');
+  });
+
   it('フラットに cm 無し・data-size に 26.5cm → サイズUI経路で dom_structural', () => {
     const html = longHtml(`<main>カートに入れる
 <button type="button" data-size="26.5cm">選択</button>

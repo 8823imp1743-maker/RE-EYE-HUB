@@ -159,6 +159,96 @@ function nodeBlobMatchesShoeCmStrict(blob, rawCm) {
   return new RegExp(`(?<![0-9.])${esc}(cm|㎝)`, 'iu').test(t);
 }
 
+/** 商品説明等の cm レンジ（22cm-25cm / 22.0〜25.0cm） */
+const RE_SHOE_CM_RANGE_DECLARED =
+  /(\d{1,2}(?:\.\d)?)\s*(?:cm|㎝)?\s*[-〜~∼–—]\s*(\d{1,2}(?:\.\d)?)\s*(?:cm|㎝)/giu;
+
+/**
+ * @param {string} text
+ * @returns {Array<{ min: number, max: number }>}
+ */
+function parseDeclaredShoeCmRangesFromText(text) {
+  const ranges = [];
+  const s = String(text || '');
+  if (!s) return ranges;
+  const re = new RegExp(RE_SHOE_CM_RANGE_DECLARED.source, RE_SHOE_CM_RANGE_DECLARED.flags);
+  let m;
+  while ((m = re.exec(s))) {
+    const a = parseFloat(m[1]);
+    const b = parseFloat(m[2]);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      ranges.push({ min: Math.min(a, b), max: Math.max(a, b) });
+    }
+  }
+  return ranges;
+}
+
+/**
+ * レンジ最大値が希望 cm 未満なら即除外（構造判定前）
+ * @param {string} text
+ * @param {string} rawCm
+ */
+function targetExcludedByDeclaredSizeRange(text, rawCm) {
+  const target = parseFloat(String(rawCm).replace(/cm$/i, '').trim());
+  if (!Number.isFinite(target)) return false;
+  const ranges = parseDeclaredShoeCmRangesFromText(text);
+  if (!ranges.length) return false;
+  return ranges.some((r) => target > r.max + 1e-6);
+}
+
+/**
+ * @param {string} blob
+ * @returns {number|null}
+ */
+function extractShoeCmFromNodeBlob(blob) {
+  if (!blob || nodeBlobForbiddenForSizeUi(blob)) return null;
+  const t = stripBannedSizeRanges(String(blob)).replace(/\s+/g, ' ');
+  if (!t) return null;
+  const m = t.match(/(?<!\d)(\d{1,2}(?:\.\d)?)(?!\d)\s*(?:cm|㎝)/iu);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  return Number.isFinite(n) && n >= 10 && n <= 35 ? n : null;
+}
+
+/**
+ * select / button / li / role=option から選択可能 cm 一覧
+ * @param {import('jsdom').Document} doc
+ * @returns {number[]}
+ */
+function collectSelectableShoeCmOptions(doc) {
+  const commerceRoot = getCommerceSubtreeClone(doc);
+  if (!commerceRoot) return [];
+  const out = new Set();
+  try {
+    for (const el of commerceRoot.querySelectorAll(PDP_SIZE_NODE_QUERY)) {
+      if (!isEligibleSelectableSizeNode(el)) continue;
+      const blob = [
+        el.textContent,
+        el.getAttribute?.('data-size'),
+        el.getAttribute?.('value'),
+        el.getAttribute?.('title'),
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const cm = extractShoeCmFromNodeBlob(blob);
+      if (cm != null) out.add(cm);
+    }
+  } catch {
+    return [];
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/**
+ * @param {number[]} options
+ * @param {string} rawCm
+ */
+function targetCmInSelectableOptions(options, rawCm) {
+  const target = parseFloat(String(rawCm).replace(/cm$/i, '').trim());
+  if (!Number.isFinite(target) || !Array.isArray(options) || !options.length) return false;
+  return options.some((o) => Math.abs(o - target) < 0.05);
+}
+
 /**
  * 選択可能UIノードに cm があり、同一コンテナ内に購入ホワイトリストがあり、在庫否定なし
  * @param {import('jsdom').Document} doc
@@ -573,7 +663,53 @@ export function analyzePdpHtmlForShoeCm(html, rawCm, pdpUrl = '') {
     return { ok: false, reason: 'pdp_page_error', method: 'none' };
   }
 
-  // 品切れ判定は全文ではなくサイズノード＋親コンテナ内（hasShoeSizeUiWithBuyInSameContainer）に限定
+  const commerceText = getBodyTextMinusGlobalChrome(doc);
+  const commerceStripped = stripBannedSizeRanges(commerceText);
+
+  if (pdpSignalsHardOutOfStock(commerceStripped)) {
+    logPdpStrictReject('hard_out_of_stock_commerce', { pdpUrl, targets });
+    return {
+      ok: false,
+      reason: 'pdp_explicit_out_of_stock',
+      method: 'none',
+      pdpTentative: false,
+      targetCms: targets,
+    };
+  }
+
+  for (const cm of targets) {
+    if (targetExcludedByDeclaredSizeRange(commerceStripped, cm)) {
+      logPdpStrictReject('size_range_excludes_target', { pdpUrl, targetCm: cm, targets });
+      return {
+        ok: false,
+        reason: 'size_range_excludes_target',
+        method: 'dom',
+        pdpTentative: false,
+        targetCms: targets,
+        rejectedCm: cm,
+      };
+    }
+  }
+
+  const selectableOptions = collectSelectableShoeCmOptions(doc);
+  if (selectableOptions.length > 0) {
+    const missing = targets.filter((cm) => !targetCmInSelectableOptions(selectableOptions, cm));
+    if (missing.length === targets.length) {
+      logPdpStrictReject('target_size_not_selectable', {
+        pdpUrl,
+        targets,
+        selectableOptions,
+      });
+      return {
+        ok: false,
+        reason: 'target_size_not_selectable',
+        method: 'dom',
+        pdpTentative: false,
+        targetCms: targets,
+        selectableOptions,
+      };
+    }
+  }
 
   const structuralCmHit = targets.find((cm) => hasShoeSizeUiWithBuyInSameContainer(doc, cm));
   if (!structuralCmHit) {
