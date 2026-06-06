@@ -18,8 +18,8 @@ self.addEventListener('push', function (event) {
 
     const options = {
         body,
-        icon: '/icon.png',
-        badge: '/icon.png',
+        icon: '/logo.png',
+        badge: '/logo.png',
         tag: 're-eye-hub-notification',
         data: { url: openUrl },
     };

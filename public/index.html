@@ -8,14 +8,20 @@
     <title>RE-EYE-HUB</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&display=swap" rel="stylesheet">
-    <!-- Sentry フロントエンド監視（SENTRY_DSN 未設定時は init しない） -->
-    <script src="https://browser.sentry-cdn.com/8.x.x/bundle.min.js" crossorigin="anonymous"></script>
+    <!-- Sentry: DSN 未設定時は CDN を読み込まない（8.x.x 403 防止） -->
     <script>
       (function() {
         var dsn = '__SENTRY_DSN__';
-        if (typeof Sentry !== 'undefined' && dsn && dsn !== '__SENTRY_DSN__') {
-          Sentry.init({ dsn: dsn, environment: 'production', tracesSampleRate: 0 });
-        }
+        if (!dsn || dsn === '__SENTRY_DSN__' || dsn.indexOf('http') !== 0) return;
+        var s = document.createElement('script');
+        s.src = 'https://browser.sentry-cdn.com/8.40.0/bundle.min.js';
+        s.crossOrigin = 'anonymous';
+        s.onload = function() {
+          if (typeof Sentry !== 'undefined') {
+            Sentry.init({ dsn: dsn, environment: 'production', tracesSampleRate: 0 });
+          }
+        };
+        document.head.appendChild(s);
       })();
     </script>
 
@@ -27,26 +33,25 @@
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
-          appId: "9fb344ba-8b77-4508-a7c5-0009959c3561",
-          // OneSignalSDKWorker.js を /（ルート）に配置済み
-          serviceWorkerParam: { scope: "/" },
-          notifyButton: { enable: false },
-          allowLocalhostAsSecureOrigin: true,
-        });
-        // 購読済みなら userId タグを即付与
-        const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
-        if (isSubscribed) {
-          const uid = localStorage.getItem('re_eye_uid') || '';
-          if (uid) {
-            OneSignal.User.addTag("userId", uid);
-            console.log("[OneSignal] userId タグ付与:", uid);
+        try {
+          await OneSignal.init({
+            appId: "9fb344ba-8b77-4508-a7c5-0009959c3561",
+            serviceWorkerParam: { scope: "/" },
+            notifyButton: { enable: false },
+            allowLocalhostAsSecureOrigin: true,
+          });
+          const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+          if (isSubscribed) {
+            const uid = localStorage.getItem('re_eye_uid') || '';
+            if (uid) OneSignal.User.addTag("userId", uid);
           }
-        }
+        } catch (e) { /* App not configured 等 — サイレント継続 */ }
       });
     </script>
 
     <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/logo.png" type="image/png">
+    <link rel="apple-touch-icon" href="/logo.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
@@ -1449,7 +1454,7 @@
                 <div id="home-setting-unconfigured-cta">
                     <span class="gold-label">ユーザーサイズ（家族分含む）</span>
                     <span class="meta-11px" style="display:block;margin-top:8px;margin-bottom:10px;line-height:1.7;">在庫・再販チェックのサイズ合わせ用。靴と服のサイズを自分／お子様に分けて登録します（お子様は任意）。</span>
-                    <button type="button" class="sync-hub-btn" onclick="openUserSettingsBottomSheet()">設定を開く</button>
+                    <button type="button" class="sync-hub-btn" onclick="openUserSettingsModal()">設定を開く</button>
                 </div>
             </div>
 
@@ -1759,11 +1764,14 @@
         </div>
     </div>
 
-    <!-- ── 初回起動：ユーザー設定モーダル（必須） ── -->
+    <!-- ── メイン設定モーダル（初回起動・変更ボタン共通・子ども設定含む） ── -->
     <div id="first-run-modal" style="display:none;">
         <div class="frm-inner">
-            <span class="frm-title">RE-EYE-HUB</span>
-            <span class="frm-sub">はじめに、あなたの情報を教えてください。<br>入荷を追う際にサイズを考慮した検索に使用します。<br>（後から「ホーム」→「ユーザー設定」で変更できます）</span>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;">
+                <span class="frm-title" style="margin-bottom:0;">RE-EYE-HUB</span>
+                <button type="button" id="frm-edit-close-btn" class="home-setting-change-btn" style="display:none;" onclick="closeUserSettingsModal()">閉じる</button>
+            </div>
+            <span class="frm-sub">はじめに、あなたの情報を教えてください。<br>入荷を追う際にサイズを考慮した検索に使用します。<br>（後から「変更する」でいつでも編集できます）</span>
             <div class="transparent-box">
                 <span class="gold-label">ユーザー設定</span>
                 <span class="meta-11px" style="display:block;margin-top:6px;margin-bottom:6px;">性別 <span style="color:var(--amethyst);">＊必須</span></span>
@@ -1779,7 +1787,23 @@
                     <div class="setting-chip" data-val="XL" onclick="selectFrmChip('cloth',this)">XL</div>
                 </div>
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm) <span style="color:var(--amethyst);">＊必須</span></span>
-                <div class="chip-row" id="frm-dial-shoe" style="flex-wrap:wrap;"></div>
+                <div class="chip-row" id="frm-dial-shoe" style="flex-wrap:wrap;">
+                    <div class="setting-chip" data-val="23.0" onclick="selectFrmChip('shoe',this)">23.0</div>
+                    <div class="setting-chip" data-val="23.5" onclick="selectFrmChip('shoe',this)">23.5</div>
+                    <div class="setting-chip" data-val="24.0" onclick="selectFrmChip('shoe',this)">24.0</div>
+                    <div class="setting-chip" data-val="24.5" onclick="selectFrmChip('shoe',this)">24.5</div>
+                    <div class="setting-chip" data-val="25.0" onclick="selectFrmChip('shoe',this)">25.0</div>
+                    <div class="setting-chip" data-val="25.5" onclick="selectFrmChip('shoe',this)">25.5</div>
+                    <div class="setting-chip" data-val="26.0" onclick="selectFrmChip('shoe',this)">26.0</div>
+                    <div class="setting-chip" data-val="26.5" onclick="selectFrmChip('shoe',this)">26.5</div>
+                    <div class="setting-chip" data-val="27.0" onclick="selectFrmChip('shoe',this)">27.0</div>
+                    <div class="setting-chip" data-val="27.5" onclick="selectFrmChip('shoe',this)">27.5</div>
+                    <div class="setting-chip" data-val="28.0" onclick="selectFrmChip('shoe',this)">28.0</div>
+                    <div class="setting-chip" data-val="28.5" onclick="selectFrmChip('shoe',this)">28.5</div>
+                    <div class="setting-chip" data-val="29.0" onclick="selectFrmChip('shoe',this)">29.0</div>
+                    <div class="setting-chip" data-val="29.5" onclick="selectFrmChip('shoe',this)">29.5</div>
+                    <div class="setting-chip" data-val="30.0" onclick="selectFrmChip('shoe',this)">30.0</div>
+                </div>
                 <div id="first-run-child-wrap">
                 <button type="button" id="add-child-btn-first-run" class="btn-reveal-child add-btn" onclick="handleExpandChildSettings();" aria-expanded="false" aria-controls="user-settings-child-cockpit-first-run"><i data-lucide="baby" class="lucide-inline" aria-hidden="true"></i><span>子ども用サイズを登録する（任意）</span></button>
                 <div id="user-settings-child-cockpit-first-run" class="user-settings-child-cockpit child-settings-block hidden" style="display:none" role="region" aria-label="お子様のサイズ（初回）">
@@ -1793,14 +1817,42 @@
                     <div class="setting-chip" data-val="boy" onclick="selectFrmChip('childGender',this)">男の子</div>
                 </div>
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">服のサイズ</span>
-                <div class="chip-row" id="frm-dial-child-cloth" style="flex-wrap:wrap;"></div>
+                <div class="chip-row" id="frm-dial-child-cloth" style="flex-wrap:wrap;">
+                    <div class="setting-chip" data-val="80" onclick="selectFrmChip('childCloth',this)">80</div>
+                    <div class="setting-chip" data-val="90" onclick="selectFrmChip('childCloth',this)">90</div>
+                    <div class="setting-chip" data-val="100" onclick="selectFrmChip('childCloth',this)">100</div>
+                    <div class="setting-chip" data-val="110" onclick="selectFrmChip('childCloth',this)">110</div>
+                    <div class="setting-chip" data-val="120" onclick="selectFrmChip('childCloth',this)">120</div>
+                    <div class="setting-chip" data-val="130" onclick="selectFrmChip('childCloth',this)">130</div>
+                    <div class="setting-chip" data-val="140" onclick="selectFrmChip('childCloth',this)">140</div>
+                    <div class="setting-chip" data-val="150" onclick="selectFrmChip('childCloth',this)">150</div>
+                    <div class="setting-chip" data-val="160" onclick="selectFrmChip('childCloth',this)">160</div>
+                </div>
                 <span class="meta-11px" style="display:block;margin-top:var(--gap-11);margin-bottom:6px;">靴のサイズ (cm)</span>
-                <div class="chip-row" id="frm-dial-child-shoe" style="flex-wrap:wrap;"></div>
+                <div class="chip-row" id="frm-dial-child-shoe" style="flex-wrap:wrap;">
+                    <div class="setting-chip" data-val="13.0" onclick="selectFrmChip('childShoe',this)">13.0</div>
+                    <div class="setting-chip" data-val="13.5" onclick="selectFrmChip('childShoe',this)">13.5</div>
+                    <div class="setting-chip" data-val="14.0" onclick="selectFrmChip('childShoe',this)">14.0</div>
+                    <div class="setting-chip" data-val="14.5" onclick="selectFrmChip('childShoe',this)">14.5</div>
+                    <div class="setting-chip" data-val="15.0" onclick="selectFrmChip('childShoe',this)">15.0</div>
+                    <div class="setting-chip" data-val="15.5" onclick="selectFrmChip('childShoe',this)">15.5</div>
+                    <div class="setting-chip" data-val="16.0" onclick="selectFrmChip('childShoe',this)">16.0</div>
+                    <div class="setting-chip" data-val="16.5" onclick="selectFrmChip('childShoe',this)">16.5</div>
+                    <div class="setting-chip" data-val="17.0" onclick="selectFrmChip('childShoe',this)">17.0</div>
+                    <div class="setting-chip" data-val="17.5" onclick="selectFrmChip('childShoe',this)">17.5</div>
+                    <div class="setting-chip" data-val="18.0" onclick="selectFrmChip('childShoe',this)">18.0</div>
+                    <div class="setting-chip" data-val="18.5" onclick="selectFrmChip('childShoe',this)">18.5</div>
+                    <div class="setting-chip" data-val="19.0" onclick="selectFrmChip('childShoe',this)">19.0</div>
+                    <div class="setting-chip" data-val="19.5" onclick="selectFrmChip('childShoe',this)">19.5</div>
+                    <div class="setting-chip" data-val="20.0" onclick="selectFrmChip('childShoe',this)">20.0</div>
+                    <div class="setting-chip" data-val="20.5" onclick="selectFrmChip('childShoe',this)">20.5</div>
+                    <div class="setting-chip" data-val="21.0" onclick="selectFrmChip('childShoe',this)">21.0</div>
+                </div>
                 </div>
                 </div>
             </div>
             <div id="frm-error" class="error-text-11px" style="text-align:center;display:none;">性別・服サイズ・靴サイズを選択してください</div>
-            <button class="btn-purple" style="margin-top:16px;" onclick="completeFirstRun()">設定を完了して始める</button>
+            <button type="button" id="frm-complete-btn" class="btn-purple" style="margin-top:16px;" onclick="completeFirstRun()">設定を完了して始める</button>
         </div>
     </div>
 
@@ -1993,7 +2045,7 @@ const PushHybrid = (() => {
         if (_pushActive && Notification.permission === 'granted') {
             navigator.serviceWorker.ready.then(reg => {
                 reg.showNotification(title, {
-                    body, icon: '/icon-192.png', tag: title, renotify: false
+                    body, icon: '/logo.png', tag: title, renotify: false
                 });
             }).catch(() => {
                 if (document.visibilityState === 'visible') alert(`[通知] ${title}\n${body}`);
@@ -3572,7 +3624,7 @@ function isUserConfigured() {
     return !!(userProfile.gender);
 }
 function goToUserSettings(){
-    openUserSettingsBottomSheet();
+    openUserSettingsModal();
     document.getElementById('home-user-settings-box')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function formatPrefLabel(formal) {
@@ -3660,33 +3712,99 @@ function onSettingsSheetBackdropClick(ev) {
     if (!isSettingsSaveLocked()) closeUserSettingsBottomSheet();
 }
 
-function openUserSettingsBottomSheet() {
-    setSettingsSaveLock(false);
-    const nav = document.querySelector('.nav-bar');
-    if (nav) nav.classList.add('settings-open');
-    const s = document.getElementById('user-settings-bottom-sheet');
-    if (s) {
-        s.style.display = 'flex';
-        s.setAttribute('aria-hidden', 'false');
-        s.classList.remove('settings-ui-locked');
+/** メイン設定モーダル：localStorage / userProfile からチップ .active を復元 */
+function restoreModalUI() {
+    let p = { ...(userProfile || {}) };
+    try {
+        const raw = localStorage.getItem('re_eye_profile');
+        if (raw) p = { ...p, ...JSON.parse(raw) };
+    } catch (e) {}
+    userProfile = Object.assign(userProfile || {}, p);
+    _frmProfile = {
+        gender: p.gender || '',
+        cloth: p.clothSize || '',
+        shoe: p.shoeSize || '',
+        glovesSml: '',
+        childGender: p.childGender || '',
+        childCloth: p.childClothSize || '',
+        childShoe: p.childShoeSize || '',
+        childGlovesSml: '',
+    };
+    ['frm-dial-gender', 'frm-dial-cloth', 'frm-dial-shoe', 'frm-dial-child-gender', 'frm-dial-child-cloth', 'frm-dial-child-shoe'].forEach((id) => {
+        const row = document.getElementById(id);
+        if (row) row.querySelectorAll('.setting-chip').forEach((c) => c.classList.remove('active'));
+    });
+    const setFrm = (rowId, val) => {
+        if (val == null || val === '') return;
+        act(rowId, val);
+    };
+    setFrm('frm-dial-gender', _frmProfile.gender);
+    setFrm('frm-dial-cloth', _frmProfile.cloth);
+    setFrm('frm-dial-shoe', _frmProfile.shoe);
+    if (_frmProfile.childGender === 'boy' || _frmProfile.childGender === 'girl') {
+        try { localStorage.setItem(RE_EYE_CHILD_SETTINGS_EXPANDED, '1'); } catch (e) {}
+        syncChildSettingsVisibility();
+        setFrm('frm-dial-child-gender', _frmProfile.childGender);
+        setFrm('frm-dial-child-cloth', _frmProfile.childCloth);
+        setFrm('frm-dial-child-shoe', _frmProfile.childShoe);
+    } else {
+        try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
+        syncChildSettingsVisibility();
+    }
+}
+function readFrmProfileFromModal() {
+    const pick = (rowId) => {
+        const el = document.querySelector('#' + rowId + ' .setting-chip.active');
+        return el && el.dataset.val != null ? String(el.dataset.val) : '';
+    };
+    _frmProfile.gender = pick('frm-dial-gender');
+    _frmProfile.cloth = pick('frm-dial-cloth');
+    _frmProfile.shoe = pick('frm-dial-shoe');
+    _frmProfile.childGender = pick('frm-dial-child-gender');
+    _frmProfile.childCloth = pick('frm-dial-child-cloth');
+    _frmProfile.childShoe = pick('frm-dial-child-shoe');
+}
+/** ユーザー設定の唯一の編集 UI（初回＝変更ボタン共通・子ども設定含む） */
+function openUserSettingsModal() {
+    const isEdit = !!localStorage.getItem('re_eye_setup_v1');
+    restoreModalUI();
+    const modal = document.getElementById('first-run-modal');
+    const closeBtn = document.getElementById('frm-edit-close-btn');
+    const sub = modal ? modal.querySelector('.frm-sub') : null;
+    const completeBtn = document.getElementById('frm-complete-btn');
+    if (closeBtn) closeBtn.style.display = isEdit ? 'inline-block' : 'none';
+    if (sub) {
+        sub.innerHTML = isEdit
+            ? '性別・服・靴のサイズを変更できます。<br>お子様分もここで編集できます。'
+            : 'はじめに、あなたの情報を教えてください。<br>入荷を追う際にサイズを考慮した検索に使用します。<br>（後から「変更する」でいつでも編集できます）';
+    }
+    if (completeBtn) {
+        completeBtn.textContent = isEdit ? '設定を保存して閉じる' : '設定を完了して始める';
+    }
+    const err = document.getElementById('frm-error');
+    if (err) err.style.display = 'none';
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.style.zIndex = '10100';
     }
     try { document.body.style.overflow = 'hidden'; } catch (e) {}
-    appendSettingsAudit('openUserSettingsBottomSheet:beforeRestore', {
-        profileArg: _snapshotProfileFields(userProfile),
-    });
-    try { restoreDialUI(userProfile); } catch (e) { console.error('[sheet] restoreDialUI:', e); }
-    appendSettingsAudit('openUserSettingsBottomSheet:afterRestore', null);
+    try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+    appendSettingsAudit('openUserSettingsModal', { isEdit, profile: _snapshotProfileFields(userProfile) });
 }
-function closeUserSettingsBottomSheet() {
-    if (isSettingsSaveLocked()) return;
-    const nav = document.querySelector('.nav-bar');
-    if (nav) nav.classList.remove('settings-open');
-    const s = document.getElementById('user-settings-bottom-sheet');
-    if (s) { s.style.display = 'none'; s.setAttribute('aria-hidden', 'true'); }
+function closeUserSettingsModal() {
+    if (!localStorage.getItem('re_eye_setup_v1')) return;
+    const modal = document.getElementById('first-run-modal');
+    if (modal) { modal.style.display = 'none'; modal.style.zIndex = ''; }
     try { document.body.style.overflow = ''; } catch (e) {}
 }
-function toggleHomeSettings(){
-    openUserSettingsBottomSheet();
+function openUserSettingsBottomSheet() {
+    openUserSettingsModal();
+}
+function closeUserSettingsBottomSheet() {
+    closeUserSettingsModal();
+}
+function toggleHomeSettings() {
+    openUserSettingsModal();
 }
 function selectChip(type,el){
     if (isSettingsSaveLocked()) return;
@@ -3735,23 +3853,14 @@ function fillChipRowFromValues(rowId, values, onChipClick) {
     });
     row.appendChild(frag);
 }
-/** 初回モーダル用：setting-chip のまま（frm 専用） */
-function initFormChipRowsOnly() {
-    const adultShoe = _reEyeHalfStepRange(23.0, 28.0);
-    const childShoe = _reEyeHalfStepRange(13.0, 21.0);
-    const childCloth = [];
-    for (let n = 80; n <= 160; n += 10) childCloth.push(String(n));
-    fillChipRowFromValues('frm-dial-shoe', adultShoe, (el) => { selectFrmChip('shoe', el); });
-    fillChipRowFromValues('frm-dial-child-shoe', childShoe, (el) => { selectFrmChip('childShoe', el); });
-    fillChipRowFromValues('frm-dial-child-cloth', childCloth, (el) => { selectFrmChip('childCloth', el); });
-}
+/** 初回モーダル用チップは HTML 静的記述 — JS 動的生成は廃止 */
+function initFormChipRowsOnly() { /* static chips in #first-run-modal */ }
 /**
  * ボトムシート：size-chip 生成（ID なしは無視）。表示と userProfile 用 data-val（性別）を分離し、
  * localStorage の補助キーと既存 readProfileFromDials を同期。
  */
 function initIndependentChips() {
-    // 動的生成を完全に廃止。HTML 側の静的 size-chip を優先する
-    console.log('[Setup] Using static HTML chips.');
+    /* 静的 size-chip / setting-chip を優先 — 動的生成なし */
 }
 /** 旧: 空行検知で initIndependentChips を呼び HTML を消していた。静的チップ運用では no-op */
 function ensureSizeChipsRendered() {
@@ -3759,7 +3868,6 @@ function ensureSizeChipsRendered() {
 }
 function initDials() {
     initIndependentChips();
-    initFormChipRowsOnly();
 }
 function act(rowId, val) {
     if (val == null || val === '') return;
@@ -4154,8 +4262,7 @@ function triggerInsightScout(){
 // ── 初回起動 ─────────────────────────────────────────────────
 let _frmProfile={gender:'',cloth:'',shoe:'',glovesSml:'',childGender:'',childCloth:'',childShoe:'',childGlovesSml:''};
 function checkFirstRun(){
-    if(!localStorage.getItem('re_eye_setup_v1'))
-        document.getElementById('first-run-modal').style.display='flex';
+    if (!localStorage.getItem('re_eye_setup_v1')) openUserSettingsModal();
 }
 function selectFrmChip(field,el){
     const map={gender:'frm-dial-gender',cloth:'frm-dial-cloth',shoe:'frm-dial-shoe',
@@ -4164,6 +4271,7 @@ function selectFrmChip(field,el){
     el.classList.add('active'); _frmProfile[field]=el.dataset.val;
 }
 function completeFirstRun(){
+    readFrmProfileFromModal();
     const err=document.getElementById('frm-error');
     if(!_frmProfile.gender||!_frmProfile.cloth||!_frmProfile.shoe){
         if(err){err.style.display='block';err.textContent='性別・服サイズ・靴サイズを選択してください';}return;
@@ -4177,10 +4285,21 @@ function completeFirstRun(){
     if (userProfile.childGender !== 'boy' && userProfile.childGender !== 'girl') {
         try { localStorage.removeItem(RE_EYE_CHILD_SETTINGS_EXPANDED); } catch (e) {}
     }
-    try{localStorage.setItem('re_eye_profile',JSON.stringify(userProfile));}catch(e){}
-    try{localStorage.setItem('re_eye_setup_v1','1');}catch(e){}
-    restoreDialUI(); saveUserSettings();
-    document.getElementById('first-run-modal').style.display='none';
+    try { localStorage.setItem('re_eye_profile', JSON.stringify(userProfile)); } catch (e) {}
+    try { localStorage.setItem('re_eye_setup_v1', '1'); } catch (e) {}
+    restoreDialUI();
+    const se = document.getElementById('home-setting-summary-text');
+    const sw = document.getElementById('home-setting-summary-wrap');
+    const cta = document.getElementById('home-setting-unconfigured-cta');
+    if (se) se.textContent = buildHomeSettingSummary();
+    if (sw) sw.style.display = 'block';
+    if (cta) cta.style.display = 'none';
+    checkUserSetup();
+    syncScoutTargetToggleUI();
+    void postUserSettingsToRedis({ applyServerResponse: false });
+    const modal = document.getElementById('first-run-modal');
+    if (modal) { modal.style.display = 'none'; modal.style.zIndex = ''; }
+    try { document.body.style.overflow = ''; } catch (e) {}
 }
 
 // ── 誰のために？ ──────────────────────────────────────────────
@@ -5422,8 +5541,7 @@ window.onload=()=>{
           await OneSignal.Notifications.requestPermission();
           const uid = getUserId();
           OneSignal.User.addTag("userId", uid);
-          console.log("[OneSignal] userId タグ付与（onload）:", uid);
-        } catch(e) { /* サイレント — 通知拒否時はスキップ */ }
+        } catch(e) { /* サイレント — 通知拒否・未設定時はスキップ */ }
       });
     }
 
