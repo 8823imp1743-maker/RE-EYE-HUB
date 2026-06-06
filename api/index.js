@@ -33,6 +33,7 @@ import notifyHealthHandler from '../functions/api/notify-health.js';
 import ctrClickHandler     from '../functions/api/ctr-click.js';
 import usageStatusHandler  from '../functions/api/usage-status.js';
 import { discoverUrlsForKeyword, buildMonitorEntries } from '../functions/lib/scout-to-monitor-bridge.js';
+import ingestHandler from '../functions/api/webhook/ingest.js';
 
 // ── ルート設定テーブル ────────────────────────────────
 // rateTier: 'default' | 'heavy' | 'search' | null（スキップ）
@@ -52,6 +53,7 @@ const ROUTES = {
   'ctr-click':     { fn: ctrClickHandler,      rateTier: 'default' },
   'usage-status':  { fn: usageStatusHandler,   rateTier: null      },
   'discover':      { fn: discoverHandler,       rateTier: 'heavy'  },
+  'ingest':        { fn: ingestHandler,         rateTier: 'default' },
 };
 
 // ── discover ハンドラ（キーワード → URL発見 → 自動登録） ──────────
