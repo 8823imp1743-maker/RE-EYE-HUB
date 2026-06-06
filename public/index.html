@@ -4398,7 +4398,7 @@ async function runStockSearch(keyword, forChild, loadMore) {
         ? parseFloat(String(userProfile.childShoeSize || '').replace(/cm$/i,'').trim())
         : parseFloat(String(userProfile.shoeSize || '').replace(/cm$/i,'').trim());
     const baseBody = {
-        keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 1, sequentialPdp: true,
+        keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 3, sequentialPdp: true,
         ...(Number.isFinite(_shoeCmNum) && { shoeCm: _shoeCmNum }),
     };
     if (append) {
@@ -4668,6 +4668,13 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
         m.className = 'stock-shop-meta';
         m.textContent = `${item.shopName || ''}${item.price ? '  ¥' + Number(item.price).toLocaleString() : ''}`;
         card.appendChild(m);
+        if (item.sizeMatchPending || (item.pdpSizeCheck && item.pdpSizeCheck.scanned === false)) {
+            const pending = document.createElement('div');
+            pending.className = 'meta-11px';
+            pending.style.cssText = 'color:rgba(247,231,206,0.65);margin-top:6px;line-height:1.45;';
+            pending.textContent = 'サイズ未確認 — リンク先でご自身のサイズをご確認ください';
+            card.appendChild(pending);
+        }
         const colorBits = [item.colorLabel, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean);
         if (colorBits.length) {
             const col = document.createElement('div');

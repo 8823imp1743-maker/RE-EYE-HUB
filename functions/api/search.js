@@ -51,7 +51,7 @@ const MAX_MALL_PAGE_PER_STAGED_REQUEST = 2;
 /**
  * 順次 PDP: 1 回の serverless 内のモールめくり（1 にすると初回 TTFB を短くしやすい）
  */
-const MAX_MALL_PAGE_SEQUENTIAL = 1;
+const MAX_MALL_PAGE_SEQUENTIAL = 2;
 /** 1リクエストで在庫確定を狙う件数: 7 表示 + 1 次バトン（PDP 回数抑制） */
 const STOCK_DISPLAY = 7;
 const STOCK_SEEK_PEEK = 1;
@@ -67,7 +67,7 @@ const SHOE_PDP_CONCURRENCY = 3;
 /** STANDARD: 上位3 PDP / PRO・VIP: 上位6 PDP */
 function getShoePdpBudgetForPlan(plan) {
   const p = String(plan || 'FREE').toUpperCase();
-  if (p === 'FREE') return 0;
+  if (p === 'FREE') return 1;
   if (p === 'STANDARD') return 3;
   if (p === 'PRO' || p === 'VIP') return 6;
   return 3;
@@ -495,6 +495,27 @@ function buildGatedShoeSortedList(items, targets) {
   return (items || [])
     .map((it) => mapShoeSearchItemWithSizeGate(it, targets))
     .filter(Boolean);
+}
+
+/** ⑩ PDP 確定ゼロ時: モール候補を「サイズ要確認」で返す（偽0件防止） */
+function buildShoeMallFallbackList(finalOrdered, displayCap) {
+  const cap = Math.max(1, Math.floor(Number(displayCap) || STOCK_DISPLAY));
+  return (finalOrdered || [])
+    .filter((it) => {
+      if (!it || typeof it.title !== 'string' || !it.url) return false;
+      if (it.available === false) return false;
+      return true;
+    })
+    .slice(0, cap)
+    .map((it) => {
+      const mapped = mapShoeSearchItemForClient(it);
+      return {
+        ...mapped,
+        sizeMatchPending: true,
+        pdpSizeTentative: true,
+        pdpSizeVerified: false,
+      };
+    });
 }
 
 function setNoStore(res) {
@@ -932,7 +953,7 @@ async function runPdpShoeWithMallPaging({
   }
 
   const poolOrdered = enrichAndSortShoePool(pool);
-  const canPdp = plan !== 'FREE';
+  const canPdp = true;
   const pdpBudget = getShoePdpBudgetForPlan(plan);
   const shoePdpN = canPdp
     ? Math.min(sequentialPdp ? Math.max(1, seqCap) : pdpBudget, maxPdp)
@@ -1005,15 +1026,24 @@ async function runPdpShoeWithMallPaging({
     12
   );
   const gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums);
+  let displayItems = gatedAll.slice(0, displayCap);
+  if (displayItems.length === 0 && finalOrdered.length > 0) {
+    displayItems = buildShoeMallFallbackList(finalOrdered, displayCap);
+    logStockAudit('gate-fallback', {
+      poolLen: finalOrdered.length,
+      fallbackLen: displayItems.length,
+      reason: 'pdp_gate_zero_use_mall_pool',
+    });
+  }
   logStockAudit('gate-summary', {
     poolLen: finalOrdered.length,
     gatedPass: gatedAll.length,
+    fallbackUsed: gatedAll.length === 0 && displayItems.length > 0,
     displayCap,
     plan,
     pdpCalls: pdpOut.length,
     shoeTargets: shoeTargetNums,
   });
-  const displayItems = gatedAll.slice(0, displayCap);
   const nextStartingItem = sequentialPdp ? null : gatedAll[displayCap] ?? null;
 
   const pdpShoeLog = pdpOut.map((p) => ({
@@ -1236,23 +1266,13 @@ export default async function handler(req, res) {
 
     if (isShoe && shoeTargetNums.length === 0) {
       try {
-        console.log('[RE_EYE_TRACE][search:resp]', JSON.stringify({ exit: 'shoe_size_required', itemsLen: 0 }));
+        console.log(
+          '[RE_EYE_TRACE][search:shoe_no_size]',
+          JSON.stringify({ keyword: jtrunc(baseKeyword), note: 'mall_only_no_pdp_gate' })
+        );
       } catch (_) {
         /* */
       }
-      setNoStore(res);
-      return res.status(200).json({
-        found: false,
-        items: [],
-        msg: '靴のサイズを設定すると在庫が確認できます',
-        userSettings: userSettingsForResponse(settings),
-        normalizedKeyword: normalizeBrand(stripSizeCmFromDisplayKeyword(baseKeyword)),
-        inventoryRuleNoHits: true,
-        inventorySizeVerifyAtPdp: true,
-        searchMeta: { circuitState },
-        searchCursor: { prePdpScanIndex: 0, hasMore: false, listOffset: 0, limit },
-        debug: { note: 'shoe_size_required', baseKeyword: stripSizeCmFromDisplayKeyword(baseKeyword) },
-      });
     }
 
     const { kwList, strategy, modelNumbers: modelsFromMallBuilder } = buildMallSearchKeywordList(baseKeyword);
@@ -1334,17 +1354,8 @@ export default async function handler(req, res) {
         dedupeSellerModel: it.dedupeSellerModel || sellerModelDedupeKey(it),
       });
       const itemsOut = (r.displayItems || []).map(mapItem);
-      /* AND 規約: PDP 未取得は表示不可 → FREE は PDP を叩かず常にサイズ門前で不一致 */
-      const itemsFinal = effectivePlan === 'FREE' ? [] : itemsOut;
-      if (effectivePlan === 'FREE' && itemsOut.length > 0) {
-        logStockAudit('plan-free-suppress', {
-          itemsOutLen: itemsOut.length,
-          excludeReason: 'FREE_plan_forces_empty_items_array',
-          note: 'PDPは実行されずゲート後の候補もクライアントへ送らない',
-        });
-      }
-      const nextStartingItem =
-        effectivePlan === 'FREE' ? null : r.nextStartingItem ? mapItem(r.nextStartingItem) : null;
+      const itemsFinal = itemsOut;
+      const nextStartingItem = r.nextStartingItem ? mapItem(r.nextStartingItem) : null;
       const inventorySizeVerifyAtPdp =
         itemsFinal.length === 0 ||
         !itemsFinal.some(
@@ -1381,7 +1392,7 @@ export default async function handler(req, res) {
         effectivePlan,
         itemsOutLen: itemsOut.length,
         itemsFinalLen: itemsFinal.length,
-        freePlanSuppressed: effectivePlan === 'FREE' && itemsOut.length > 0,
+        freePlanSuppressed: false,
         itemsFinal,
       });
       logStockAudit('search-trace', searchTrace);
