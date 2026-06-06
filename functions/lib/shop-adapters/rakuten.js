@@ -9,10 +9,49 @@ import { extractModelNumbers } from '../cross-validator.js';
 
 const API_BASE   = 'https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601';
 const APP_ORIGIN = 'https://re-eye-hub.web.app';
+const MALL_UA    = 'Mozilla/5.0 (compatible; RE-EYE-HUB/1.0; +https://re-eye-hub.web.app)';
 
 /** 楽天 App ID（Vercel 環境変数 RAKUTEN_APP_ID のみ） */
 function resolveRakutenAppId() {
   return (process.env.RAKUTEN_APP_ID || '').trim();
+}
+
+function resolveRakutenAccessKey() {
+  return (process.env.RAKUTEN_ACCESS_KEY || process.env.RAKUTEN_API_KEY || '').trim();
+}
+
+/** 新API(UUID)はハイフン保持・旧数値IDのみハイフン除去 */
+function normalizeRakutenApplicationId(raw) {
+  const id = String(raw || '').trim();
+  if (!id) return '';
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return id;
+  return id.replace(/-/g, '');
+}
+
+function maskMallRequestUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    ['applicationId', 'accessKey', 'affiliateId', 'appid'].forEach((k) => {
+      if (u.searchParams.has(k)) u.searchParams.set(k, '***');
+    });
+    return u.toString();
+  } catch (_) {
+    return String(urlStr).replace(
+      /(applicationId|accessKey|affiliateId|appid)=([^&]+)/gi,
+      '$1=***'
+    );
+  }
+}
+
+function logMallEmptyResponse(adapterId, keyword, json) {
+  try {
+    console.warn(
+      `[mall-debug][${adapterId}] 0件 keyword=${JSON.stringify(String(keyword).slice(0, 120))} raw=`,
+      JSON.stringify(json).slice(0, 1200)
+    );
+  } catch (_) {
+    console.warn(`[mall-debug][${adapterId}] 0件 — レスポンスの stringify に失敗`);
+  }
 }
 
 export class RakutenAdapter extends ShopAdapter {
@@ -20,11 +59,8 @@ export class RakutenAdapter extends ShopAdapter {
   get name() { return '楽天市場'; }
 
   isConfigured() {
-    const appId = resolveRakutenAppId();
-    const accessKey =
-      (process.env.RAKUTEN_ACCESS_KEY || process.env.RAKUTEN_API_KEY || '').trim();
-    // 楽天開発者ポータル発行の App ID + Access Key（2026 年以降の API は両方必須）
-    return !!(appId && accessKey);
+    // affiliateId は不要。商品検索に必要なのは applicationId + accessKey のみ
+    return !!(resolveRakutenAppId() && resolveRakutenAccessKey());
   }
 
   async search(keyword, options = {}) {
@@ -55,18 +91,27 @@ export class RakutenAdapter extends ShopAdapter {
     const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（クエリそのまま）';
     console.log(`[Reporting Officer] 楽天・改善ワード: "${refinedKeyword}" ${preserveNote}`);
 
-    // applicationId: 上記3ソースのいずれか + ハイフン除去
-    const applicationId = String(appId || '').trim().replace(/-/g, '');
-    const accessKey =
-      (process.env.RAKUTEN_ACCESS_KEY || process.env.RAKUTEN_API_KEY || '').trim();
+    const applicationId = normalizeRakutenApplicationId(appId);
+    const accessKey = resolveRakutenAccessKey();
     const affiliateId = (process.env.RAKUTEN_AFFILIATE_ID || '').trim();
 
-    console.log('RAKUTEN_KEY_CHECK:', envAppIdPresent, 'resolved=', appIdPresent, 'accessKey=', !!accessKey);
+    console.log(
+      '[mall-debug][rakuten] KEY_CHECK envAppId=',
+      envAppIdPresent,
+      'resolvedAppId=',
+      appIdPresent,
+      'accessKey=',
+      !!accessKey,
+      'affiliateId=',
+      !!affiliateId
+    );
 
-    if (!applicationId || !accessKey) {
-      // アダプターは「並列で必ず呼ぶ」方針。未設定でも例外で全体を止めず、空配列として扱う。
-      const miss = !applicationId ? 'applicationId' : 'accessKey';
-      console.warn('[rakuten] API key missing (' + miss + ') → skip calling Rakuten API');
+    if (!applicationId) {
+      console.warn('[rakuten] applicationId missing → skip calling Rakuten API');
+      return [];
+    }
+    if (!accessKey) {
+      console.warn('[rakuten] accessKey missing → skip calling Rakuten API (affiliateId の有無は無関係)');
       return [];
     }
 
@@ -75,12 +120,13 @@ export class RakutenAdapter extends ShopAdapter {
       applicationId,
       accessKey,
       keyword: refinedKeyword,
-      NGKeyword: RAKUTEN_NG_KEYWORD,
       hits: String(Math.min(maxResults, 30)),
       page: String(pageNum),
       sort: '-updateTimestamp',
+      format: 'json',
       ...(affiliateId ? { affiliateId } : {}),
     });
+    if (RAKUTEN_NG_KEYWORD) params.set('NGKeyword', RAKUTEN_NG_KEYWORD);
 
     const cli = process.env.RE_EYE_CLI === '1' || process.env.RE_EYE_CLI === 'true';
     if (cli) {
@@ -90,6 +136,7 @@ export class RakutenAdapter extends ShopAdapter {
 
     const requestUrl = `${API_BASE}?${params.toString()}`;
     const kwForLog = String(params.get('keyword') || '').slice(0, 220);
+    console.log('[mall-debug][rakuten] OUTBOUND GET', maskMallRequestUrl(requestUrl));
     console.log(
       '[AUDIT][rakuten] OUTBOUND HTTPS GET host=openapi.rakuten.co.jp path=/ichibams/.../Search keywordQuery=' +
         JSON.stringify(kwForLog) +
@@ -103,8 +150,11 @@ export class RakutenAdapter extends ShopAdapter {
           requestUrl,
           {
             headers: {
+              Accept: 'application/json',
+              'User-Agent': MALL_UA,
               Referer: APP_ORIGIN + '/',
               Origin: APP_ORIGIN,
+              Authorization: `Bearer ${accessKey}`,
             },
           },
           14000
@@ -115,14 +165,15 @@ export class RakutenAdapter extends ShopAdapter {
     if (json && (json.error != null || json.Errors)) {
       console.error(
         '[AUDIT][rakuten] API 本文エラー（HTTP 200 でも要確認）',
-        JSON.stringify({ error: json.error, Errors: json.Errors, Message: json.Message }).slice(0, 500)
+        JSON.stringify({ error: json.error, Errors: json.Errors, Message: json.Message, error_description: json.error_description }).slice(0, 800)
       );
     }
     const items = (json.Items || []);
     console.log(
       `[Reporting Officer] 楽天で ${items.length} 件ヒット。`,
-      items.length === 0 ? '（0件: クエリ不調・在庫なし・上記errorのいずれか。keyword はログ参照）' : ''
+      items.length === 0 ? '（0件: クエリ不調・認証不足・上記errorのいずれか）' : ''
     );
+    if (items.length === 0) logMallEmptyResponse('rakuten', refinedKeyword, json);
 
     return items.map(({ Item }) => {
       const title = Item.itemName || '';

@@ -6,13 +6,44 @@ import { withRetry } from '../retry.js';
 import { fetchWithTimeout } from '../http-fetch.js';
 
 const API_BASE = 'https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch';
+const MALL_UA  = 'Mozilla/5.0 (compatible; RE-EYE-HUB/1.0; +https://re-eye-hub.web.app)';
+
+function resolveYahooAppId() {
+  return (process.env.YAHOO_APP_ID || '').trim();
+}
+
+function maskMallRequestUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    ['applicationId', 'accessKey', 'affiliateId', 'appid'].forEach((k) => {
+      if (u.searchParams.has(k)) u.searchParams.set(k, '***');
+    });
+    return u.toString();
+  } catch (_) {
+    return String(urlStr).replace(
+      /(applicationId|accessKey|affiliateId|appid)=([^&]+)/gi,
+      '$1=***'
+    );
+  }
+}
+
+function logMallEmptyResponse(adapterId, keyword, json) {
+  try {
+    console.warn(
+      `[mall-debug][${adapterId}] 0件 keyword=${JSON.stringify(String(keyword).slice(0, 120))} raw=`,
+      JSON.stringify(json).slice(0, 1200)
+    );
+  } catch (_) {
+    console.warn(`[mall-debug][${adapterId}] 0件 — レスポンスの stringify に失敗`);
+  }
+}
 
 export class YahooAdapter extends ShopAdapter {
   get id() { return 'yahoo'; }
   get name() { return 'Yahoo!ショッピング'; }
 
   isConfigured() {
-    return !!process.env.YAHOO_APP_ID;
+    return !!resolveYahooAppId();
   }
 
   async search(keyword, options = {}) {
@@ -38,9 +69,16 @@ export class YahooAdapter extends ShopAdapter {
     const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（クエリそのまま）';
     console.log(`[Reporting Officer] Yahoo・改善ワード: "${refinedKeyword}" ${preserveNote}`);
 
+    const appId = resolveYahooAppId();
+    console.log('[mall-debug][yahoo] KEY_CHECK appId=', !!appId);
+    if (!appId) {
+      console.warn('[yahoo] YAHOO_APP_ID missing → skip calling Yahoo API');
+      return [];
+    }
+
     const nRes = Math.min(maxResults, 50);
     const params = new URLSearchParams({
-      appid:     process.env.YAHOO_APP_ID,
+      appid:     appId,
       query:     refinedKeyword,
       results:   String(nRes),
       start:     String(yahooStart),
@@ -56,6 +94,7 @@ export class YahooAdapter extends ShopAdapter {
 
     const requestUrl = `${API_BASE}?${params.toString()}`;
     const qForLog = String(params.get('query') || '').slice(0, 220);
+    console.log('[mall-debug][yahoo] OUTBOUND GET', maskMallRequestUrl(requestUrl));
     console.log(
       '[AUDIT][yahoo] OUTBOUND HTTPS GET host=shopping.yahooapis.jp path=/V3/itemSearch query=' +
         JSON.stringify(qForLog) +
@@ -64,11 +103,33 @@ export class YahooAdapter extends ShopAdapter {
         ')'
     );
     const json = await withRetry(
-      () => fetchWithTimeout(requestUrl, {}, 14000),
+      () =>
+        fetchWithTimeout(
+          requestUrl,
+          {
+            headers: {
+              Accept: 'application/json',
+              'User-Agent': MALL_UA,
+            },
+          },
+          14000
+        ),
       { label: 'Yahoo!API', maxRetries: 2, baseDelayMs: 400 }
     );
+    if (json && (json.Error || json.error)) {
+      console.error(
+        '[AUDIT][yahoo] API 本文エラー',
+        JSON.stringify(json.Error || json.error).slice(0, 800)
+      );
+    }
     const hits = json.hits || [];
-    console.log(`[Reporting Officer] Yahooで ${hits.length} 件ヒット。`);
+    console.log(
+      `[Reporting Officer] Yahooで ${hits.length} 件ヒット。`,
+      hits.length === 0 && json.totalResultsAvailable != null
+        ? `(totalResultsAvailable=${json.totalResultsAvailable})`
+        : ''
+    );
+    if (hits.length === 0) logMallEmptyResponse('yahoo', refinedKeyword, json);
 
     return hits.map((item) => {
       const sellerName =
