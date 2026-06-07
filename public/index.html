@@ -1054,7 +1054,7 @@
 
         /* ── 初回起動：ユーザー設定モーダル ── */
         #first-run-modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9900;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10150;
             background: #000; display: flex; flex-direction: column; overflow-y: auto;
         }
         #first-run-modal .frm-inner {
@@ -2312,7 +2312,8 @@ function renderStockSearchAuditPanel(data, reqMeta) {
     if (!trace && !audit) return null;
     const det = document.createElement('details');
     det.className = 're-eye-audit-wrap';
-    det.open = true;
+    det.style.display = 'none';
+    det.open = false;
     const sum = document.createElement('summary');
     sum.className = 'meta-11px';
     sum.textContent = '在庫判定診断（検索→サイズ→PDP→表示）';
@@ -4334,7 +4335,9 @@ function stripCmSizeTokensFromKeyword(keyword) {
     let kw = String(keyword || '').trim();
     if (!kw) return '';
     kw = kw.replace(/(?<!\d)(\d{2,3}(?:\.\d)?)\s*(?:cm|㎝)\b/gi, ' ');
-    kw = kw.replace(/\b(\d{2}\.\d)\b/g, ' ');
+    kw = kw.replace(/\b(?:US|ＵＳ)\s*(\d{1,2}(?:\.\d)?)\b/gi, ' ');
+    kw = kw.replace(/\bUK\s*(\d{1,2}(?:\.\d)?)\b/gi, ' ');
+    kw = kw.replace(/\b(\d{2}\.\d)\s*(?:cm|㎝)?\b/gi, ' ');
     return kw.replace(/\s+/g, ' ').trim();
 }
 function buildSizeAwareKeyword(keyword,forChild){
@@ -4842,6 +4845,9 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
     }
 
     wrap.style.display = 'block';
+    wrap.style.order = '1';
+    if (list) list.style.display = 'flex';
+    if (list) list.style.flexDirection = 'column';
 }
 function watchKeyword(kw,btn){
     watchStockItem({itemId:'kw_'+Date.now(),sourceId:'keyword',title:kw,price:0,available:false,url:'',shopName:'監視キーワード'},kw,btn);

@@ -14,6 +14,7 @@
  */
 
 import { JSDOM } from 'jsdom';
+import { usToCm } from './size-engine/convert.js';
 import { itemCanonicalKey, sellerModelDedupeKey } from './stock-dedupe.js';
 import {
   redisGetPdpCache,
@@ -146,6 +147,7 @@ function isEligibleSelectableSizeNode(el) {
 }
 
 /**
+ * US / 括弧内 cm も含め blob が希望 cm と一致するか
  * @param {string} blob
  * @param {string} rawCm
  */
@@ -155,8 +157,53 @@ function nodeBlobMatchesShoeCmStrict(blob, rawCm) {
   if (!t) return false;
   if (/(約|およそ|前後|くらい|程度)\s*\d{2}(?:\.\d)?\s*(?:cm|㎝)/iu.test(t)) return false;
   if (/\d{2}(?:\.\d)?\s*(?:cm|㎝)\s*(?:前後|くらい|約)/iu.test(t)) return false;
+
+  const target = parseFloat(String(rawCm).replace(/cm$/i, '').trim());
+  if (!Number.isFinite(target)) return false;
+
   const esc = String(rawCm).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![0-9.])${esc}(cm|㎝)`, 'iu').test(t);
+  if (new RegExp(`(?<![0-9.])${esc}\\s*(?:cm|㎝)`, 'iu').test(t)) return true;
+  if (new RegExp(`\\(\\s*${esc}\\s*(?:cm|㎝)?\\s*\\)`, 'iu').test(t)) return true;
+
+  for (const m of t.matchAll(/\b(?:US|ＵＳ)\s*(\d{1,2}(?:\.\d)?)\b/giu)) {
+    const us = parseFloat(m[1]);
+    if (!Number.isFinite(us) || us < 4 || us > 15) continue;
+    for (const hint of ['men', 'women']) {
+      const cm = usToCm(us, hint);
+      if (cm != null && Math.abs(cm - target) < 0.06) return true;
+    }
+  }
+  for (const m of t.matchAll(/\b(\d{1,2}(?:\.\d)?)\s*[-–—]\s*(\d{1,2}(?:\.\d)?)\s*(?:cm|㎝)/giu)) {
+    const a = parseFloat(m[1]);
+    const b = parseFloat(m[2]);
+    if (Number.isFinite(a) && Math.abs(a - target) < 0.06) return true;
+    if (Number.isFinite(b) && Math.abs(b - target) < 0.06) return true;
+  }
+  return false;
+}
+
+/**
+ * サイズノード自身と直上1階層のみで在庫否定（ページ全文は見ない）
+ * @param {Element} el
+ */
+function sizeNodeSignalsOutOfStock(el) {
+  try {
+    if (el.hasAttribute?.('disabled')) return true;
+    if (el.getAttribute?.('aria-disabled') === 'true') return true;
+    if (/\bdisabled\b/i.test(String(el.getAttribute?.('class') || ''))) return true;
+    const near = [
+      el.textContent,
+      el.getAttribute?.('aria-label'),
+      el.getAttribute?.('title'),
+      el.parentElement?.textContent,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .slice(0, 280);
+    return pdpSignalsHardOutOfStock(near);
+  } catch {
+    return false;
+  }
 }
 
 /** 商品説明等の cm レンジ（22cm-25cm / 22.0〜25.0cm） */
@@ -205,9 +252,26 @@ function extractShoeCmFromNodeBlob(blob) {
   const t = stripBannedSizeRanges(String(blob)).replace(/\s+/g, ' ');
   if (!t) return null;
   const m = t.match(/(?<!\d)(\d{1,2}(?:\.\d)?)(?!\d)\s*(?:cm|㎝)/iu);
-  if (!m) return null;
-  const n = parseFloat(m[1]);
-  return Number.isFinite(n) && n >= 10 && n <= 35 ? n : null;
+  if (m) {
+    const n = parseFloat(m[1]);
+    if (Number.isFinite(n) && n >= 10 && n <= 35) return n;
+  }
+  const paren = t.match(/\(\s*(\d{1,2}(?:\.\d)?)\s*(?:cm|㎝)?\s*\)/iu);
+  if (paren) {
+    const n = parseFloat(paren[1]);
+    if (Number.isFinite(n) && n >= 10 && n <= 35) return n;
+  }
+  const usM = t.match(/\b(?:US|ＵＳ)\s*(\d{1,2}(?:\.\d)?)\b/iu);
+  if (usM) {
+    const us = parseFloat(usM[1]);
+    if (Number.isFinite(us)) {
+      for (const hint of ['men', 'women']) {
+        const cm = usToCm(us, hint);
+        if (cm != null && cm >= 10 && cm <= 35) return cm;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -269,12 +333,12 @@ function hasShoeSizeUiWithBuyInSameContainer(doc, rawCm) {
         .filter(Boolean)
         .join(' ');
       if (!nodeBlobMatchesShoeCmStrict(blob, rawCm)) continue;
+      if (sizeNodeSignalsOutOfStock(el)) continue;
 
       const container =
         el.closest('main, article, [role="main"], section, form') ?? commerceRoot;
       const cflat = stripBannedSizeRanges(String(container.textContent || '')).replace(/\s+/g, ' ');
       if (!cflat) continue;
-      if (pdpSignalsHardOutOfStock(cflat)) continue;
       if (!PDP_BUY_PHRASES_STRICT.test(cflat)) continue;
       return true;
     }
@@ -665,17 +729,6 @@ export function analyzePdpHtmlForShoeCm(html, rawCm, pdpUrl = '') {
 
   const commerceText = getBodyTextMinusGlobalChrome(doc);
   const commerceStripped = stripBannedSizeRanges(commerceText);
-
-  if (pdpSignalsHardOutOfStock(commerceStripped)) {
-    logPdpStrictReject('hard_out_of_stock_commerce', { pdpUrl, targets });
-    return {
-      ok: false,
-      reason: 'pdp_explicit_out_of_stock',
-      method: 'none',
-      pdpTentative: false,
-      targetCms: targets,
-    };
-  }
 
   for (const cm of targets) {
     if (targetExcludedByDeclaredSizeRange(commerceStripped, cm)) {

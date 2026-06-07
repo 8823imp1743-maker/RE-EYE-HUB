@@ -4,9 +4,14 @@
 import { ShopAdapter } from './base.js';
 import { withRetry } from '../retry.js';
 import { fetchWithTimeout } from '../http-fetch.js';
+import { genresForKeyword } from '../user-size.js';
 
 const API_BASE = 'https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch';
 const MALL_UA  = 'Mozilla/5.0 (compatible; RE-EYE-HUB/1.0; +https://re-eye-hub.web.app)';
+
+/** Yahoo ジャンル: メンズシューズ / レディースシューズ */
+const YAHOO_GENRE_MENS_SHOE = '2495';
+const YAHOO_GENRE_WOMENS_SHOE = '2496';
 
 function resolveYahooAppId() {
   return (process.env.YAHOO_APP_ID || '').trim();
@@ -27,15 +32,93 @@ function maskMallRequestUrl(urlStr) {
   }
 }
 
-function logMallEmptyResponse(adapterId, keyword, json) {
+function logMallEmptyResponse(adapterId, keyword, json, tag = '') {
   try {
     console.warn(
-      `[mall-debug][${adapterId}] 0件 keyword=${JSON.stringify(String(keyword).slice(0, 120))} raw=`,
+      `[mall-debug][${adapterId}] 0件${tag ? ` (${tag})` : ''} keyword=${JSON.stringify(String(keyword).slice(0, 120))} raw=`,
       JSON.stringify(json).slice(0, 1200)
     );
   } catch (_) {
     console.warn(`[mall-debug][${adapterId}] 0件 — レスポンスの stringify に失敗`);
   }
+}
+
+/**
+ * 靴キーワード時の genre_category_id（OR 絞り込み）
+ * @param {string} keyword
+ */
+function resolveYahooShoeGenreIds(keyword) {
+  const { isShoe } = genresForKeyword(String(keyword || ''));
+  if (!isShoe) return null;
+  const k = String(keyword).toLowerCase();
+  if (/レディース|ウィメンズ|women|wmns|女性|ガールズ|女の子/.test(k)) {
+    return YAHOO_GENRE_WOMENS_SHOE;
+  }
+  if (/メンズ|men|男性|ボーイズ|男の子/.test(k)) {
+    return YAHOO_GENRE_MENS_SHOE;
+  }
+  return `${YAHOO_GENRE_MENS_SHOE},${YAHOO_GENRE_WOMENS_SHOE}`;
+}
+
+function mapYahooHits(hits) {
+  return (hits || []).map((item) => {
+    const sellerName =
+      (item.seller && (item.seller.name || item.seller.sellerName)) != null
+        ? String(item.seller.name || item.seller.sellerName).trim()
+        : item.storeName
+          ? String(item.storeName).trim()
+          : item.store && item.store.name
+            ? String(item.store.name).trim()
+            : '';
+    const tags = [];
+    const brandName = typeof item.brand === 'string' ? item.brand : item.brand?.name;
+    if (brandName) tags.push(String(brandName));
+    if (item.genreCategory?.name) tags.push(String(item.genreCategory.name));
+    const colorLabel = item.colorName || item.color || '';
+    const description =
+      typeof item.description === 'string' ? item.description.slice(0, 4000) : '';
+    const headLine = typeof item.headLine === 'string' ? item.headLine : '';
+    const ins = item.inStock;
+    const inStock = ins === true || ins === 'true' || ins === 1 || ins === '1';
+
+    return {
+      sourceId:  'yahoo',
+      itemId:    String(item.code || item.url || item.name),
+      title:     item.name,
+      brand:     brandName || '',
+      price:     Number(item.price) || 0,
+      available: inStock,
+      url:       item.url,
+      imageUrl:  item.image?.medium || '',
+      shopName:  sellerName || 'Yahoo!ショッピング',
+      sellerName: sellerName || undefined,
+      checkedAt: Date.now(),
+      colorLabel: colorLabel || undefined,
+      tags:      tags.length ? tags : undefined,
+      headLine:  headLine || undefined,
+      description: description || undefined,
+    };
+  });
+}
+
+async function callYahooItemSearch(appId, params, label) {
+  const requestUrl = `${API_BASE}?${params.toString()}`;
+  console.log(`[mall-debug][yahoo] OUTBOUND GET (${label})`, maskMallRequestUrl(requestUrl));
+  const json = await withRetry(
+    () =>
+      fetchWithTimeout(
+        requestUrl,
+        {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': MALL_UA,
+          },
+        },
+        14000
+      ),
+    { label: `Yahoo!API:${label}`, maxRetries: 2, baseDelayMs: 400 }
+  );
+  return json;
 }
 
 export class YahooAdapter extends ShopAdapter {
@@ -77,100 +160,51 @@ export class YahooAdapter extends ShopAdapter {
     }
 
     const nRes = Math.min(maxResults, 50);
-    const params = new URLSearchParams({
-      appid:     appId,
-      query:     refinedKeyword,
-      results:   String(nRes),
-      start:     String(yahooStart),
-      sort:      '+price',
-      condition: 'new',
-    });
+    const genreIds = resolveYahooShoeGenreIds(refinedKeyword);
 
-    const cli = process.env.RE_EYE_CLI === '1' || process.env.RE_EYE_CLI === 'true';
-    if (cli) {
-      const q = refinedKeyword.slice(0, 80);
-      console.log(`[run-cli] Yahoo!ショッピングの商品を検索中… 「${q}${refinedKeyword.length > 80 ? '…' : ''}」`);
+    const strategies = [
+      { label: 'v3_genre_new', genre: genreIds, condition: 'new' },
+      { label: 'v3_plain_new', genre: null, condition: 'new' },
+      { label: 'v3_plain_any', genre: null, condition: null },
+    ];
+
+    let lastJson = null;
+    for (const st of strategies) {
+      const params = new URLSearchParams({
+        appid:   appId,
+        query:   refinedKeyword,
+        results: String(nRes),
+        start:   String(yahooStart),
+        sort:    '+price',
+      });
+      if (st.genre) params.set('genre_category_id', st.genre);
+      if (st.condition) params.set('condition', st.condition);
+
+      try {
+        const json = await callYahooItemSearch(appId, params, st.label);
+        lastJson = json;
+        if (json && (json.Error || json.error)) {
+          console.error(
+            `[AUDIT][yahoo] API 本文エラー (${st.label})`,
+            JSON.stringify(json.Error || json.error).slice(0, 800)
+          );
+          continue;
+        }
+        const hits = json.hits || [];
+        console.log(
+          `[Reporting Officer] Yahooで ${hits.length} 件ヒット (${st.label})。`,
+          hits.length === 0 && json.totalResultsAvailable != null
+            ? `(totalResultsAvailable=${json.totalResultsAvailable})`
+            : ''
+        );
+        if (hits.length > 0) return mapYahooHits(hits);
+        if (hits.length === 0) logMallEmptyResponse('yahoo', refinedKeyword, json, st.label);
+      } catch (e) {
+        console.warn(`[yahoo] ${st.label} failed:`, e?.message || e);
+      }
     }
 
-    const requestUrl = `${API_BASE}?${params.toString()}`;
-    const qForLog = String(params.get('query') || '').slice(0, 220);
-    console.log('[mall-debug][yahoo] OUTBOUND GET', maskMallRequestUrl(requestUrl));
-    console.log(
-      '[AUDIT][yahoo] OUTBOUND HTTPS GET host=shopping.yahooapis.jp path=/V3/itemSearch query=' +
-        JSON.stringify(qForLog) +
-        ' (sizeワード含むか=' +
-        /\d+(\.\d+)?\s*cm/i.test(qForLog) +
-        ')'
-    );
-    const json = await withRetry(
-      () =>
-        fetchWithTimeout(
-          requestUrl,
-          {
-            headers: {
-              Accept: 'application/json',
-              'User-Agent': MALL_UA,
-            },
-          },
-          14000
-        ),
-      { label: 'Yahoo!API', maxRetries: 2, baseDelayMs: 400 }
-    );
-    if (json && (json.Error || json.error)) {
-      console.error(
-        '[AUDIT][yahoo] API 本文エラー',
-        JSON.stringify(json.Error || json.error).slice(0, 800)
-      );
-    }
-    const hits = json.hits || [];
-    console.log(
-      `[Reporting Officer] Yahooで ${hits.length} 件ヒット。`,
-      hits.length === 0 && json.totalResultsAvailable != null
-        ? `(totalResultsAvailable=${json.totalResultsAvailable})`
-        : ''
-    );
-    if (hits.length === 0) logMallEmptyResponse('yahoo', refinedKeyword, json);
-
-    return hits.map((item) => {
-      const sellerName =
-        (item.seller && (item.seller.name || item.seller.sellerName)) != null
-          ? String(item.seller.name || item.seller.sellerName).trim()
-          : item.storeName
-            ? String(item.storeName).trim()
-            : item.store && item.store.name
-              ? String(item.store.name).trim()
-              : '';
-      const tags = [];
-      const brandName = typeof item.brand === 'string' ? item.brand : item.brand?.name;
-      if (brandName) tags.push(String(brandName));
-      if (item.genreCategory?.name) tags.push(String(item.genreCategory.name));
-      const colorLabel = item.colorName || item.color || '';
-      const description =
-        typeof item.description === 'string' ? item.description.slice(0, 4000) : '';
-      const headLine = typeof item.headLine === 'string' ? item.headLine : '';
-      const ins = item.inStock;
-      const inStock = ins === true || ins === 'true' || ins === 1 || ins === '1';
-
-      return {
-        sourceId:  this.id,
-        itemId:    String(item.code || item.url || item.name),
-        title:     item.name,
-        // brand: Yahoo API の brand フィールドをそのまま引き継ぐ。
-        // enrichItemStructure() が canonical_id 生成時に normalizeSku() で正規化する。
-        brand:     brandName || '',
-        price:     Number(item.price) || 0,
-        available: inStock,
-        url:       item.url,
-        imageUrl:  item.image?.medium || '',
-        shopName:  sellerName || this.name,
-        sellerName: sellerName || undefined,
-        checkedAt: Date.now(),
-        colorLabel: colorLabel || undefined,
-        tags:      tags.length ? tags : undefined,
-        /** バリエーション表記や型番が商品名以外に載ることが多い */
-        headLine:  headLine || undefined,
-        description: description || undefined,
-      };
-    });
+    if (lastJson) logMallEmptyResponse('yahoo', refinedKeyword, lastJson, 'all_strategies');
+    return [];
   }
 }

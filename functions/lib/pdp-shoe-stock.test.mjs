@@ -49,9 +49,9 @@ describe('analyzePdpHtmlForShoeCm fail-close', () => {
     assert.equal(r.reason, 'dom_structural');
   });
 
-  it('品切れ明示 → pdp_explicit_out_of_stock（構造一致があっても先に落とす）', () => {
+  it('他サイズの品切れ文言があっても対象サイズが選択可なら dom_structural', () => {
     const html = longHtml(`
-<main>品切れです
+<main>24cmは品切れです
 <select><option>26.5cm</option></select>
 <button>カートに入れる</button>
 </main>`);
@@ -60,8 +60,28 @@ describe('analyzePdpHtmlForShoeCm fail-close', () => {
       '26.5',
       'https://store.shopping.yahoo.co.jp/shop/x.html',
     );
+    assert.equal(r.ok, true);
+    assert.equal(r.reason, 'dom_structural');
+  });
+
+  it('US 8.5 表記のみでも 26.5cm として dom_structural', () => {
+    const html = longHtml(`
+<main>カートに入れる
+<button type="button">US 8.5</button>
+</main>`);
+    const r = analyzePdpHtmlForShoeCm(html, '26.5', 'https://example.com/p');
+    assert.equal(r.ok, true);
+    assert.equal(r.reason, 'dom_structural');
+  });
+
+  it('対象サイズノードが売り切れ → no_structural_size', () => {
+    const html = longHtml(`
+<main>カートに入れる
+<button type="button" disabled>26.5cm 売り切れ</button>
+</main>`);
+    const r = analyzePdpHtmlForShoeCm(html, '26.5', 'https://example.com/p');
     assert.equal(r.ok, false);
-    assert.equal(r.reason, 'pdp_explicit_out_of_stock');
+    assert.equal(r.reason, 'no_structural_size');
   });
 
   it('cmあり・同一コンテナに購入フレーズなし → no_structural_size', () => {
