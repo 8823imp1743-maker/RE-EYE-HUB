@@ -240,16 +240,66 @@ async function resolveUserPlan(r, userId, requestPlan) {
     return 'FREE';
   }
 }
-/** P0: サイズヒント・±ギャップ加点なし（並びは在庫系ヒント／Yahoo／未開封のみ） */
+/** P0: サイズヒント・未開封のみ（楽天/Yahoo 平等・モール別ボーナスなし） */
 function baseShoeMallRowScore(item) {
   const h = buildSerpPlainTextHaystack(item) || (item && item.title) || '';
   const hasStockHint = /在庫|購入|カート|かご|stock|cart/iu.test(h);
-  const isYahoo = /yahoo/iu.test(String((item && item.url) || ''));
   let s = 0;
   if (hasStockHint) s += 20;
-  if (isYahoo) s += 10;
   s += newUnopenedPriorityScore(item);
-  return { baseScore: s, hasStockHint, isYahoo };
+  return { baseScore: s, hasStockHint };
+}
+
+/** 靴 PDP バッチ用: 楽天 / Yahoo / その他 */
+function shoeMallSourceBucket(item) {
+  const sid = String(item?.sourceId || '').toLowerCase();
+  if (sid === 'rakuten') return 'rakuten';
+  if (sid === 'yahoo') return 'yahoo';
+  const url = String(item?.url || '').toLowerCase();
+  if (/rakuten\.co\.jp|item\.rakuten/.test(url)) return 'rakuten';
+  if (/yahoo\.co\.jp|shopping\.yahoo/.test(url)) return 'yahoo';
+  return 'other';
+}
+
+/**
+ * PDP 検証枠をモール横断でラウンドロビン（楽天↔Yahoo 平等）。
+ * eligible は serpCmPrior → baseScore → poolIndex で既にソート済みであること。
+ * @param {Array<{ item: object, poolIndex: number }>} eligible
+ * @param {number} maxN
+ * @returns {Array<{ item: object, poolIndex: number }>}
+ */
+function pickBalancedPdpBatch(eligible, maxN) {
+  const cap = Math.max(0, Math.floor(Number(maxN) || 0));
+  if (!cap || !Array.isArray(eligible) || eligible.length === 0) return [];
+
+  const buckets = { rakuten: [], yahoo: [], other: [] };
+  for (const e of eligible) {
+    buckets[shoeMallSourceBucket(e.item)].push(e);
+  }
+
+  const order = ['rakuten', 'yahoo', 'other'];
+  const cursors = { rakuten: 0, yahoo: 0, other: 0 };
+  const batch = [];
+  const batchSm = new Set();
+
+  while (batch.length < cap) {
+    let pickedAny = false;
+    for (const key of order) {
+      if (batch.length >= cap) break;
+      const arr = buckets[key];
+      while (cursors[key] < arr.length) {
+        const e = arr[cursors[key]++];
+        const sm0 = sellerModelDedupeKey(e.item);
+        if (batchSm.has(sm0)) continue;
+        batchSm.add(sm0);
+        batch.push(e);
+        pickedAny = true;
+        break;
+      }
+    }
+    if (!pickedAny) break;
+  }
+  return batch;
 }
 /** enrich + baseScore 降順。候補は消さない。 */
 function enrichAndSortShoePool(pool) {
@@ -356,7 +406,6 @@ function mapShoeSearchItemForClient(it) {
     pdpTentative,
     pdpMerged: _m,
     hasStockHint: _hs,
-    isYahoo: _iy,
     baseScore: _bs,
     ...rest0
   } = it;
@@ -1078,12 +1127,8 @@ async function runPdpShoeWithMallPaging({
       if (b.baseScore !== a.baseScore) return b.baseScore - a.baseScore;
       return a.poolIndex - b.poolIndex;
     });
-    const batchSm = new Set();
-    for (const e of eligible) {
-      if (batch.length >= shoePdpN) break;
+    for (const e of pickBalancedPdpBatch(eligible, shoePdpN)) {
       const sm0 = sellerModelDedupeKey(e.item);
-      if (batchSm.has(sm0)) continue;
-      batchSm.add(sm0);
       smSeen.add(sm0);
       batch.push({ item: e.item, poolIndex: e.poolIndex });
     }
