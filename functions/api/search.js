@@ -3,11 +3,9 @@
  * 在庫検索 — 方針:
  *  - 楽天・Yahoo へのクエリに cm / プロファイル由来のサイズを混ぜない
  *  - 品番が取れたら API は品番のみ。なければメーカー＋商品名（cm 抜き）
- *  - 靴＋マイ cm: プールを素点＋最終点で再ソート（候補は捨てない）→ 上位Nだけ verifyShoeSizeOnPdp 並列 → 全件再ソート
- *  - ページング: prePdpScanIndex / offset / excludeKeys / excludeSellerModelKeys / nextStartingItem(バトン)
- *
- * フロントは sequentialPdp + **limit:1** を連続（初回6枠・次へ・先読み）で呼び、PDP(HTTP) を serverless 時間内に収める。
- * 厳密に「商品 PDP の HTML 解析を利用者端末へ」置くことは、楽天/Yahoo 等の **CORS 制約**でブラウザ直 fetch が通らないため、**PDP 取得は自サーバ経由が前提**。サーバは重い一括ループを避け、1 区切り・短タイムアウトで 10s 壁を下回る設計を意識する。
+ *  - 靴＋マイ cm（手動 search）: 楽天・Yahoo 一覧のみ → ルーズ3段ゲートで即返却（**PDP フェッチなし**・Vercel 10s 回避）
+ *  - 厳密 PDP は零式監視登録後の monitor / Cron 側のみ（serp-v5-pipeline）
+ *  - ページング: offset / excludeKeys / excludeSellerModelKeys
  */
 
 import {
@@ -57,6 +55,8 @@ const MAX_MALL_PAGE_PER_STAGED_REQUEST = 2;
  * 順次 PDP: 1 回の serverless 内のモールめくり（1 にすると初回 TTFB を短くしやすい）
  */
 const MAX_MALL_PAGE_SEQUENTIAL = 2;
+/** 手動 search（モール一覧のみ）: 1 リクエストでめくるモールページ上限 */
+const MAX_MALL_PAGE_MANUAL_SEARCH = 3;
 /** 1リクエストで在庫確定を狙う件数: 7 表示 + 1 次バトン（PDP 回数抑制） */
 const STOCK_DISPLAY = 7;
 const STOCK_SEEK_PEEK = 1;
@@ -988,7 +988,120 @@ function toPerKwLog(shopResults, kwList) {
 }
 
 /**
- * 靴 PDP — バッチ時は max(STOCK_CHUNK_SEEK) 在庫確定 / 順次は sequentialCap まで
+ * 手動 search 用: モール一覧 + ルーズゲートのみ（PDP HTTP なし）
+ */
+function buildShoeMallListingOnlyResult(ctx) {
+  const {
+    poolOrdered,
+    shoeTargetNums,
+    userGender,
+    forChild,
+    displayLimit,
+    listOffset,
+    excludeKeys,
+    excludeSellerModelKeys,
+    lastPerKw,
+    lastShopResults,
+    lastRejectSummary,
+    lastMallMeta,
+    mallP,
+    exhaustedMall,
+    lastPageHadItems,
+    allRawLen,
+    plan,
+  } = ctx;
+
+  const cap = Math.max(1, Math.min(30, Math.floor(Number(displayLimit) || STOCK_DISPLAY)));
+  const offset = Math.max(0, Math.floor(Number(listOffset) || 0));
+  const exKeys = excludeKeys || new Set();
+  const exSm = excludeSellerModelKeys || new Set();
+  const smSeen = new Set();
+
+  const candidates = (poolOrdered || []).filter((it) => {
+    const k = itemCanonicalKey(it);
+    if (!k || exKeys.has(k)) return false;
+    const sm = sellerModelDedupeKey(it);
+    if (exSm.has(sm) || smSeen.has(sm)) return false;
+    return true;
+  });
+
+  const finalOrdered = candidates.map((it) => ({ ...it, finalScore: it.baseScore || 0 }));
+  let gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums, userGender, forChild);
+  if (gatedAll.length === 0 && finalOrdered.length > 0) {
+    gatedAll = buildShoeMallFallbackList(finalOrdered, Math.min(30, cap * 3), userGender, forChild);
+    logStockAudit('gate-fallback', {
+      poolLen: finalOrdered.length,
+      fallbackLen: gatedAll.length,
+      reason: 'mall_listing_only_fallback',
+    });
+  }
+
+  for (const row of gatedAll) {
+    const sm = row.dedupeSellerModel || sellerModelDedupeKey(row);
+    if (sm) smSeen.add(sm);
+  }
+
+  const displayItems = gatedAll.slice(offset, offset + cap);
+  const nextOffset = offset + displayItems.length;
+  const hasMore = nextOffset < gatedAll.length || (exhaustedMall === false && lastPageHadItems);
+
+  const stockSizeAudit = buildShoeGateAuditBatch(
+    finalOrdered,
+    shoeTargetNums,
+    buildFullHaystack,
+    (it) => mapShoeSearchItemWithSizeGate(it, shoeTargetNums, userGender, forChild) || mapShoeSearchItemForClient(it),
+    12
+  );
+
+  logStockAudit('gate-summary', {
+    poolLen: finalOrdered.length,
+    gatedPass: gatedAll.length,
+    fallbackUsed: gatedAll.some((x) => x.mallListingFallback),
+    displayCap: cap,
+    plan,
+    pdpCalls: 0,
+    shoeTargets: shoeTargetNums,
+    mode: 'mall_listing_only',
+  });
+
+  return {
+    displayItems,
+    nextStartingItem: null,
+    pdpShoeLog: [],
+    prePdpScanIndex: nextOffset,
+    beforePdp: poolOrdered.length,
+    perKw: lastPerKw,
+    shopResults: lastShopResults,
+    poolLength: poolOrdered.length,
+    hasMore: !!hasMore,
+    lastMallPage: Math.max(0, mallP - 1),
+    exhaustedMall,
+    lastPageHadItems,
+    pdpCalls: 0,
+    allVerified: [],
+    rejectReasonSummary: {
+      ...(lastRejectSummary || {}),
+      ...(lastMallMeta || {}),
+      pdpRejected: 0,
+    },
+    stopReason: displayItems.length > 0 ? 'ok_mall_listing_only' : 'empty_mall_listing',
+    stockSizeAudit,
+    staged: {
+      mallOnly: true,
+      maxMallPagesThisRequest: MAX_MALL_PAGE_MANUAL_SEARCH,
+      maxPdpThisRequest: 0,
+      pdpScannedThisRequest: 0,
+      seek: cap,
+      displayCap: cap,
+      sequentialBatch: undefined,
+      sequentialPdp: false,
+      plan,
+    },
+  };
+}
+
+/**
+ * 靴検索 — mallOnly=true なら一覧即返却 / false なら PDP（内部・非 search 用）
  */
 async function runPdpShoeWithMallPaging({
   kwList,
@@ -1006,6 +1119,9 @@ async function runPdpShoeWithMallPaging({
   excludeSellerModelKeysArr,
   sequentialPdp = false,
   sequentialCap = STOCK_SEQUENTIAL_CAP_DEFAULT,
+  mallOnly = false,
+  displayLimit = STOCK_DISPLAY,
+  listOffset = 0,
 }) {
   const seqCap = sequentialPdp
     ? Math.min(
@@ -1019,8 +1135,11 @@ async function runPdpShoeWithMallPaging({
   const excludeKeys = new Set((excludeKeysArr || []).map(String).filter(Boolean));
   const excludeSellerModelKeys = new Set((excludeSellerModelKeysArr || []).map(String).filter(Boolean));
   const scan = Math.max(0, Math.floor(Number(prePdpScanIn) || 0));
-  /** 運び屋: 順次 1 件出しのとき 1 リクエストあたりのモール「めくり」本数を絞る */
-  const maxMallThisRequest = sequentialPdp ? MAX_MALL_PAGE_SEQUENTIAL : MAX_MALL_PAGE_PER_STAGED_REQUEST;
+  const maxMallThisRequest = mallOnly
+    ? MAX_MALL_PAGE_MANUAL_SEARCH
+    : sequentialPdp
+      ? MAX_MALL_PAGE_SEQUENTIAL
+      : MAX_MALL_PAGE_PER_STAGED_REQUEST;
 
   const seenMall = new Set();
   const allRaw = [];
@@ -1046,7 +1165,8 @@ async function runPdpShoeWithMallPaging({
     );
     lastPool = pool;
     lastRejectSummary = rejectReasonSummary;
-    if (pool.length > scan) break;
+    if (!mallOnly && pool.length > scan) break;
+    if (mallOnly && pool.length >= 80) break;
     if (mallP > maxMallThisRequest) {
       exhaustedMall = true;
       break;
@@ -1166,6 +1286,29 @@ async function runPdpShoeWithMallPaging({
   }
 
   const poolOrdered = enrichAndSortShoePool(pool);
+
+  if (mallOnly) {
+    return buildShoeMallListingOnlyResult({
+      poolOrdered,
+      shoeTargetNums,
+      userGender,
+      forChild,
+      displayLimit,
+      listOffset,
+      excludeKeys,
+      excludeSellerModelKeys,
+      lastPerKw,
+      lastShopResults,
+      lastRejectSummary,
+      lastMallMeta,
+      mallP,
+      exhaustedMall,
+      lastPageHadItems,
+      allRawLen: allRaw.length,
+      plan,
+    });
+  }
+
   const canPdp = true;
   const pdpBudget = getShoePdpBudgetForPlan(plan);
   const shoePdpN = canPdp
@@ -1352,6 +1495,7 @@ function buildClientSearchTrace(ctx) {
     stopReason: r.stopReason || null,
     poolLength: r.poolLength ?? null,
     pdpCalls: r.pdpCalls ?? null,
+    mallListingOnly: !!(r.staged && r.staged.mallOnly),
     itemsOutBeforePlan: ctx.itemsOutLen ?? null,
     itemsFinalLen: ctx.itemsFinalLen ?? null,
     freePlanSuppressed: ctx.freePlanSuppressed === true,
@@ -1528,8 +1672,6 @@ export default async function handler(req, res) {
       });
     }
 
-    const sequentialPdp = !!body.sequentialPdp;
-
     if (pdpShoeMode) {
       logStockAuditTargets({
         shoeTargetNums,
@@ -1538,6 +1680,10 @@ export default async function handler(req, res) {
         keyword: baseKeyword,
         forChild,
       });
+      const shoeListOffset = Math.max(
+        0,
+        Math.floor(Number(body.offset ?? body.prePdpScanIndex) || listOffset)
+      );
       const r = await runPdpShoeWithMallPaging({
         kwList,
         baseKeyword,
@@ -1549,11 +1695,13 @@ export default async function handler(req, res) {
         shoeSizeRaw,
         shoeTargetNums,
         plan: effectivePlan,
-        prePdpScanIn,
+        prePdpScanIn: 0,
         excludeKeysArr: excludeKeys,
         excludeSellerModelKeysArr: excludeSellerModelKeys,
-        sequentialPdp,
-        sequentialCap: sequentialPdp ? limit : STOCK_SEQUENTIAL_CAP_DEFAULT,
+        sequentialPdp: false,
+        mallOnly: true,
+        displayLimit: limit,
+        listOffset: shoeListOffset,
       });
 
       const displayTrim = stripSizeCmFromDisplayKeyword(baseKeyword);
@@ -1567,24 +1715,20 @@ export default async function handler(req, res) {
       const itemsOut = (r.displayItems || []).map(mapItem);
       const itemsFinal = itemsOut;
       const nextStartingItem = r.nextStartingItem ? mapItem(r.nextStartingItem) : null;
-      const inventorySizeVerifyAtPdp =
-        itemsFinal.length === 0 ||
-        !itemsFinal.some(
-          (x) => x.pdpSizeCheck && x.pdpSizeCheck.ok === true && !x.pdpSizeCheck.tentative
-        );
+      const inventorySizeVerifyAtPdp = false;
 
       try {
         console.log(
           '[RE_EYE_TRACE][search:resp]',
           JSON.stringify({
-            exit: 'pdp-shoe-json',
+            exit: 'mall-listing-only',
             itemsLen: itemsFinal.length,
             itemsOutRaw: itemsOut.length,
             poolLengthReported: r.poolLength,
             beforePdpBins: r.beforePdp,
             marketNewCount,
             stopReason: r.stopReason,
-            sequentialPdp: !!sequentialPdp,
+            mallOnly: true,
             plan: effectivePlan,
             mallPerKw: (r.perKw || []).map((x) => ({ kw: x.kw, items: x.items, err: x.error })),
           })
@@ -1619,27 +1763,31 @@ export default async function handler(req, res) {
         /** 運び屋メタ: debug 以外でも都道府県等を追える（将来送料 API 用に prefecture 同梱） */
         searchMeta: {
           sizeMode: 'cm',
-          pdpShoe: true,
-          carrier: sequentialPdp ? 'sequential-pdp-batch' : 'ranked-pdp-parallel-6',
+          pdpShoe: false,
+          mallListingOnly: true,
+          pdpDeferredToMonitor: true,
+          carrier: 'mall-listing-only',
           userSettings: us,
           mallPageBudget: r.staged && r.staged.maxMallPagesThisRequest,
-          maxPdpBudget: r.staged && r.staged.maxPdpThisRequest,
-          pdpCallsActual: r.pdpCalls,
+          maxPdpBudget: 0,
+          pdpCallsActual: 0,
           circuitState,
         },
         normalizedKeyword: normalizeBrand(displayTrim),
         inventoryRuleNoHits: (r.poolLength || 0) > 0 && itemsOut.length === 0,
         inventorySizeVerifyAtPdp,
-        limit: sequentialPdp ? (r.staged && r.staged.seek) || limit : PDP_PER_RESPONSE,
+        limit,
         searchCursor: {
+          listOffset: r.prePdpScanIndex,
           prePdpScanIndex: r.prePdpScanIndex,
           hasMore: r.hasMore,
           poolLength: r.poolLength,
           lastMallPage: r.lastMallPage,
           exhaustedMall: r.exhaustedMall,
           staged: r.staged,
-          pdpCallsThisRequest: r.pdpCalls,
-          sequentialPdp: !!sequentialPdp,
+          pdpCallsThisRequest: 0,
+          sequentialPdp: false,
+          mallListingOnly: true,
         },
         debug: {
           strategy,
@@ -1673,7 +1821,7 @@ export default async function handler(req, res) {
             perKwShop: r.perKw,
             shopErrors: (r.perKw || []).flatMap((p) => p.errors || []),
             shoeSizeRaw,
-            pdpShoe: { mode: true, prePdpScan: r.prePdpScanIndex, stopReason: r.stopReason, sequentialPdp: !!sequentialPdp },
+            pdpShoe: { mode: 'mall_listing_only', listOffset: shoeListOffset, stopReason: r.stopReason, pdpCalls: 0 },
             marketNewCount,
             stockSizeAudit: r.stockSizeAudit || null,
           },

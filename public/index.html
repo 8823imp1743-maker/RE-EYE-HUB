@@ -4520,7 +4520,7 @@ async function runStockSearch(keyword, forChild, loadMore) {
         ? parseFloat(String(userProfile.childShoeSize || '').replace(/cm$/i,'').trim())
         : parseFloat(String(userProfile.shoeSize || '').replace(/cm$/i,'').trim());
     const baseBody = {
-        keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 6, sequentialPdp: true,
+        keyword: sk, userId: getUserId(), forChild: !!forChild, limit: 12, sequentialPdp: false,
         ...(Number.isFinite(_shoeCmNum) && { shoeCm: _shoeCmNum }),
         ...(userProfile.gender === 'male' || userProfile.gender === 'female' ? { gender: userProfile.gender } : {}),
     };
@@ -4545,162 +4545,89 @@ async function runStockSearch(keyword, forChild, loadMore) {
             return { res, data };
         };
 
-        let first = true;
-        let displayedInBatch = 0;
-        const maxSeqSteps = 24;
-        const maxPerPage = 10;
-        if (!append) {
-            if (hdr) hdr.innerHTML = '';
+        const reqBody = { ...baseBody };
+        reqBody.excludeKeys = Array.from(_stockPageState.seenKeys);
+        reqBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
+        if (append) {
+            const cur = _stockPageState.cursor || {};
+            reqBody.offset = cur.listOffset != null ? cur.listOffset : (cur.prePdpScanIndex != null ? cur.prePdpScanIndex : 0);
         }
-
-        for (let step = 0; step < maxSeqSteps; step++) {
-            const reqBody = { ...baseBody, sequentialPdp: true };
-            reqBody.excludeKeys = Array.from(_stockPageState.seenKeys);
-            reqBody.excludeSellerModelKeys = Array.from(_stockPageState.seenSm);
-            if (_stockPageState.isPdp) {
-                const cur = _stockPageState.cursor || {};
-                const n = cur.prePdpScanIndex != null ? cur.prePdpScanIndex : 0;
-                reqBody.prePdpScanIndex = n;
-                reqBody.offset = n;
-            } else if (append) {
-                const cur = _stockPageState.cursor || {};
-                reqBody.offset = cur.listOffset != null ? cur.listOffset : 0;
+        const { res, data } = await runOneSearch(reqBody);
+        if (myGen !== _stockSearchGen) return;
+        if (data && data.userSettings) {
+            const us = data.userSettings;
+            _lastSearchUserSettings = {
+                shoeCm: us.shoeCm != null ? us.shoeCm : null,
+                clothing: us.clothing != null ? us.clothing : null,
+                prefecture: us.prefecture != null ? us.prefecture : null,
+                glovesSml: us.glovesSml != null ? us.glovesSml : null,
+                childGender: us.childGender != null ? us.childGender : null,
+                childClothSize: us.childClothSize != null ? us.childClothSize : null,
+                childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
+                childGlovesSml: us.childGlovesSml != null ? us.childGlovesSml : null,
+            };
+        }
+        if (!res.ok) {
+            if (!append) {
+                const errText = (data.msg && String(data.msg).trim()) ? String(data.msg) : (String((data && data.error) || '').slice(0, 120) || '不明なエラー');
+                list.innerHTML = '<div class="stock-not-found meta-11px">通信エラー (HTTP ' + res.status + '): ' + errText + '</div>';
             }
-            const { res, data } = await runOneSearch(reqBody);
-            if (myGen !== _stockSearchGen) return;
-            if (data && data.userSettings) {
-                const us = data.userSettings;
-                _lastSearchUserSettings = {
-                    shoeCm: us.shoeCm != null ? us.shoeCm : null,
-                    clothing: us.clothing != null ? us.clothing : null,
-                    prefecture: us.prefecture != null ? us.prefecture : null,
-                    glovesSml: us.glovesSml != null ? us.glovesSml : null,
-                    childGender: us.childGender != null ? us.childGender : null,
-                    childClothSize: us.childClothSize != null ? us.childClothSize : null,
-                    childShoeSize: us.childShoeSize != null ? us.childShoeSize : null,
-                    childGlovesSml: us.childGlovesSml != null ? us.childGlovesSml : null,
-                };
+            if (ir) ir.style.display = 'block';
+            return;
+        }
+        const apiErrs = data.errors && data.errors.length;
+        if (apiErrs && (!data.items || data.items.length === 0) && (data.debug && (data.debug.handlerError || data.debug.wrapperError))) {
+            if (!append) {
+                list.innerHTML = '<div class="stock-not-found meta-11px">検索サービスに一時的に接続できませんでした。しばらくしてから再度お試しください。</div>';
             }
-            if (!res.ok) {
-                if (!append && first) {
-                    const errText = (data.msg && String(data.msg).trim()) ? String(data.msg) : (String((data && data.error) || '').slice(0, 120) || '不明なエラー');
-                    list.innerHTML = '<div class="stock-not-found meta-11px">通信エラー (HTTP ' + res.status + '): ' + errText + '</div>';
-                }
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            const apiErrs = data.errors && data.errors.length;
-            if (apiErrs && (!data.items || data.items.length === 0) && (data.debug && (data.debug.handlerError || data.debug.wrapperError))) {
-                if (!append && first) {
-                    list.innerHTML = '<div class="stock-not-found meta-11px">検索サービスに一時的に接続できませんでした。しばらくしてから再度お試しください。</div>';
-                }
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            if (data.debug) {
-                if (data.debug.searchKeywordsTried) {
-                    console.log('[RE-EYE search] 楽天・Yahoo 検索デバッグ', {
-                        apiKeywords: data.debug.searchKeywordsTried,
-                        color条件: data.debug.colorKeywords,
-                        色フィルタ厳格: data.debug.colorFilterStrict,
-                        trimmed: data.debug.trimmed
-                    });
-                } else {
-                    console.log('[RE-EYE search] profileFromRedis', data.debug.profileFromRedis, 'stopReason', data.debug.stopReason);
-                }
-            } else {
-                console.log('[RE-EYE search] keyword=', sk, 'normalized=', data.normalizedKeyword);
-            }
-
-            const seq = isSeqPdpCursor(data.searchCursor);
-            if (data.items && data.items[0] && data.items[0].pdpSizeVerified) _stockPageState.isPdp = true;
-            if (!data.items || data.items.length === 0) {
-                const reqMeta = {
-                    keyword: sk,
-                    shoeCm: reqBody.shoeCm,
-                    forChild: !!forChild,
-                    prePdpScanIndex: reqBody.prePdpScanIndex,
-                    step: step,
-                };
-                if (first && !append) {
-                    list.innerHTML = '';
-                    const nf = document.createElement('div');
-                    nf.className = 'stock-not-found';
-                    const p = document.createElement('p');
-                    p.textContent = (data.msg && String(data.msg).trim())
-                        ? String(data.msg)
-                        : (data.inventoryRuleNoHits
-                            ? '条件に合う在庫が見つかりませんでした。'
-                            : '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。');
-                    const btn = document.createElement('button');
-                    btn.className = 'btn-purple';
-                    btn.style.marginTop = '10px';
-                    btn.textContent = 'この条件で「再入荷」を監視する';
-                    const manualId = 'manual_' + Date.now();
-                    const dispTitle = data.normalizedKeyword || sk;
-                    btn.onclick = () => watchStockItem({
-                        itemId: manualId, sourceId: 'manual', title: dispTitle,
-                        price: 0, available: false, url: '', shopName: 'キーワード監視'
-                    }, sk, btn);
-                    nf.appendChild(p);
-                    nf.appendChild(btn);
-                    list.appendChild(nf);
-                    const auditEl = renderStockSearchAuditPanel(data, reqMeta);
-                    if (auditEl) list.appendChild(auditEl);
-                } else if (!append || first) {
-                    const auditEl = renderStockSearchAuditPanel(data, reqMeta);
-                    if (auditEl) list.appendChild(auditEl);
-                }
-                _stockPageState.cursor = data.searchCursor || null;
-                if (ir) ir.style.display = 'block';
-                const oldB0 = document.getElementById('stock-load-more-wrap');
-                if (oldB0) oldB0.remove();
-                if (!seq || !data.searchCursor || !data.searchCursor.hasMore) {
-                    if (ir) ir.style.display = 'block';
-                    return;
-                }
-                first = false;
-                continue;
-            }
-
-            for (const it of data.items) {
-                if (it.itemKey) _stockPageState.seenKeys.add(String(it.itemKey));
-                if (it.dedupeSellerModel) _stockPageState.seenSm.add(String(it.dedupeSellerModel));
-            }
-            if (data.nextStartingItem) {
-                const b = data.nextStartingItem;
-                if (b.itemKey) _stockPageState.seenKeys.add(String(b.itemKey));
-                if (b.dedupeSellerModel) _stockPageState.seenSm.add(String(b.dedupeSellerModel));
+            if (ir) ir.style.display = 'block';
+            return;
+        }
+        if (data.debug) {
+            console.log('[RE-EYE search] mall-listing-only', data.debug.stopReason || data.searchMeta, data.searchTrace || null);
+        } else {
+            console.log('[RE-EYE search] keyword=', sk, 'normalized=', data.normalizedKeyword);
+        }
+        _stockPageState.isPdp = false;
+        if (!data.items || data.items.length === 0) {
+            const reqMeta = { keyword: sk, shoeCm: reqBody.shoeCm, forChild: !!forChild, offset: reqBody.offset };
+            if (!append) {
+                list.innerHTML = '';
+                const nf = document.createElement('div');
+                nf.className = 'stock-not-found';
+                const p = document.createElement('p');
+                p.textContent = (data.msg && String(data.msg).trim())
+                    ? String(data.msg)
+                    : (data.inventoryRuleNoHits
+                        ? '条件に合う在庫が見つかりませんでした。'
+                        : '現在、楽天市場・Yahoo!ショッピング上に該当する在庫は見つかりませんでした。');
+                const btn = document.createElement('button');
+                btn.className = 'btn-purple';
+                btn.style.marginTop = '10px';
+                btn.textContent = 'この条件で「再入荷」を監視する';
+                const manualId = 'manual_' + Date.now();
+                const dispTitle = data.normalizedKeyword || sk;
+                btn.onclick = () => watchStockItem({
+                    itemId: manualId, sourceId: 'manual', title: dispTitle,
+                    price: 0, available: false, url: '', shopName: 'キーワード監視'
+                }, sk, btn);
+                nf.appendChild(p);
+                nf.appendChild(btn);
+                list.appendChild(nf);
+                const auditEl = renderStockSearchAuditPanel(data, reqMeta);
+                if (auditEl) list.appendChild(auditEl);
             }
             _stockPageState.cursor = data.searchCursor || null;
-            if (myGen !== _stockSearchGen) return;
-            const pdpItem = (data.items || [])[0] && (data.items || [])[0].pdpSizeVerified;
-            if (!append && pdpItem && seq) {
-                (data.items || []).forEach((it, j) => {
-                    if (myGen !== _stockSearchGen) return;
-                    renderStockResults([it], sk, data.normalizedKeyword || sk, data.errors || [], { append: !(first && j === 0), searchCursor: data.searchCursor });
-                });
-            } else {
-                renderStockResults(data.items, sk, data.normalizedKeyword || sk, data.errors || [], { append: !first && !append, searchCursor: data.searchCursor });
-            }
-            if (seq && pdpItem && myGen === _stockSearchGen) {
-                await new Promise((resolve) => setTimeout(resolve, 0));
-            }
-            displayedInBatch += (data.items || []).length;
-            if (!(seq && pdpItem)) {
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            if (displayedInBatch >= maxPerPage) {
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            if (!data.searchCursor || !data.searchCursor.hasMore) {
-                if (ir) ir.style.display = 'block';
-                return;
-            }
-            first = false;
+            if (ir) ir.style.display = 'block';
+            return;
         }
+        for (const it of data.items) {
+            if (it.itemKey) _stockPageState.seenKeys.add(String(it.itemKey));
+            if (it.dedupeSellerModel) _stockPageState.seenSm.add(String(it.dedupeSellerModel));
+        }
+        _stockPageState.cursor = data.searchCursor || null;
+        if (myGen !== _stockSearchGen) return;
+        renderStockResults(data.items, sk, data.normalizedKeyword || sk, data.errors || [], { append: append, searchCursor: data.searchCursor });
         if (ir) ir.style.display = 'block';
     } catch (e) {
         if (myGen !== _stockSearchGen) return;
