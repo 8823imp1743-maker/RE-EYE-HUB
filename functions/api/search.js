@@ -557,9 +557,16 @@ const MALL_STOCK_HINT_RE =
 
 /** モール一覧で在庫ありシグナル（API availability + タイトル/説明） */
 function hasMallListingStockSignal(rawIt) {
-  if (!rawIt || rawIt.available === false) return false;
-  if (rawIt.available === true) return true;
+  if (!rawIt) return false;
+  const isRakuten = String(rawIt.sourceId || '').toLowerCase() === 'rakuten';
   const hay = buildFullHaystack(rawIt);
+  if (/品切れ|売り切れ|sold\s*out/i.test(hay)) return false;
+  // 楽天 Ichiba: 親 SKU の availability=0 でも子サイズに在庫ありが多い → 明示 OOS 以外は候補に残す
+  if (isRakuten) {
+    return true;
+  }
+  if (rawIt.available === false) return false;
+  if (rawIt.available === true) return true;
   return MALL_STOCK_HINT_RE.test(hay);
 }
 

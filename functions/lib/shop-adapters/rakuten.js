@@ -6,6 +6,7 @@ import { withRetry } from '../retry.js';
 import { fetchWithTimeout } from '../http-fetch.js';
 import { RAKUTEN_NG_KEYWORD } from '../noise-filter.js';
 import { extractModelNumbers } from '../cross-validator.js';
+import { genresForKeyword } from '../user-size.js';
 
 const API_BASE   = 'https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601';
 const APP_ORIGIN = 'https://re-eye-hub.web.app';
@@ -43,6 +44,20 @@ function maskMallRequestUrl(urlStr) {
   }
 }
 
+const CM_TOKEN_RE = /[0-9]{1,2}(?:\.[0-9])?\s*(?:cm|㎝)\b/gi;
+
+function isCmPreserveToken(token) {
+  return /^\d{1,2}(?:\.\d)?\s*cm$/i.test(String(token || '').trim());
+}
+
+/** 楽天 Ichiba の keyword インデックスは cm 非対応が多い → 靴検索では API から cm を除去 */
+function stripCmTokensFromMallKeyword(kw) {
+  return String(kw || '')
+    .replace(CM_TOKEN_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function logMallEmptyResponse(adapterId, keyword, json) {
   try {
     console.warn(
@@ -73,15 +88,25 @@ export class RakutenAdapter extends ShopAdapter {
       maxResults = 20,
       mallPreserveTokens = [],
       page: mallPage = 1,
+      shoeSearchIntent = false,
     } = options;
-    const preserve = Array.isArray(mallPreserveTokens)
+    let preserve = Array.isArray(mallPreserveTokens)
       ? mallPreserveTokens.map((t) => String(t || '').trim()).filter(Boolean)
       : [];
 
-    // 完成仕様: クエリ加工禁止・cm削除禁止・在庫条件禁止（mallPreserveTokens の先頭結合のみ）
     let refinedKeyword = String(keyword ?? '')
       .replace(/\s+/g, ' ')
       .trim();
+
+    const shoeIntent =
+      shoeSearchIntent === true ||
+      (shoeSearchIntent !== false && genresForKeyword(refinedKeyword).isShoe);
+
+    // 靴: cm は PDP/ゲート側のみ。楽天 API keyword に 26.5cm を混ぜるとヒット 0 になりやすい（Yahoo は genre 絞りで救済される）
+    if (shoeIntent) {
+      preserve = preserve.filter((t) => !isCmPreserveToken(t));
+      refinedKeyword = stripCmTokensFromMallKeyword(refinedKeyword);
+    }
 
     if (preserve.length) {
       const anchor = preserve.join(' ').trim();
@@ -89,7 +114,10 @@ export class RakutenAdapter extends ShopAdapter {
     }
 
     const preserveNote = preserve.length ? `（ユーザー固着: ${preserve.join(', ')}）` : '（クエリそのまま）';
-    console.log(`[Reporting Officer] 楽天・改善ワード: "${refinedKeyword}" ${preserveNote}`);
+    console.log(
+      `[Reporting Officer] 楽天・改善ワード: "${refinedKeyword}" ${preserveNote}` +
+        (shoeIntent ? ' [shoe:cm stripped for API]' : '')
+    );
 
     const applicationId = normalizeRakutenApplicationId(appId);
     const accessKey = resolveRakutenAccessKey();
