@@ -61,21 +61,21 @@ const MAX_MALL_PAGE_SEQUENTIAL = 2;
 const STOCK_DISPLAY = 7;
 const STOCK_SEEK_PEEK = 1;
 const STOCK_CHUNK_SEEK = STOCK_DISPLAY + STOCK_SEEK_PEEK; // 8
-/** 順次モード: 1リクエストあたりの上限（PDP 回数＝この値まで。Vercel 時間との折衷で最大5） */
-const STOCK_SEQUENTIAL_CAP_DEFAULT = 3;
-const STOCK_SEQUENTIAL_CAP_MAX = 3;
+/** 順次モード: 1リクエストあたりの上限（PDP 回数＝この値まで。Vercel 時間との折衷） */
+const STOCK_SEQUENTIAL_CAP_DEFAULT = 6;
+const STOCK_SEQUENTIAL_CAP_MAX = 8;
 /** 1リクエスト当たり PDP(実HTTP) 上限（= chunkSeek に同期） */
 const MAX_PDP_INSPECTIONS = STOCK_CHUNK_SEEK;
 const PDP_PER_RESPONSE = STOCK_DISPLAY;
 /** 並列度（同一時刻に飛ばす最大 fetch 本数） */
-const SHOE_PDP_CONCURRENCY = 3;
-/** STANDARD: 上位3 PDP / PRO・VIP: 上位6 PDP */
+const SHOE_PDP_CONCURRENCY = 4;
+/** 非順次: プラン別 PDP 上限（順次モードは body.limit を優先） */
 function getShoePdpBudgetForPlan(plan) {
   const p = String(plan || 'FREE').toUpperCase();
-  if (p === 'FREE') return 1;
-  if (p === 'STANDARD') return 3;
-  if (p === 'PRO' || p === 'VIP') return 6;
-  return 3;
+  if (p === 'FREE') return 3;
+  if (p === 'STANDARD') return 6;
+  if (p === 'PRO' || p === 'VIP') return 8;
+  return 6;
 }
 
 const PLAN_ALLOWED = new Set(['FREE', 'STANDARD', 'PRO', 'VIP']);
@@ -552,6 +552,32 @@ function isPdpSizeConfirmed(mapped) {
   );
 }
 
+const MALL_STOCK_HINT_RE =
+  /在庫|購入|カート|かご|stock|cart|入荷|残りわずか|販売中|即納/i;
+
+/** モール一覧で在庫ありシグナル（API availability + タイトル/説明） */
+function hasMallListingStockSignal(rawIt) {
+  if (!rawIt || rawIt.available === false) return false;
+  if (rawIt.available === true) return true;
+  const hay = buildFullHaystack(rawIt);
+  return MALL_STOCK_HINT_RE.test(hay);
+}
+
+/** モール一覧テキストに希望 cm が明示されているか */
+function hasMallCmSizeSignal(rawIt, targets) {
+  const hay = buildFullHaystack(rawIt);
+  if (!hay || isInvalidSizeExpression(hay)) return false;
+  return computeExactCmMatch(hay, targets);
+}
+
+function shoeGateTierRank(item) {
+  const t = item?.gateTier;
+  if (t === 'pdp_confirmed') return 0;
+  if (t === 'mall_cm_fallback') return 1;
+  if (t === 'mall_stock_fallback') return 2;
+  return 9;
+}
+
 /** ④ cm 抽出（単一トークンのみ） */
 function serpExtractApprovedCms(hay) {
   if (!hay) return [];
@@ -582,24 +608,55 @@ function computeExactCmMatch(hay, targets) {
   });
 }
 
-/** ⑧ 靴ゲート */
+/** ⑧ 靴ゲート（PDP 確定優先 + モール一覧セーフティネット） */
 function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', forChild = false) {
   if (!passesGenderShoeFilter(rawIt, userGender, forChild)) return null;
 
-  const mapped = mapShoeSearchItemForClient(rawIt);
-
   const hay = buildFullHaystack(rawIt);
-
   if (isInvalidSizeExpression(hay)) return null;
 
-  const pdp = isPdpSizeConfirmed(mapped);
+  const mapped = mapShoeSearchItemForClient(rawIt);
+  const pdpConfirmed = isPdpSizeConfirmed(mapped);
 
-  // PDP 確定なら SERP cm 字面チェックをスキップ（楽天等タイトルに cm が無いケース）
-  if (!pdp) return null;
+  if (pdpConfirmed) {
+    return {
+      ...mapped,
+      size_match: true,
+      gateTier: 'pdp_confirmed',
+    };
+  }
+
+  const cmSignal = hasMallCmSizeSignal(rawIt, targets);
+  const stockSignal = hasMallListingStockSignal(rawIt);
+  if (!cmSignal && !stockSignal) return null;
+
+  const psc = mapped.pdpSizeCheck || {};
+  const pdpFailed = psc.scanned === true && psc.ok === false;
+  const fallbackReason = cmSignal
+    ? 'mall_cm_signal'
+    : pdpFailed
+      ? `mall_stock_after_pdp_fail:${psc.reason || 'unknown'}`
+      : 'mall_stock_signal';
 
   return {
     ...mapped,
-    size_match: true,
+    size_match: !!cmSignal,
+    sizeMatchPending: true,
+    pdpSizeTentative: true,
+    pdpSizeVerified: false,
+    mallListingFallback: true,
+    mallFallbackReason: fallbackReason,
+    gateTier: cmSignal ? 'mall_cm_fallback' : 'mall_stock_fallback',
+    available: rawIt.available !== false,
+    pdpSizeCheck: {
+      ...psc,
+      ok: null,
+      reason: fallbackReason,
+      tentative: true,
+      strictConfirmed: false,
+      mallFallback: true,
+      scanned: psc.scanned === true,
+    },
   };
 }
 
@@ -607,9 +664,20 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', f
 function buildGatedShoeSortedList(items, targets, userGender = 'unknown', forChild = false) {
   if (!Array.isArray(targets) || !targets.length) return [];
 
-  return (items || [])
-    .map((it) => mapShoeSearchItemWithSizeGate(it, targets, userGender, forChild))
-    .filter(Boolean);
+  const gated = (items || [])
+    .map((it) => {
+      const row = mapShoeSearchItemWithSizeGate(it, targets, userGender, forChild);
+      if (!row) return null;
+      return { ...row, _sortScore: it.finalScore || it.baseScore || 0 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const td = shoeGateTierRank(a) - shoeGateTierRank(b);
+      if (td !== 0) return td;
+      return (b._sortScore || 0) - (a._sortScore || 0);
+    });
+
+  return gated.map(({ _sortScore, ...rest }) => rest);
 }
 
 /** ⑩ PDP 確定ゼロ時: モール候補を「サイズ要確認」で返す（偽0件防止） */
