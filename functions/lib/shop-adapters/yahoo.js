@@ -46,10 +46,14 @@ function logMallEmptyResponse(adapterId, keyword, json, tag = '') {
 /**
  * 靴キーワード時の genre_category_id（OR 絞り込み）
  * @param {string} keyword
+ * @param {string} [userGender] male | female | unknown
  */
-function resolveYahooShoeGenreIds(keyword) {
+function resolveYahooShoeGenreIds(keyword, userGender = 'unknown') {
   const { isShoe } = genresForKeyword(String(keyword || ''));
   if (!isShoe) return null;
+  const g = String(userGender || '').toLowerCase();
+  if (g === 'male') return YAHOO_GENRE_MENS_SHOE;
+  if (g === 'female') return YAHOO_GENRE_WOMENS_SHOE;
   const k = String(keyword).toLowerCase();
   if (/レディース|ウィメンズ|women|wmns|女性|ガールズ|女の子/.test(k)) {
     return YAHOO_GENRE_WOMENS_SHOE;
@@ -73,7 +77,11 @@ function mapYahooHits(hits) {
     const tags = [];
     const brandName = typeof item.brand === 'string' ? item.brand : item.brand?.name;
     if (brandName) tags.push(String(brandName));
-    if (item.genreCategory?.name) tags.push(String(item.genreCategory.name));
+    const genreCategoryId =
+      item.genreCategory?.id != null ? String(item.genreCategory.id) : undefined;
+    const genreCategoryName =
+      item.genreCategory?.name != null ? String(item.genreCategory.name).trim() : undefined;
+    if (genreCategoryName) tags.push(genreCategoryName);
     const colorLabel = item.colorName || item.color || '';
     const description =
       typeof item.description === 'string' ? item.description.slice(0, 4000) : '';
@@ -97,6 +105,9 @@ function mapYahooHits(hits) {
       tags:      tags.length ? tags : undefined,
       headLine:  headLine || undefined,
       description: description || undefined,
+      genreCategoryId: genreCategoryId || undefined,
+      genreCategoryName: genreCategoryName || undefined,
+      yahooGenreId: genreCategoryId || undefined,
     };
   });
 }
@@ -134,6 +145,8 @@ export class YahooAdapter extends ShopAdapter {
       maxResults = 20,
       mallPreserveTokens = [],
       yahooStart: startParam = 1,
+      userGender = 'unknown',
+      shoeSearchIntent = false,
     } = options;
     const yahooStart = Math.max(1, Math.min(1000, Number(startParam) || 1));
     const preserve = Array.isArray(mallPreserveTokens)
@@ -160,13 +173,18 @@ export class YahooAdapter extends ShopAdapter {
     }
 
     const nRes = Math.min(maxResults, 50);
-    const genreIds = resolveYahooShoeGenreIds(refinedKeyword);
+    const genreIds = resolveYahooShoeGenreIds(refinedKeyword, userGender);
+    const forceShoeGenre = shoeSearchIntent || !!genreIds;
 
-    const strategies = [
-      { label: 'v3_genre_new', genre: genreIds, condition: 'new' },
-      { label: 'v3_plain_new', genre: null, condition: 'new' },
-      { label: 'v3_plain_any', genre: null, condition: null },
-    ];
+    const strategies = forceShoeGenre && genreIds
+      ? [
+          { label: 'v3_genre_new', genre: genreIds, condition: 'new' },
+          { label: 'v3_genre_any', genre: genreIds, condition: null },
+        ]
+      : [
+          { label: 'v3_plain_new', genre: null, condition: 'new' },
+          { label: 'v3_plain_any', genre: null, condition: null },
+        ];
 
     let lastJson = null;
     for (const st of strategies) {

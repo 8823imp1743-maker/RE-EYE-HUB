@@ -41,11 +41,19 @@ export const HARD_REJECT_WORDS = [
 // SOFT PENALTY（減点）
 // ─────────────────────────────────────
 
-export const SOFT_PENALTY_RULES = [
-  { word: '中古', penalty: 30 },
-  { word: 'used', penalty: 30 },
-  { word: '古着', penalty: 30 },
+/** タイトルに含まれたら即除外（新品在庫監視向け・AI不要） */
+const USED_TITLE_PATTERNS = [
+  /【中古】/,
+  /\(中古\)/,
+  /（中古）/,
+  /\b中古品\b/,
+  /\b古着\b/,
+  /\bvintage\b/i,
+  /\bused\b/i,
+  /\bpre-?owned\b/i,
+];
 
+export const SOFT_PENALTY_RULES = [
   { word: '訳あり', penalty: 40 },
 
   { word: 'コンディション', penalty: 20 },
@@ -76,12 +84,61 @@ export const HARD_REJECT_DOMAINS = [
   'rakuma.jp',
 ];
 
+/** Yahoo ジャンル: メンズシューズ / レディースシューズ */
+const YAHOO_SHOE_GENRE_IDS = new Set(['2495', '2496']);
+
+/** 靴検索時にアパレル誤ヒット（Tシャツにエアマックス等）を弾く */
+const APPAREL_POLLUTION_RE =
+  /トップス|Ｔシャツ|Tシャツ|t-?shirt|半袖|ラッシュガード|ジャージ|パーカー|ボトムス|ショーツ|キャップ|帽子|ソックス|靴下|アパレル|インナー|下着|カジュアルウエア|カジュアルウェア|スポーツウェア|スポーツウエア/i;
+
+const EXPLICIT_SHOE_TITLE_RE =
+  /スニーカー|シューズ|sneaker|ランニングシューズ|バスケットシューズ|スニーカ/i;
+
 // ─────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────
 
+export function titleIsUsedMarket(title) {
+  const t = String(title || '');
+  if (!t.trim()) return false;
+  if (USED_TITLE_PATTERNS.some((re) => re.test(t))) return true;
+  return t.includes('中古') || t.includes('古着');
+}
+
+/**
+ * 靴意図のモール検索で、アパレル（Tシャツ等）がキーワード汚染で混入したか。
+ * 「エア マックス 90」コラボTシャツは explicit な スニーカー/シューズ が無ければ除外。
+ */
+export function isShoeApparelPollution(item = {}) {
+  const title = String(item.title || item.name || '');
+  if (!title.trim()) return false;
+  if (EXPLICIT_SHOE_TITLE_RE.test(title)) return false;
+
+  if (APPAREL_POLLUTION_RE.test(title)) return true;
+
+  const genreId = String(item.genreCategoryId || item.yahooGenreId || '').trim();
+  if (genreId && item.sourceId === 'yahoo' && !YAHOO_SHOE_GENRE_IDS.has(genreId)) {
+    return true;
+  }
+
+  const genreName = String(item.genreCategoryName || '').trim();
+  if (genreName) {
+    if (/シューズ|スニーカー|靴/.test(genreName)) return false;
+    if (/アパレル|トップス|Tシャツ|ラッシュガード|ウェア|ウエア|ファッション/.test(genreName)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function filterShoeMallPollution(items) {
+  return (items || []).filter((item) => !isShoeApparelPollution(item));
+}
+
 export function analyzeNoise(item = {}) {
-  const title = String(item.title || '').toLowerCase();
+  const rawTitle = String(item.title || item.name || '');
+  const title = rawTitle.toLowerCase();
   const desc = String(item.description || '').toLowerCase();
   const url = String(item.url || item.sourceUrl || '').toLowerCase();
 
@@ -97,6 +154,15 @@ export function analyzeNoise(item = {}) {
         reasons: [`DOMAIN:${domain}`],
       };
     }
+  }
+
+  // ── 中古（タイトルのみ即死）────────────────
+  if (titleIsUsedMarket(rawTitle)) {
+    return {
+      isNoise: true,
+      scoreDelta: -999,
+      reasons: ['WORD:中古'],
+    };
   }
 
   // ── HARD WORD ─────────────────────

@@ -10,10 +10,20 @@ const DEFAULT_HITS = 20;
  * @param {number} [maxHits]
  * @returns {Promise<{ allItems: object[], shopResults: PromiseSettledResult[] }>}
  */
-export async function fetchMallPageSliceForKeywordList(kwList, mallPage, maxHits = DEFAULT_HITS) {
+export async function fetchMallPageSliceForKeywordList(
+  kwList,
+  mallPage,
+  maxHits = DEFAULT_HITS,
+  mallOptions = {}
+) {
   const p = Math.max(1, Math.floor(mallPage));
   const hits = Math.max(1, Math.min(30, maxHits));
   const yahooStart = (p - 1) * hits + 1;
+  const {
+    shoeSearchIntent = false,
+    userGender = 'unknown',
+    mallPreserveTokens = [],
+  } = mallOptions;
 
   const shopResults = await Promise.allSettled(
     (kwList || []).map((kw) =>
@@ -23,18 +33,24 @@ export async function fetchMallPageSliceForKeywordList(kwList, mallPage, maxHits
         skipCache: true,
         page: p,
         yahooStart,
+        shoeSearchIntent,
+        userGender,
+        mallPreserveTokens,
       })
     )
   );
 
   const allItems = [];
-  const meta = { marketRaw: 0, noiseExcluded: 0 };
+  const meta = { marketRaw: 0, noiseExcluded: 0, apparelPollution: 0 };
   shopResults.forEach((r) => {
     if (r.status === 'fulfilled' && r.value) {
       if (Array.isArray(r.value.items)) allItems.push(...r.value.items);
       const s = r.value.rejectReasonSummary || {};
       if (Number.isFinite(Number(s.marketRaw))) meta.marketRaw += Number(s.marketRaw) || 0;
       if (Number.isFinite(Number(s.noiseExcluded))) meta.noiseExcluded += Number(s.noiseExcluded) || 0;
+      if (Number.isFinite(Number(s.apparelPollution))) {
+        meta.apparelPollution += Number(s.apparelPollution) || 0;
+      }
     }
   });
   return { allItems, shopResults, meta };

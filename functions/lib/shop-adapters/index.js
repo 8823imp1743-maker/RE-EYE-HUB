@@ -1,6 +1,7 @@
 import { RakutenAdapter } from './rakuten.js';
 import { YahooAdapter }   from './yahoo.js';
-import { filterNoise }    from '../noise-filter.js';
+import { filterNoise, filterShoeMallPollution } from '../noise-filter.js';
+import { genresForKeyword } from '../user-size.js';
 
 const REGISTRY = [
   new RakutenAdapter(),
@@ -67,10 +68,23 @@ export async function searchAll(keyword, options = {}) {
   );
 
   // ── 事後検閲：中古・オークション・禁止ドメインを全滅させる ──
-  const cleanItems = filterNoise(items);
+  let cleanItems = filterNoise(items);
   const noiseDropped = Math.max(0, items.length - cleanItems.length);
   if (items.length !== cleanItems.length) {
     console.log('[AUDIT][searchAll] filterNoise 除外', noiseDropped, '件');
+  }
+
+  const shoeIntent =
+    options.shoeSearchIntent === true ||
+    (options.shoeSearchIntent !== false && genresForKeyword(keyword).isShoe);
+  let apparelDropped = 0;
+  if (shoeIntent) {
+    const beforeApparel = cleanItems.length;
+    cleanItems = filterShoeMallPollution(cleanItems);
+    apparelDropped = Math.max(0, beforeApparel - cleanItems.length);
+    if (apparelDropped > 0) {
+      console.log('[AUDIT][searchAll] filterShoeMallPollution 除外', apparelDropped, '件');
+    }
   }
 
   return {
@@ -78,6 +92,7 @@ export async function searchAll(keyword, options = {}) {
     errors,
     rejectReasonSummary: {
       noiseExcluded: noiseDropped,
+      apparelPollution: apparelDropped,
       marketRaw: items.length,
     },
   };

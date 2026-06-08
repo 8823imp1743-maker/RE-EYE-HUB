@@ -10,7 +10,12 @@
  * 厳密に「商品 PDP の HTML 解析を利用者端末へ」置くことは、楽天/Yahoo 等の **CORS 制約**でブラウザ直 fetch が通らないため、**PDP 取得は自サーバ経由が前提**。サーバは重い一括ループを避け、1 区切り・短タイムアウトで 10s 壁を下回る設計を意識する。
  */
 
-import { loadUserSettings, getUserShoeCmRawForPostFilter, genresForKeyword } from '../lib/user-size.js';
+import {
+  loadUserSettings,
+  getUserShoeCmRawForPostFilter,
+  genresForKeyword,
+  getUserMallPreserveTokens,
+} from '../lib/user-size.js';
 import { sanitizeUserId } from '../lib/user-settings.js';
 import { getRedis } from '../lib/redis.js';
 import {
@@ -922,7 +927,16 @@ async function runPdpShoeWithMallPaging({
       exhaustedMall = true;
       break;
     }
-    const { allItems, shopResults, meta } = await fetchMallPageSliceForKeywordList(kwList, mallP, HITS_PER_PAGE);
+    const { allItems, shopResults, meta } = await fetchMallPageSliceForKeywordList(
+      kwList,
+      mallP,
+      HITS_PER_PAGE,
+      {
+        shoeSearchIntent: true,
+        userGender,
+        mallPreserveTokens: getUserMallPreserveTokens(settings, baseKeyword, forChild),
+      }
+    );
     lastShopResults = shopResults;
     lastPerKw = toPerKwLog(shopResults, kwList);
     lastMallMeta = meta || lastMallMeta;
@@ -1568,7 +1582,16 @@ export default async function handler(req, res) {
       const pool0 = r0.pool;
       lastRejectSummary = r0.rejectReasonSummary;
       if (pool0.length >= targetEnd) break;
-      const { allItems, shopResults, meta } = await fetchMallPageSliceForKeywordList(kwList, mallP, HITS_PER_PAGE);
+      const { allItems, shopResults, meta } = await fetchMallPageSliceForKeywordList(
+        kwList,
+        mallP,
+        HITS_PER_PAGE,
+        {
+          shoeSearchIntent: isShoe,
+          userGender,
+          mallPreserveTokens: getUserMallPreserveTokens(settings, baseKeyword, forChild),
+        }
+      );
       perKw = toPerKwLog(shopResults, kwList);
       if (meta) {
         mallMeta.marketRaw += Number(meta.marketRaw) || 0;
