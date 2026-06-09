@@ -255,10 +255,70 @@ function shoeMallSourceBucket(item) {
   const sid = String(item?.sourceId || '').toLowerCase();
   if (sid === 'rakuten') return 'rakuten';
   if (sid === 'yahoo') return 'yahoo';
+  if (sid === 'amazon') return 'amazon';
   const url = String(item?.url || '').toLowerCase();
   if (/rakuten\.co\.jp|item\.rakuten/.test(url)) return 'rakuten';
   if (/yahoo\.co\.jp|shopping\.yahoo/.test(url)) return 'yahoo';
+  if (/amazon\.co\.jp/.test(url)) return 'amazon';
   return 'other';
+}
+
+const MALL_BUCKET_LABELS = {
+  rakuten: '楽天市場',
+  yahoo: 'Yahoo!ショッピング',
+  amazon: 'Amazon',
+  other: 'その他',
+};
+
+/** クライアント表示用: 確定在庫 vs ウォッチ候補 + モールラベル */
+function enrichStockDisplayMeta(row, rawIt = null) {
+  const src = rawIt || row;
+  const bucket = shoeMallSourceBucket(src);
+  const confirmed = row.pdpSizeVerified === true && row.gateTier === 'pdp_confirmed';
+  const listingAvailable = src.available !== false;
+  const tier = confirmed ? 'confirmed' : 'watch';
+  const watchSub = !listingAvailable ? 'oos' : row.size_match ? 'size_listed' : 'size_unknown';
+
+  return {
+    ...row,
+    mallBucket: bucket,
+    mallLabel: MALL_BUCKET_LABELS[bucket] || MALL_BUCKET_LABELS.other,
+    stockDisplayTier: tier,
+    watchSubTier: tier === 'watch' ? watchSub : null,
+    listingAvailable,
+    showBuyNow: tier === 'confirmed' && listingAvailable,
+    suppressStockHype: tier !== 'confirmed' || !listingAvailable,
+    available: tier === 'confirmed' && listingAvailable,
+  };
+}
+
+/** ウォッチ候補を楽天↔Yahoo で交互に並べ、片方だけに偏らないようにする */
+function interleaveByMallBucket(items) {
+  const buckets = { rakuten: [], yahoo: [], amazon: [], other: [] };
+  for (const it of items || []) {
+    const b = shoeMallSourceBucket(it);
+    if (buckets[b]) buckets[b].push(it);
+    else buckets.other.push(it);
+  }
+  const order = ['rakuten', 'yahoo', 'amazon', 'other'];
+  const out = [];
+  let more = true;
+  while (more) {
+    more = false;
+    for (const k of order) {
+      if (buckets[k].length) {
+        out.push(buckets[k].shift());
+        more = true;
+      }
+    }
+  }
+  return out;
+}
+
+function sortGatedWithMallInterleave(items) {
+  const confirmed = (items || []).filter((i) => i.stockDisplayTier === 'confirmed');
+  const watch = (items || []).filter((i) => i.stockDisplayTier !== 'confirmed');
+  return [...confirmed, ...interleaveByMallBucket(watch)];
 }
 
 /**
@@ -626,11 +686,11 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', f
   const pdpConfirmed = isPdpSizeConfirmed(mapped);
 
   if (pdpConfirmed) {
-    return {
+    return enrichStockDisplayMeta({
       ...mapped,
       size_match: true,
       gateTier: 'pdp_confirmed',
-    };
+    }, rawIt);
   }
 
   const cmSignal = hasMallCmSizeSignal(rawIt, targets);
@@ -645,7 +705,7 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', f
       ? `mall_stock_after_pdp_fail:${psc.reason || 'unknown'}`
       : 'mall_stock_signal';
 
-  return {
+  return enrichStockDisplayMeta({
     ...mapped,
     size_match: !!cmSignal,
     sizeMatchPending: true,
@@ -654,7 +714,6 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', f
     mallListingFallback: true,
     mallFallbackReason: fallbackReason,
     gateTier: cmSignal ? 'mall_cm_fallback' : 'mall_stock_fallback',
-    available: rawIt.available !== false,
     pdpSizeCheck: {
       ...psc,
       ok: null,
@@ -664,7 +723,7 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', f
       mallFallback: true,
       scanned: psc.scanned === true,
     },
-  };
+  }, rawIt);
 }
 
 /** ⑨ 靴: 最終フィルター — cm ターゲット空なら無理に出さず空配列（意図を明確化） */
@@ -687,25 +746,39 @@ function buildGatedShoeSortedList(items, targets, userGender = 'unknown', forChi
   return gated.map(({ _sortScore, ...rest }) => rest);
 }
 
-/** ⑩ PDP 確定ゼロ時: モール候補を「サイズ要確認」で返す（偽0件防止） */
-function buildShoeMallFallbackList(finalOrdered, displayCap, userGender = 'unknown', forChild = false) {
+/** ⑩ PDP 確定ゼロ時: モール候補を「ウォッチ候補」で返す（偽0件防止・売切れも含む） */
+function buildShoeMallFallbackList(finalOrdered, displayCap, userGender = 'unknown', forChild = false, targets = []) {
   const cap = Math.max(1, Math.floor(Number(displayCap) || STOCK_DISPLAY));
   return (finalOrdered || [])
     .filter((it) => {
       if (!it || typeof it.title !== 'string' || !it.url) return false;
-      if (it.available === false) return false;
       if (!passesGenderShoeFilter(it, userGender, forChild)) return false;
       return true;
     })
     .slice(0, cap)
     .map((it) => {
       const mapped = mapShoeSearchItemForClient(it);
-      return {
+      const cmSignal = Array.isArray(targets) && targets.length && hasMallCmSizeSignal(it, targets);
+      const fallbackReason = cmSignal ? 'mall_cm_signal' : 'mall_stock_signal';
+      return enrichStockDisplayMeta({
         ...mapped,
+        size_match: !!cmSignal,
         sizeMatchPending: true,
         pdpSizeTentative: true,
         pdpSizeVerified: false,
-      };
+        mallListingFallback: true,
+        mallFallbackReason: fallbackReason,
+        gateTier: cmSignal ? 'mall_cm_fallback' : 'mall_stock_fallback',
+        pdpSizeCheck: {
+          ...(mapped.pdpSizeCheck || {}),
+          ok: null,
+          reason: fallbackReason,
+          tentative: true,
+          strictConfirmed: false,
+          mallFallback: true,
+          scanned: false,
+        },
+      }, it);
     });
 }
 
@@ -1028,13 +1101,16 @@ function buildShoeMallListingOnlyResult(ctx) {
   const finalOrdered = candidates.map((it) => ({ ...it, finalScore: it.baseScore || 0 }));
   let gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums, userGender, forChild);
   if (gatedAll.length === 0 && finalOrdered.length > 0) {
-    gatedAll = buildShoeMallFallbackList(finalOrdered, Math.min(30, cap * 3), userGender, forChild);
+    gatedAll = buildShoeMallFallbackList(finalOrdered, Math.min(30, cap * 3), userGender, forChild, shoeTargetNums);
     logStockAudit('gate-fallback', {
       poolLen: finalOrdered.length,
       fallbackLen: gatedAll.length,
       reason: 'mall_listing_only_fallback',
     });
   }
+
+  gatedAll = gatedAll.map((row) => enrichStockDisplayMeta(row, row));
+  gatedAll = sortGatedWithMallInterleave(gatedAll);
 
   for (const row of gatedAll) {
     const sm = row.dedupeSellerModel || sellerModelDedupeKey(row);
@@ -1751,9 +1827,19 @@ export default async function handler(req, res) {
         itemsFinal,
       });
       logStockAudit('search-trace', searchTrace);
+      const stockSectionSummary = {
+        confirmed: itemsFinal.filter((i) => i.stockDisplayTier === 'confirmed').length,
+        watch: itemsFinal.filter((i) => i.stockDisplayTier === 'watch').length,
+        mallCounts: {
+          rakuten: itemsFinal.filter((i) => i.mallBucket === 'rakuten').length,
+          yahoo: itemsFinal.filter((i) => i.mallBucket === 'yahoo').length,
+          amazon: itemsFinal.filter((i) => i.mallBucket === 'amazon').length,
+        },
+      };
       return res.status(200).json({
         found: itemsFinal.length > 0,
         items: itemsFinal,
+        stockSectionSummary,
         nextStartingItem,
         userSettings: us,
         marketNewFound: marketNewCount > 0,

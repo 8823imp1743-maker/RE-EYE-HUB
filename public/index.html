@@ -1322,6 +1322,36 @@
         .stock-soldout-text { font-size: 11px; color: rgba(255,255,255,0.3); letter-spacing: 1px; }
         /* 在庫検索：ショップ・価格メタ */
         .stock-shop-meta { font-size: 11px; color: var(--amethyst); opacity: 0.8; letter-spacing: 0.5px; }
+        .stock-mall-badge {
+            display: inline-block; font-size: 11px; letter-spacing: 1.2px; padding: 3px 8px;
+            border-radius: 2px; margin-bottom: 6px; font-weight: 600;
+        }
+        .stock-mall-badge.rakuten { color: #bf0000; border: 1px solid rgba(191,0,0,0.45); background: rgba(191,0,0,0.08); }
+        .stock-mall-badge.yahoo { color: #ff0033; border: 1px solid rgba(255,0,51,0.4); background: rgba(255,0,51,0.07); }
+        .stock-mall-badge.amazon { color: #ff9900; border: 1px solid rgba(255,153,0,0.4); background: rgba(255,153,0,0.07); }
+        .stock-section-header {
+            font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--champagne-gold); margin: 16px 0 10px; padding-bottom: 6px;
+            border-bottom: 1px solid rgba(247,231,206,0.18);
+        }
+        .stock-section-header.confirmed { color: var(--champagne-gold); border-color: rgba(247,231,206,0.35); }
+        .stock-section-header.watch { color: rgba(155,89,182,0.95); border-color: rgba(155,89,182,0.35); }
+        .stock-mall-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
+        .stock-mall-filter-btn {
+            padding: 8px 12px; font-size: 11px; letter-spacing: 1px;
+            border: 1px solid rgba(155,89,182,0.35); border-radius: 2px;
+            background: rgba(255,255,255,0.03); color: rgba(247,231,206,0.75);
+            cursor: pointer; min-height: 44px; transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .stock-mall-filter-btn.active {
+            border-color: var(--amethyst); color: var(--champagne-gold);
+            box-shadow: 0 0 12px rgba(155,89,182,0.35);
+        }
+        .home-result-card.stock-watch-card { border-color: rgba(155,89,182,0.22); opacity: 0.92; }
+        .stock-status-line { font-size: 11px; margin-top: 6px; line-height: 1.45; letter-spacing: 0.4px; }
+        .stock-status-line.confirmed { color: var(--champagne-gold); font-weight: 600; }
+        .stock-status-line.watch-oos { color: rgba(255,255,255,0.45); }
+        .stock-status-line.watch-listed { color: rgba(247,231,206,0.72); }
         /* 在庫検索：見つからないエラー */
         .stock-not-found { font-size: 11px; color: rgba(247,231,206,0.55); text-align: center; padding: 16px 8px; letter-spacing: 0.8px; border: 1px solid rgba(247,231,206,0.15); border-radius: 2px; background: rgba(247,231,206,0.02); margin-top: 8px; }
         .re-eye-audit-wrap { margin-top: 12px; border: 1px solid rgba(155,89,182,0.35); border-radius: 2px; background: rgba(255,255,255,0.02); }
@@ -4365,7 +4395,11 @@ function buildSizeAwareKeyword(keyword,forChild){
 
 let _lastStockSearchContext = { keyword: '', forChild: false, displayKw: '' };
 /** 在庫「次へ」: サーバの prePdpScanIndex / listOffset と既出キー */
-let _stockPageState = { seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false };
+let _stockPageState = {
+    seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false,
+    accumulatedItems: [], mallFilter: 'all',
+};
+const _STOCK_HYPE_RE = /【[^】]*(?:残り僅か|残りわずか|在庫限り|売り切れ間近)[^】]*】|残り僅か!?|残りわずか|在庫限り!?|売り切れ間近/gi;
 /** 在庫検索の世代。再検索で増やし、古い非同期の描画を捨てる */
 let _stockSearchGen = 0;
 /** /api/search 最新応答の userSettings（都道府県目安の表示用） */
@@ -4508,7 +4542,10 @@ async function runStockSearch(keyword, forChild, loadMore) {
     if (!append) {
         if (hdr) hdr.innerHTML = '';
         if (list) list.innerHTML = '';
-        _stockPageState = { seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false };
+        _stockPageState = {
+            seenKeys: new Set(), seenSm: new Set(), cursor: null, isPdp: false, loadingMore: false,
+            accumulatedItems: [], mallFilter: 'all',
+        };
     }
 
     function isSeqPdpCursor(c) {
@@ -4626,8 +4663,18 @@ async function runStockSearch(keyword, forChild, loadMore) {
             if (it.dedupeSellerModel) _stockPageState.seenSm.add(String(it.dedupeSellerModel));
         }
         _stockPageState.cursor = data.searchCursor || null;
+        if (!append) {
+            _stockPageState.accumulatedItems = data.items.slice();
+            _stockPageState.mallFilter = 'all';
+        } else {
+            _stockPageState.accumulatedItems = (_stockPageState.accumulatedItems || []).concat(data.items);
+        }
         if (myGen !== _stockSearchGen) return;
-        renderStockResults(data.items, sk, data.normalizedKeyword || sk, data.errors || [], { append: append, searchCursor: data.searchCursor });
+        renderStockResults(_stockPageState.accumulatedItems, sk, data.normalizedKeyword || sk, data.errors || [], {
+            append: false,
+            searchCursor: data.searchCursor,
+            stockSectionSummary: data.stockSectionSummary || null,
+        });
         if (ir) ir.style.display = 'block';
     } catch (e) {
         if (myGen !== _stockSearchGen) return;
@@ -4657,107 +4704,225 @@ async function loadMoreStockResults() {
     }
 }
 
+function resolveStockMallBucket(item) {
+    if (item && item.mallBucket) return item.mallBucket;
+    const sid = String(item && item.sourceId || '').toLowerCase();
+    if (sid === 'rakuten') return 'rakuten';
+    if (sid === 'yahoo') return 'yahoo';
+    if (sid === 'amazon') return 'amazon';
+    const u = String(item && item.url || '').toLowerCase();
+    if (/rakuten\.co\.jp|item\.rakuten/.test(u)) return 'rakuten';
+    if (/yahoo\.co\.jp|shopping\.yahoo/.test(u)) return 'yahoo';
+    if (/amazon\.co\.jp/.test(u)) return 'amazon';
+    return 'other';
+}
+function resolveStockMallLabel(item) {
+    if (item && item.mallLabel) return item.mallLabel;
+    const b = resolveStockMallBucket(item);
+    if (b === 'rakuten') return '楽天市場';
+    if (b === 'yahoo') return 'Yahoo!ショッピング';
+    if (b === 'amazon') return 'Amazon';
+    return 'その他';
+}
+function sanitizeStockTitle(title, suppress) {
+    if (!title) return '';
+    if (!suppress) return String(title);
+    return String(title).replace(_STOCK_HYPE_RE, '').replace(/\s+/g, ' ').trim() || String(title);
+}
+function stockItemDisplayTier(item) {
+    if (item && item.stockDisplayTier) return item.stockDisplayTier;
+    if (item && item.pdpSizeVerified && item.showBuyNow !== false) return 'confirmed';
+    return 'watch';
+}
+function buildStockResultCard(item, keyword) {
+    const tier = stockItemDisplayTier(item);
+    const mallBucket = resolveStockMallBucket(item);
+    const suppressHype = item.suppressStockHype !== false && tier !== 'confirmed';
+    const listingAvail = item.listingAvailable !== false;
+
+    const card = document.createElement('div');
+    card.className = 'home-result-card' + (tier === 'watch' ? ' stock-watch-card' : '');
+    card.dataset.mallBucket = mallBucket;
+
+    const badge = document.createElement('span');
+    badge.className = 'stock-mall-badge ' + (mallBucket === 'rakuten' || mallBucket === 'yahoo' || mallBucket === 'amazon' ? mallBucket : '');
+    badge.textContent = resolveStockMallLabel(item);
+    card.appendChild(badge);
+
+    const t = document.createElement('div');
+    t.className = 'item-title';
+    t.textContent = sanitizeStockTitle(item.title || keyword, suppressHype);
+    card.appendChild(t);
+
+    const wm = buildWatchMetaLine(_lastStockSearchContext.forChild);
+    if (wm) {
+        const wx = document.createElement('div');
+        wx.className = 'meta-11px';
+        wx.style.cssText = 'color:var(--amethyst);opacity:0.95;margin-top:4px;';
+        wx.textContent = wm;
+        card.appendChild(wx);
+    }
+
+    const m = document.createElement('div');
+    m.className = 'stock-shop-meta';
+    m.textContent = `${item.shopName || ''}${item.price ? '  ¥' + Number(item.price).toLocaleString() : ''}`;
+    card.appendChild(m);
+
+    const status = document.createElement('div');
+    status.className = 'stock-status-line';
+    if (tier === 'confirmed' && item.showBuyNow) {
+        status.classList.add('confirmed');
+        status.textContent = '在庫あり確定 — 今すぐ購入できます';
+    } else if (!listingAvail || item.watchSubTier === 'oos') {
+        status.classList.add('watch-oos');
+        status.textContent = '（売り切れ）今は在庫がありません — 再入荷を待つ価値のあるショップ';
+    } else if (item.size_match || (item.mallFallbackReason && String(item.mallFallbackReason).startsWith('mall_cm'))) {
+        status.classList.add('watch-listed');
+        status.textContent = 'サイズ展開あり（一覧表示）— 今すぐ買えるかはリンク先で要確認';
+    } else {
+        status.classList.add('watch-listed');
+        status.textContent = '再入荷ウォッチ候補 — リンク先でサイズ・在庫をご確認ください';
+    }
+    card.appendChild(status);
+
+    const colorBits = [item.colorLabel, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean);
+    if (colorBits.length) {
+        const col = document.createElement('div');
+        col.className = 'meta-11px';
+        col.style.cssText = 'color:rgba(247,231,206,0.82);margin-top:6px;line-height:1.45;';
+        col.textContent = '色・タグ: ' + colorBits.join(' / ');
+        card.appendChild(col);
+    }
+
+    const actionArea = document.createElement('div');
+    actionArea.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:10px;';
+
+    if (item.showBuyNow) {
+        const buyBtn = document.createElement('button');
+        buyBtn.className = 'stock-buy-btn';
+        buyBtn.textContent = '購入ページへ（在庫あり確定）';
+        buyBtn.onclick = (e) => { e.stopPropagation(); openSafeUrl(item.url); };
+        actionArea.appendChild(buyBtn);
+    }
+
+    const watchBtn = document.createElement('button');
+    watchBtn.className = 'home-result-watch-btn';
+    watchBtn.style.cssText = 'width:100%;padding:10px;font-size:11px;';
+    watchBtn.textContent = tier === 'confirmed'
+        ? 'この商品を「零式監視」に追加'
+        : '再入荷を「零式監視」に追加';
+    watchBtn.onclick = (e) => { e.stopPropagation(); watchStockItem(item, keyword, watchBtn); };
+    actionArea.appendChild(watchBtn);
+
+    card.appendChild(actionArea);
+    return card;
+}
+function applyStockMallFilter(filter) {
+    _stockPageState.mallFilter = filter || 'all';
+    const cards = document.querySelectorAll('#home-inline-list .home-result-card[data-mall-bucket]');
+    cards.forEach((card) => {
+        const b = card.dataset.mallBucket || 'other';
+        const show = filter === 'all' || b === filter;
+        card.style.display = show ? '' : 'none';
+    });
+    document.querySelectorAll('.stock-mall-filter-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.mallFilter === _stockPageState.mallFilter);
+    });
+}
+function renderStockMallFilterRow(items) {
+    const counts = { rakuten: 0, yahoo: 0, amazon: 0 };
+    (items || []).forEach((it) => {
+        const b = resolveStockMallBucket(it);
+        if (counts[b] != null) counts[b] += 1;
+    });
+    const wrap = document.createElement('div');
+    wrap.className = 'stock-mall-filter';
+    wrap.id = 'stock-mall-filter-wrap';
+    const defs = [
+        { id: 'all', label: 'すべて' },
+        { id: 'rakuten', label: '楽天市場' + (counts.rakuten ? ' (' + counts.rakuten + ')' : '') },
+        { id: 'yahoo', label: 'Yahoo! (' + counts.yahoo + ')' },
+        { id: 'amazon', label: 'Amazon' + (counts.amazon ? ' (' + counts.amazon + ')' : '') },
+    ];
+    defs.forEach((d) => {
+        if (d.id === 'yahoo' && counts.yahoo === 0) return;
+        if (d.id === 'amazon' && counts.amazon === 0) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'stock-mall-filter-btn' + (_stockPageState.mallFilter === d.id ? ' active' : '');
+        btn.dataset.mallFilter = d.id;
+        btn.textContent = d.label;
+        btn.onclick = () => applyStockMallFilter(d.id);
+        wrap.appendChild(btn);
+    });
+    return wrap;
+}
 function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
     const o = opts || {};
-    const append = !!o.append;
     const sc = o.searchCursor;
     const wrap = document.getElementById('home-inline-results');
     const list = document.getElementById('home-inline-list');
     const hdr = document.getElementById('home-slot-header');
     if (!wrap || !list) return;
-    if (!append) {
-        list.innerHTML = '';
-    }
+    list.innerHTML = '';
 
-    if (hdr && !append) {
+    if (hdr) {
         hdr.innerHTML = `<span class="gold-label" style="font-size:11px;">検索結果 — ${displayKw}</span>`;
     }
 
-    if (!append) {
-        const aiBanner = document.createElement('div');
-        aiBanner.className = 'meta-11px';
-        aiBanner.setAttribute('role', 'status');
-        aiBanner.style.cssText =
-            'margin-bottom:14px;padding:12px 14px;line-height:1.55;letter-spacing:0.4px;' +
-            'color:var(--champagne-gold);font-weight:600;font-size:12px;' +
-            'border:1px solid rgba(155,89,182,0.55);border-radius:2px;' +
-            'background:rgba(155,89,182,0.12);box-shadow:0 0 18px rgba(155,89,182,0.15);';
-        const pref = _lastSearchUserSettings && _lastSearchUserSettings.prefecture;
-        const prefLine = pref
-            ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
-            : '価格・送料の目安は各店舗条件により異なります。';
-        aiBanner.textContent =
-            'AI判定：在庫の可能性があります。表示価格は「目安」です（送料・最安は保証しません）。詳細はリンク先で確認してください。' +
-            ' ' +
-            prefLine;
-        list.appendChild(aiBanner);
+    const aiBanner = document.createElement('div');
+    aiBanner.className = 'meta-11px';
+    aiBanner.setAttribute('role', 'status');
+    aiBanner.style.cssText =
+        'margin-bottom:14px;padding:12px 14px;line-height:1.55;letter-spacing:0.4px;' +
+        'color:var(--champagne-gold);font-weight:600;font-size:12px;' +
+        'border:1px solid rgba(155,89,182,0.55);border-radius:2px;' +
+        'background:rgba(155,89,182,0.12);box-shadow:0 0 18px rgba(155,89,182,0.15);';
+    const pref = _lastSearchUserSettings && _lastSearchUserSettings.prefecture;
+    const prefLine = pref
+        ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
+        : '価格・送料の目安は各店舗条件により異なります。';
+    aiBanner.textContent =
+        '一覧は楽天市場・Yahoo!ショッピングの検索結果です。上段は在庫確定、下段は再入荷ウォッチ候補です。' +
+        ' ' + prefLine;
+    list.appendChild(aiBanner);
+
+    list.appendChild(renderStockMallFilterRow(items));
+
+    const confirmed = (items || []).filter((it) => stockItemDisplayTier(it) === 'confirmed');
+    const watch = (items || []).filter((it) => stockItemDisplayTier(it) !== 'confirmed');
+
+    const secA = document.createElement('div');
+    secA.className = 'stock-section-header confirmed';
+    secA.textContent = '在庫あり確定（' + confirmed.length + '件）';
+    list.appendChild(secA);
+
+    if (confirmed.length === 0) {
+        const emptyA = document.createElement('div');
+        emptyA.className = 'meta-11px';
+        emptyA.style.cssText = 'color:rgba(247,231,206,0.55);margin-bottom:8px;line-height:1.5;';
+        emptyA.textContent = '一覧からは在庫確定のショップは見つかりませんでした。下の「再入荷ウォッチ候補」をご確認ください。';
+        list.appendChild(emptyA);
+    } else {
+        confirmed.forEach((item) => list.appendChild(buildStockResultCard(item, keyword)));
     }
 
-    const oldMore = document.getElementById('stock-load-more-wrap');
-    if (oldMore) oldMore.remove();
+    const secB = document.createElement('div');
+    secB.className = 'stock-section-header watch';
+    secB.textContent = '再入荷ウォッチ候補（' + watch.length + '件）';
+    list.appendChild(secB);
 
-    (items || []).forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'home-result-card';
-        
-        const t = document.createElement('div');
-        t.className = 'item-title';
-        t.textContent = item.title || keyword;
-        const wm = buildWatchMetaLine(_lastStockSearchContext.forChild);
-        if (wm) {
-            const wx = document.createElement('div');
-            wx.className = 'meta-11px';
-            wx.style.cssText = 'color:var(--amethyst);opacity:0.95;margin-top:4px;';
-            wx.textContent = wm;
-            card.appendChild(t);
-            card.appendChild(wx);
-        } else {
-            card.appendChild(t);
-        }
-        const m = document.createElement('div');
-        m.className = 'stock-shop-meta';
-        m.textContent = `${item.shopName || ''}${item.price ? '  ¥' + Number(item.price).toLocaleString() : ''}`;
-        card.appendChild(m);
-        if (item.sizeMatchPending || (item.pdpSizeCheck && item.pdpSizeCheck.scanned === false) || item.mallListingFallback) {
-            const pending = document.createElement('div');
-            pending.className = 'meta-11px';
-            pending.style.cssText = 'color:rgba(247,231,206,0.65);margin-top:6px;line-height:1.45;';
-            const cmFb = item.mallFallbackReason && String(item.mallFallbackReason).startsWith('mall_cm');
-            pending.textContent = cmFb
-                ? 'サイズ未確認（おそらくあり）— 一覧に希望サイズの記載があります'
-                : 'サイズ未確認 — リンク先でご自身のサイズをご確認ください';
-            card.appendChild(pending);
-        }
-        const colorBits = [item.colorLabel, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean);
-        if (colorBits.length) {
-            const col = document.createElement('div');
-            col.className = 'meta-11px';
-            col.style.cssText = 'color:rgba(247,231,206,0.82);margin-top:6px;line-height:1.45;';
-            col.textContent = '色・タグ: ' + colorBits.join(' / ');
-            card.appendChild(col);
-        }
+    if (watch.length === 0) {
+        const emptyB = document.createElement('div');
+        emptyB.className = 'meta-11px';
+        emptyB.style.cssText = 'color:rgba(247,231,206,0.45);margin-bottom:8px;';
+        emptyB.textContent = 'ウォッチ候補はありません。';
+        list.appendChild(emptyB);
+    } else {
+        watch.forEach((item) => list.appendChild(buildStockResultCard(item, keyword)));
+    }
 
-        const actionArea = document.createElement('div');
-        actionArea.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 10px;';
-
-        if (item.available) {
-            const buyBtn = document.createElement('button');
-            buyBtn.className = 'stock-buy-btn';
-            buyBtn.textContent = '購入ページへ（現在在庫あり）';
-            buyBtn.onclick = (e) => { e.stopPropagation(); openSafeUrl(item.url); };
-            actionArea.appendChild(buyBtn);
-        }
-
-        const watchBtn = document.createElement('button');
-        watchBtn.className = 'home-result-watch-btn';
-        watchBtn.style.cssText = 'width: 100%; padding: 10px; font-size: 11px;';
-        watchBtn.textContent = 'この商品を「零式監視」に追加';
-        watchBtn.onclick = (e) => { e.stopPropagation(); watchStockItem(item, keyword, watchBtn); };
-        actionArea.appendChild(watchBtn);
-
-        card.appendChild(actionArea);
-        list.appendChild(card);
-    });
+    applyStockMallFilter(_stockPageState.mallFilter || 'all');
 
     if (sc && sc.hasMore) {
         const moreWrap = document.createElement('div');
@@ -4776,8 +4941,8 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
 
     wrap.style.display = 'block';
     wrap.style.order = '1';
-    if (list) list.style.display = 'flex';
-    if (list) list.style.flexDirection = 'column';
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
 }
 function watchKeyword(kw,btn){
     watchStockItem({itemId:'kw_'+Date.now(),sourceId:'keyword',title:kw,price:0,available:false,url:'',shopName:'監視キーワード'},kw,btn);
