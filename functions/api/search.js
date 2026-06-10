@@ -298,7 +298,28 @@ function hasExplicitGlobalOos(hay) {
   return false;
 }
 
-/** クライアント表示用: 確定在庫 vs ウォッチ候補 + モールラベル */
+/**
+ * UX 3分類（検索結果のボタン・セクション用）
+ * buy_now     = 今買える（PDP確定 or 一覧強シグナル）
+ * check_stock = 在庫不明（購入+監視）
+ * sold_out    = 売切れ（監視のみ）
+ */
+function resolveStockUxTier(row, src, confirmed, stockLikely, explicitOos) {
+  if (confirmed && stockLikely) return 'buy_now';
+  if (
+    stockLikely &&
+    row.size_match &&
+    src.available === true &&
+    !explicitOos &&
+    (row.gateTier === 'mall_cm_fallback' || row.gateTier === 'pdp_confirmed')
+  ) {
+    return 'buy_now';
+  }
+  if (explicitOos && !stockLikely) return 'sold_out';
+  return 'check_stock';
+}
+
+/** クライアント表示用: 3分類 + モールラベル + ボタン出し分け */
 function enrichStockDisplayMeta(row, rawIt = null) {
   const src = rawIt || row;
   const bucket = shoeMallSourceBucket(src);
@@ -306,9 +327,10 @@ function enrichStockDisplayMeta(row, rawIt = null) {
   const hay = buildFullHaystack(src);
   const stockLikely = hasMallListingStockSignal(src);
   const explicitOos = hasExplicitGlobalOos(hay) || !stockLikely;
-  const tier = confirmed ? 'confirmed' : 'watch';
+  const uxTier = resolveStockUxTier(row, src, confirmed, stockLikely, explicitOos);
+  const tier = uxTier === 'buy_now' ? 'confirmed' : 'watch';
   let watchSub = 'size_unknown';
-  if (explicitOos) watchSub = 'oos';
+  if (uxTier === 'sold_out') watchSub = 'oos';
   else if (row.size_match && stockLikely) watchSub = 'stock_size_listed';
   else if (row.size_match) watchSub = 'size_listed';
   else if (stockLikely) watchSub = 'stock_likely';
@@ -317,15 +339,19 @@ function enrichStockDisplayMeta(row, rawIt = null) {
     ...row,
     mallBucket: bucket,
     mallLabel: MALL_BUCKET_LABELS[bucket] || MALL_BUCKET_LABELS.other,
+    stockUxTier: uxTier,
     stockDisplayTier: tier,
     watchSubTier: tier === 'watch' ? watchSub : null,
     listingAvailable: stockLikely,
     listingStockLikely: stockLikely,
     listingExplicitOos: explicitOos,
-    showBuyNow: confirmed && stockLikely,
-    showBuyLink: !confirmed && stockLikely && !!src.url,
+    mallApiInStock: src.available === true,
+    showBuyBtn: uxTier === 'buy_now' || uxTier === 'check_stock',
+    showWatchBtn: uxTier === 'check_stock' || uxTier === 'sold_out',
+    showBuyNow: uxTier === 'buy_now',
+    showBuyLink: uxTier === 'check_stock',
     suppressStockHype: explicitOos,
-    available: confirmed && stockLikely,
+    available: uxTier === 'buy_now',
   };
 }
 
@@ -1906,8 +1932,11 @@ export default async function handler(req, res) {
       });
       logStockAudit('search-trace', searchTrace);
       const stockSectionSummary = {
-        confirmed: itemsFinal.filter((i) => i.stockDisplayTier === 'confirmed').length,
-        watch: itemsFinal.filter((i) => i.stockDisplayTier === 'watch').length,
+        buyNow: itemsFinal.filter((i) => i.stockUxTier === 'buy_now').length,
+        checkStock: itemsFinal.filter((i) => i.stockUxTier === 'check_stock').length,
+        soldOut: itemsFinal.filter((i) => i.stockUxTier === 'sold_out').length,
+        confirmed: itemsFinal.filter((i) => i.stockUxTier === 'buy_now').length,
+        watch: itemsFinal.filter((i) => i.stockUxTier !== 'buy_now').length,
         mallCounts: {
           rakuten: itemsFinal.filter((i) => i.mallBucket === 'rakuten').length,
           yahoo: itemsFinal.filter((i) => i.mallBucket === 'yahoo').length,
