@@ -4842,6 +4842,9 @@ function buildStockResultCard(item, keyword) {
 
     const showBuy = item.showBuyBtn !== false && uxTier !== 'sold_out' && item.url;
     const showWatch = item.showWatchBtn !== false && uxTier !== 'buy_now';
+    const watchHint = document.createElement('div');
+    watchHint.className = 'meta-11px';
+    watchHint.style.cssText = 'line-height:1.45;color:rgba(247,231,206,0.55);';
 
     if (showWatch) {
         const watchBtn = document.createElement('button');
@@ -4850,6 +4853,15 @@ function buildStockResultCard(item, keyword) {
         watchBtn.textContent = '零式監視に追加';
         watchBtn.onclick = (e) => { e.stopPropagation(); watchStockItem(item, keyword, watchBtn); };
         actionArea.appendChild(watchBtn);
+    } else if (uxTier !== 'buy_now' && item.watchBlockReason) {
+        if (item.watchBlockReason === 'size_listing_mismatch') {
+            watchHint.textContent = 'この店舗は希望サイズと一覧が一致しないため監視できません';
+        } else if (item.watchBlockReason === 'model_required') {
+            watchHint.textContent = '監視には品番が必要です（例: IM3110-500 / CW2288-111）';
+        } else if (item.watchBlockReason === 'color_recommended') {
+            watchHint.textContent = '監視には色の指定が必要です（例: ホワイト / ライトパープル）';
+        }
+        if (watchHint.textContent) actionArea.appendChild(watchHint);
     }
 
     if (showBuy) {
@@ -4929,7 +4941,7 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
         ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
         : '価格・送料の目安は各店舗条件により異なります。';
         aiBanner.textContent =
-            '検索は零式監視への入口です。今買える店・要確認・売切れを分けて表示します。主役は「零式監視に追加」です。' +
+            '検索は零式監視への入口です。監視登録には品番・色・サイズが必要です（例: エアマックス90 ホワイト CW2288-111 26.5cm）。' +
             ' ' + prefLine;
     list.appendChild(aiBanner);
 
@@ -4984,7 +4996,20 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
 function watchKeyword(kw,btn){
     watchStockItem({itemId:'kw_'+Date.now(),sourceId:'keyword',title:kw,price:0,available:false,url:'',shopName:'監視キーワード'},kw,btn);
 }
+function watchBlockMessage(item) {
+    const r = item && item.watchBlockReason;
+    if (r === 'size_listing_mismatch') return '希望サイズと一致しない商品は零式監視に登録できません。';
+    if (r === 'model_required') return '品番が特定できません。キーワードに品番（例: CW2288-111）を入れてください。';
+    if (r === 'color_recommended') return '色が未指定です。キーワードに色（例: ホワイト）を入れてから監視してください。';
+    if (item && item.watchEligible === false) return 'この商品は監視条件を満たしていません。';
+    return '';
+}
 async function watchStockItem(item,keyword,btn){
+    const blockMsg = watchBlockMessage(item);
+    if (blockMsg && item && item.sourceId !== 'manual') {
+        alert(blockMsg);
+        return;
+    }
     if (btn) {
         btn.textContent = '登録中...';
         btn.disabled = true;
