@@ -1352,6 +1352,14 @@
         .stock-status-line.confirmed { color: var(--champagne-gold); font-weight: 600; }
         .stock-status-line.watch-oos { color: rgba(255,255,255,0.45); }
         .stock-status-line.watch-listed { color: rgba(247,231,206,0.72); }
+        .stock-status-line.watch-likely { color: var(--champagne-gold); font-weight: 600; }
+        .stock-buy-link-btn {
+            display: block; width: 100%; padding: 10px 12px;
+            background: rgba(155,89,182,0.15); border: 1px solid rgba(155,89,182,0.55);
+            border-radius: 2px; color: var(--champagne-gold); font-size: 11px;
+            font-weight: bold; letter-spacing: 2px; text-align: center;
+            cursor: pointer; font-family: inherit;
+        }
         /* 在庫検索：見つからないエラー */
         .stock-not-found { font-size: 11px; color: rgba(247,231,206,0.55); text-align: center; padding: 16px 8px; letter-spacing: 0.8px; border: 1px solid rgba(247,231,206,0.15); border-radius: 2px; background: rgba(247,231,206,0.02); margin-top: 8px; }
         .re-eye-audit-wrap { margin-top: 12px; border: 1px solid rgba(155,89,182,0.35); border-radius: 2px; background: rgba(255,255,255,0.02); }
@@ -4752,8 +4760,9 @@ function stockItemDisplayTier(item) {
 function buildStockResultCard(item, keyword) {
     const tier = stockItemDisplayTier(item);
     const mallBucket = resolveStockMallBucket(item);
-    const suppressHype = item.suppressStockHype !== false && tier !== 'confirmed';
-    const listingAvail = item.listingAvailable !== false;
+    const suppressHype = item.suppressStockHype === true;
+    const stockLikely = item.listingStockLikely === true || item.listingAvailable === true;
+    const explicitOos = item.listingExplicitOos === true || item.watchSubTier === 'oos';
 
     const card = document.createElement('div');
     card.className = 'home-result-card' + (tier === 'watch' ? ' stock-watch-card' : '');
@@ -4788,12 +4797,18 @@ function buildStockResultCard(item, keyword) {
     if (tier === 'confirmed' && item.showBuyNow) {
         status.classList.add('confirmed');
         status.textContent = '在庫あり確定 — 今すぐ購入できます';
-    } else if (!listingAvail || item.watchSubTier === 'oos') {
+    } else if (explicitOos && !stockLikely) {
         status.classList.add('watch-oos');
         status.textContent = '（売り切れ）今は在庫がありません — 再入荷を待つ価値のあるショップ';
+    } else if (stockLikely && (item.size_match || item.watchSubTier === 'stock_size_listed' || (item.mallFallbackReason && String(item.mallFallbackReason).startsWith('mall_cm')))) {
+        status.classList.add('watch-likely');
+        status.textContent = '一覧では在庫ありの可能性（希望サイズの記載あり）— リンク先でご確認ください';
+    } else if (stockLikely) {
+        status.classList.add('watch-likely');
+        status.textContent = '一覧では在庫ありの可能性 — リンク先でサイズ・在庫をご確認ください';
     } else if (item.size_match || (item.mallFallbackReason && String(item.mallFallbackReason).startsWith('mall_cm'))) {
         status.classList.add('watch-listed');
-        status.textContent = 'サイズ展開あり（一覧表示）— 今すぐ買えるかはリンク先で要確認';
+        status.textContent = 'サイズ展開あり（一覧表示）— リンク先で在庫をご確認ください';
     } else {
         status.classList.add('watch-listed');
         status.textContent = '再入荷ウォッチ候補 — リンク先でサイズ・在庫をご確認ください';
@@ -4818,6 +4833,12 @@ function buildStockResultCard(item, keyword) {
         buyBtn.textContent = '購入ページへ（在庫あり確定）';
         buyBtn.onclick = (e) => { e.stopPropagation(); openSafeUrl(item.url); };
         actionArea.appendChild(buyBtn);
+    } else if (item.showBuyLink || (stockLikely && item.url && !explicitOos)) {
+        const linkBtn = document.createElement('button');
+        linkBtn.className = 'stock-buy-link-btn';
+        linkBtn.textContent = '購入ページへ（在庫の可能性あり）';
+        linkBtn.onclick = (e) => { e.stopPropagation(); openSafeUrl(item.url); };
+        actionArea.appendChild(linkBtn);
     }
 
     const watchBtn = document.createElement('button');
@@ -4897,15 +4918,20 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
     const prefLine = pref
         ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
         : '価格・送料の目安は各店舗条件により異なります。';
-    aiBanner.textContent =
-        '一覧は楽天市場・Yahoo!ショッピングの検索結果です。上段は在庫確定、下段は再入荷ウォッチ候補です。' +
-        ' ' + prefLine;
+        aiBanner.textContent =
+            '一覧は楽天・Yahooの検索結果です。「在庫の可能性あり」は一覧上の情報であり、リンク先で最終確認してください。' +
+            ' ' + prefLine;
     list.appendChild(aiBanner);
 
     list.appendChild(renderStockMallFilterRow(items));
 
     const confirmed = (items || []).filter((it) => stockItemDisplayTier(it) === 'confirmed');
-    const watch = (items || []).filter((it) => stockItemDisplayTier(it) !== 'confirmed');
+    const watch = (items || []).filter((it) => stockItemDisplayTier(it) !== 'confirmed').sort((a, b) => {
+        const sa = (a.listingStockLikely || a.listingAvailable) ? 1 : 0;
+        const sb = (b.listingStockLikely || b.listingAvailable) ? 1 : 0;
+        if (sb !== sa) return sb - sa;
+        return (b.size_match ? 1 : 0) - (a.size_match ? 1 : 0);
+    });
 
     const secA = document.createElement('div');
     secA.className = 'stock-section-header confirmed';

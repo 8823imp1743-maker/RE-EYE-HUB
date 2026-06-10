@@ -287,14 +287,31 @@ const MALL_BUCKET_LABELS = {
   other: 'その他',
 };
 
+/** 商品全体が売切れと言い切れる表現のみ（「26.5cm品切れ」等の部分表記は許容） */
+function hasExplicitGlobalOos(hay) {
+  if (!hay) return false;
+  const t = String(hay).trim();
+  if (/^(【)?(売り切れ|完売|在庫なし|sold\s*out)/i.test(t)) return true;
+  if (/販売終了|取り扱い終了|販売休止|販売不可/.test(t) && !/購入|カート|在庫あり|注文|販売中/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
 /** クライアント表示用: 確定在庫 vs ウォッチ候補 + モールラベル */
 function enrichStockDisplayMeta(row, rawIt = null) {
   const src = rawIt || row;
   const bucket = shoeMallSourceBucket(src);
   const confirmed = row.pdpSizeVerified === true && row.gateTier === 'pdp_confirmed';
-  const listingAvailable = src.available !== false;
+  const hay = buildFullHaystack(src);
+  const stockLikely = hasMallListingStockSignal(src);
+  const explicitOos = hasExplicitGlobalOos(hay) || !stockLikely;
   const tier = confirmed ? 'confirmed' : 'watch';
-  const watchSub = !listingAvailable ? 'oos' : row.size_match ? 'size_listed' : 'size_unknown';
+  let watchSub = 'size_unknown';
+  if (explicitOos) watchSub = 'oos';
+  else if (row.size_match && stockLikely) watchSub = 'stock_size_listed';
+  else if (row.size_match) watchSub = 'size_listed';
+  else if (stockLikely) watchSub = 'stock_likely';
 
   return {
     ...row,
@@ -302,10 +319,13 @@ function enrichStockDisplayMeta(row, rawIt = null) {
     mallLabel: MALL_BUCKET_LABELS[bucket] || MALL_BUCKET_LABELS.other,
     stockDisplayTier: tier,
     watchSubTier: tier === 'watch' ? watchSub : null,
-    listingAvailable,
-    showBuyNow: tier === 'confirmed' && listingAvailable,
-    suppressStockHype: tier !== 'confirmed' || !listingAvailable,
-    available: tier === 'confirmed' && listingAvailable,
+    listingAvailable: stockLikely,
+    listingStockLikely: stockLikely,
+    listingExplicitOos: explicitOos,
+    showBuyNow: confirmed && stockLikely,
+    showBuyLink: !confirmed && stockLikely && !!src.url,
+    suppressStockHype: explicitOos,
+    available: confirmed && stockLikely,
   };
 }
 
@@ -636,12 +656,12 @@ const MALL_STOCK_HINT_RE =
 function hasMallListingStockSignal(rawIt) {
   if (!rawIt) return false;
   const hay = buildFullHaystack(rawIt);
-  if (/品切れ|売り切れ|sold\s*out|在庫なし|完売/i.test(hay)) return false;
-  // 楽天/Yahoo とも親 SKU の availability=0 でも子サイズ在庫ありが多い → 明示 OOS 以外は候補に残す
+  if (hasExplicitGlobalOos(hay)) return false;
+  // 楽天/Yahoo: 親 SKU availability=0 や「一部サイズ品切れ」でも購入可能なことが多い
   const sid = String(rawIt.sourceId || '').toLowerCase();
   if (sid === 'rakuten' || sid === 'yahoo') return true;
-  if (rawIt.available === false) return false;
   if (rawIt.available === true) return true;
+  if (rawIt.available === false) return false;
   return MALL_STOCK_HINT_RE.test(hay);
 }
 
