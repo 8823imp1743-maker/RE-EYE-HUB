@@ -23,7 +23,7 @@ import {
   normalizeBrand,
 } from '../lib/stock-search-query.js';
 import { extractModelNumbers, hasSizeInTitleUniversal } from '../lib/cross-validator.js';
-import { buildSerpPlainTextHaystack, validateColorMatchForItem } from '../lib/color-filter.js';
+import { buildSerpPlainTextHaystack, validateColorMatchForItem, extractColorKeywords } from '../lib/color-filter.js';
 import { matchesProductKeyword } from '../lib/keyword-match.js';
 import { verifyShoeSizeOnPdp } from '../lib/pdp-shoe-stock.js';
 import { itemCanonicalKey, sellerModelDedupeKey } from '../lib/stock-dedupe.js';
@@ -169,16 +169,35 @@ function passesGenderShoeFilter(item, userGender, forChild = false) {
   return true;
 }
 
-/** ③ 不正サイズ遮断（入口）— `!hay` は不正 */
-function isInvalidSizeExpression(hay) {
+function extractCmTokens(hay) {
+  if (!hay) return [];
+  const matches = [...String(hay).matchAll(/(?<!\d)(\d{2}(?:\.\d)?)(?!\d)\s*(cm|㎝)/g)];
+  return matches.map((m) => Number(m[1])).filter(Number.isFinite);
+}
+
+/** ③ 不正サイズ遮断 — レンジのみは希望 cm が字面にあれば許可 */
+function hayHasBlockingSizeExpression(hay, targets = null) {
   if (!hay) return true;
-
-  if (/\d{2}(?:\.\d)?\s*[-～〜]\s*\d{2}\s*(cm|㎝)/.test(hay)) return true;
-
   if (/約\s*\d{2}(?:\.\d)?\s*(cm|㎝)/.test(hay)) return true;
   if (/前後\s*\d{2}(?:\.\d)?\s*(cm|㎝)/.test(hay)) return true;
-
+  if (/\d{2}(?:\.\d)?\s*[-～〜]\s*\d{2}\s*(cm|㎝)/.test(hay)) {
+    if (!Array.isArray(targets) || !targets.length) return true;
+    const tokens = extractCmTokens(hay);
+    const hit = targets.some((t) => {
+      const nt = normalizeCm(t);
+      return nt !== null && tokens.some((c) => normalizeCm(c) === nt);
+    });
+    return !hit;
+  }
   return false;
+}
+
+function isInvalidSizeExpression(hay, targets = null) {
+  return hayHasBlockingSizeExpression(hay, targets);
+}
+
+function hayBlocksShoeGate(hay, targets) {
+  return hayHasBlockingSizeExpression(hay, targets);
 }
 
 /** ⑩ cm ターゲット（推測禁止）— multiTargetCm + キーワード内の明示 `\d+cm` のみ */
@@ -223,11 +242,9 @@ function resolveShoeCmTargetsStrict(settings, opts = {}) {
   return out;
 }
 
-/** ① SERP 投入前（靴）— hay が無ければ通過、あれば不正表記を遮断 */
-function preSerpFilter(raw) {
-  const hay = buildFullHaystack(raw || {});
-  if (!hay) return true;
-  return !isInvalidSizeExpression(hay);
+/** ① SERP 投入前（靴）— モール一覧はサイズレンジが多いため入口では落とさない */
+function preSerpFilter() {
+  return true;
 }
 
 async function resolveUserPlan(r, userId, requestPlan) {
@@ -618,13 +635,11 @@ const MALL_STOCK_HINT_RE =
 /** モール一覧で在庫ありシグナル（API availability + タイトル/説明） */
 function hasMallListingStockSignal(rawIt) {
   if (!rawIt) return false;
-  const isRakuten = String(rawIt.sourceId || '').toLowerCase() === 'rakuten';
   const hay = buildFullHaystack(rawIt);
-  if (/品切れ|売り切れ|sold\s*out/i.test(hay)) return false;
-  // 楽天 Ichiba: 親 SKU の availability=0 でも子サイズに在庫ありが多い → 明示 OOS 以外は候補に残す
-  if (isRakuten) {
-    return true;
-  }
+  if (/品切れ|売り切れ|sold\s*out|在庫なし|完売/i.test(hay)) return false;
+  // 楽天/Yahoo とも親 SKU の availability=0 でも子サイズ在庫ありが多い → 明示 OOS 以外は候補に残す
+  const sid = String(rawIt.sourceId || '').toLowerCase();
+  if (sid === 'rakuten' || sid === 'yahoo') return true;
   if (rawIt.available === false) return false;
   if (rawIt.available === true) return true;
   return MALL_STOCK_HINT_RE.test(hay);
@@ -633,7 +648,7 @@ function hasMallListingStockSignal(rawIt) {
 /** モール一覧テキストに希望 cm が明示されているか */
 function hasMallCmSizeSignal(rawIt, targets) {
   const hay = buildFullHaystack(rawIt);
-  if (!hay || isInvalidSizeExpression(hay)) return false;
+  if (!hay || hayBlocksShoeGate(hay, targets)) return false;
   return computeExactCmMatch(hay, targets);
 }
 
@@ -642,25 +657,28 @@ function shoeGateTierRank(item) {
   if (t === 'pdp_confirmed') return 0;
   if (t === 'mall_cm_fallback') return 1;
   if (t === 'mall_stock_fallback') return 2;
+  if (t === 'mall_shoe_pool') return 3;
   return 9;
 }
 
-/** ④ cm 抽出（単一トークンのみ） */
-function serpExtractApprovedCms(hay) {
-  if (!hay) return [];
-
-  if (isInvalidSizeExpression(hay)) return [];
-
-  const matches = [...String(hay).matchAll(/(?<!\d)(\d{2}(?:\.\d)?)(?!\d)\s*(cm|㎝)/g)];
-
-  return matches
-    .map((m) => Number(m[1]))
-    .filter(Number.isFinite);
+/** ④ cm 抽出 — レンジ併記でも希望 cm が字面にあれば拾う */
+function serpExtractApprovedCms(hay, targets = null) {
+  const cms = extractCmTokens(hay);
+  if (!cms.length) return [];
+  if (!hayHasBlockingSizeExpression(hay, targets)) return cms;
+  if (Array.isArray(targets) && targets.length) {
+    const hit = targets.some((t) => {
+      const nt = normalizeCm(t);
+      return nt !== null && cms.some((c) => normalizeCm(c) === nt);
+    });
+    if (hit) return cms;
+  }
+  return [];
 }
 
 /** ⑥ 完全一致 */
 function computeExactCmMatch(hay, targets) {
-  const extracted = serpExtractApprovedCms(hay);
+  const extracted = serpExtractApprovedCms(hay, targets);
 
   if (!targets?.length || !extracted.length) return false;
 
@@ -680,7 +698,7 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', f
   if (!passesGenderShoeFilter(rawIt, userGender, forChild)) return null;
 
   const hay = buildFullHaystack(rawIt);
-  if (isInvalidSizeExpression(hay)) return null;
+  if (hayBlocksShoeGate(hay, targets)) return null;
 
   const mapped = mapShoeSearchItemForClient(rawIt);
   const pdpConfirmed = isPdpSizeConfirmed(mapped);
@@ -695,7 +713,27 @@ function mapShoeSearchItemWithSizeGate(rawIt, targets, userGender = 'unknown', f
 
   const cmSignal = hasMallCmSizeSignal(rawIt, targets);
   const stockSignal = hasMallListingStockSignal(rawIt);
-  if (!cmSignal && !stockSignal) return null;
+  if (!cmSignal && !stockSignal) {
+    return enrichStockDisplayMeta({
+      ...mapped,
+      size_match: false,
+      sizeMatchPending: true,
+      pdpSizeTentative: true,
+      pdpSizeVerified: false,
+      mallListingFallback: true,
+      mallFallbackReason: 'mall_shoe_pool',
+      gateTier: 'mall_shoe_pool',
+      pdpSizeCheck: {
+        ...(mapped.pdpSizeCheck || {}),
+        ok: null,
+        reason: 'mall_shoe_pool',
+        tentative: true,
+        strictConfirmed: false,
+        mallFallback: true,
+        scanned: false,
+      },
+    }, rawIt);
+  }
 
   const psc = mapped.pdpSizeCheck || {};
   const pdpFailed = psc.scanned === true && psc.ok === false;
@@ -786,6 +824,26 @@ function setNoStore(res) {
   res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+}
+
+/** 監視登録用: 品番・色・サイズをキーワードから構造化（色違い通知の無駄を防ぐ） */
+function buildWatchAxesFromKeyword(keyword, shoeTargetNums, userGender, settings) {
+  const models = extractModelNumbers(keyword);
+  const colors = extractColorKeywords(keyword);
+  const sizeCm =
+    shoeTargetNums && shoeTargetNums.length
+      ? shoeTargetNums[0]
+      : settings?.shoeCm != null
+        ? Number(settings.shoeCm)
+        : null;
+  return {
+    models,
+    colors,
+    sizeCm: Number.isFinite(sizeCm) ? sizeCm : null,
+    gender: userGender || 'unknown',
+    keywordDisplay: stripSizeCmFromDisplayKeyword(keyword),
+    colorRequired: colors.length > 0,
+  };
 }
 
 function jtrunc(s, n = 220) {
@@ -1836,10 +1894,12 @@ export default async function handler(req, res) {
           amazon: itemsFinal.filter((i) => i.mallBucket === 'amazon').length,
         },
       };
+      const watchAxes = buildWatchAxesFromKeyword(baseKeyword, shoeTargetNums, userGender, settings);
       return res.status(200).json({
         found: itemsFinal.length > 0,
         items: itemsFinal,
         stockSectionSummary,
+        watchAxes,
         nextStartingItem,
         userSettings: us,
         marketNewFound: marketNewCount > 0,

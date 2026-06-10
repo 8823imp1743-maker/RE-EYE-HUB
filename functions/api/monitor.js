@@ -396,8 +396,11 @@ async function handleRegister(req, res) {
     ...extractModelNumbers(registeredTitle),
   ].filter((v, i, a) => a.indexOf(v) === i); // 重複除去
 
-  // 色キーワードも登録時に確定・保存（ピンク/pink 等）
-  const registeredColors = extractColorKeywords(keyword);
+  // 色キーワードも登録時に確定・保存（キーワード + body.color の両方）
+  const registeredColors = [
+    ...extractColorKeywords(keyword),
+    ...(body.color ? extractColorKeywords(String(body.color)) : []),
+  ].filter((v, i, a) => a.indexOf(v) === i);
 
   if (registeredModels.length > 0) {
     console.log(`[monitor] 品番確定: ${registeredModels.join(', ')} ("${registeredTitle.slice(0,50)}")`);
