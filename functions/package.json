@@ -5,7 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "node scripts/pdp-legacy-guard.mjs && node --test lib/pdp-shoe-stock.test.mjs lib/cross-validator-size.test.mjs lib/simple-html-stock-check.test.mjs lib/noise-filter.test.mjs lib/notify-plan-policy.test.mjs lib/notify-ltv.test.mjs lib/notify-ctr.test.mjs lib/notify-time-jst.test.mjs lib/serp-product-classifier.test.mjs lib/serp-v5-pipeline.test.mjs lib/contradiction-engine.test.mjs lib/ce-feedback.test.mjs lib/attribute-gate.test.mjs"
+    "test": "node scripts/pdp-legacy-guard.mjs && node --test lib/pdp-shoe-stock.test.mjs lib/cross-validator-size.test.mjs lib/simple-html-stock-check.test.mjs lib/noise-filter.test.mjs lib/notify-plan-policy.test.mjs lib/notify-ltv.test.mjs lib/notify-ctr.test.mjs lib/notify-time-jst.test.mjs lib/serp-product-classifier.test.mjs lib/serp-v5-pipeline.test.mjs lib/contradiction-engine.test.mjs lib/ce-feedback.test.mjs lib/attribute-gate.test.mjs lib/purchase-funnel.test.mjs"
   },
   "engines": {
     "node": "20"

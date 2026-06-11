@@ -8,6 +8,7 @@ import { freeDailyCapRecordSuccess } from './free-user-daily-cap.js';
 import { opsJsonLog } from './notify-ops-log.js';
 import { shouldApplyTagAndFilter, isPaidPlan } from './notify-plan-policy.js';
 import { recordCtrTemplateSent } from './ctr-metrics.js';
+import { recordFunnelStage } from './purchase-funnel.js';
 
 /**
  * internal フィールドをデータペイロードから除く。
@@ -236,6 +237,23 @@ export async function sendOneSignalNotification({
   try {
     if (ctrTemplate && nid && recipients !== 0) {
       await recordCtrTemplateSent(getRedis(), ctrTemplate);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  /** Phase3-A: ファネル sent（recipients=0 はカウントしない） */
+  try {
+    const funnelId =
+      dataObj.funnelId != null ? String(dataObj.funnelId).trim().slice(0, 32) : '';
+    if (funnelId && nid && recipients !== 0) {
+      await recordFunnelStage(getRedis(), funnelId, 'sent', {
+        userId: payloadUserId || undefined,
+        opsSource: dataObj.funnelOpsSource || dataObj.opsSource,
+        model: dataObj.funnelModel,
+        color: dataObj.funnelColor,
+        size: dataObj.funnelSize,
+      });
     }
   } catch {
     /* ignore */

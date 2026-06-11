@@ -45,6 +45,19 @@
             const uid = localStorage.getItem('re_eye_uid') || '';
             if (uid) OneSignal.User.addTag("userId", uid);
           }
+          OneSignal.Notifications.addEventListener('click', function(event) {
+            try {
+              const data = (event && event.notification && event.notification.additionalData) || {};
+              const funnelId = data.funnelId;
+              if (!funnelId) return;
+              recordPurchaseFunnel('click', funnelId, data.userId);
+              const dest = data.itemUrl || data.url || '';
+              if (dest && /^https?:\/\//i.test(String(dest))) {
+                try { sessionStorage.setItem('re_eye_funnel_arrival', funnelId); } catch (_) {}
+                recordPurchaseFunnel('arrival', funnelId, data.userId);
+              }
+            } catch (_) { /* noop */ }
+          });
         } catch (e) { /* App not configured 等 — サイレント継続 */ }
       });
     </script>
@@ -2065,8 +2078,22 @@ function isUntrustedUrl(url) {
     const u = url.toLowerCase();
     return UNTRUSTED_DOMAINS.some(d => u.includes(d));
 }
-function openSafeUrl(url) {
+function recordPurchaseFunnel(stage, funnelId, userId) {
+    if (!funnelId || !stage) return;
+    fetchApi('/api?action=funnel-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            funnelId: String(funnelId),
+            stage: String(stage),
+            userId: userId || getUserId() || undefined,
+        }),
+    }).catch(function() {});
+}
+function openSafeUrl(url, opts) {
     if (!url) return;
+    const o = opts || {};
+    if (o.funnelId) recordPurchaseFunnel('arrival', o.funnelId);
     StateStore.freeze(getActiveScreenId());
     if (isUntrustedUrl(url)) {
         if (!confirm('このリンクは広告URLの可能性があります。続けますか？')) return;

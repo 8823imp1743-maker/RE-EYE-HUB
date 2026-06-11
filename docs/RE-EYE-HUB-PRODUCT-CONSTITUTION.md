@@ -162,6 +162,27 @@ RE-EYE-HUB は検索ツールではなく監視ツールであるため、
 
 ---
 
+# RE-EYE-HUB v1.0 完成ライン（固定）
+
+Phase1 + Phase2 + **Phase3-A のみ** で v1.0 完成。それ以降の機能追加は利用者増加後に検討。
+
+## v1.0 に含む
+
+- 憲法・見張り台UI・attribute-gate
+- Digest / Rate Limit / Safety Lock
+- **購入ファネル計測**（sent / click / arrival + `/api/funnel-stats`）
+
+## v1.0 で実装しない
+
+購入完了計測 / BigQuery常時分析 / AIレコメンド / SNS / コミュニティ / オークション（内部判断のみ可）/ 自動価格比較 / 商品ランキング / 課金強化
+
+## v1.0 後（利用者増加後）
+
+- Phase3-B: watchGroup 多店舗統合
+- Phase3-C: 購入成功UI（在庫確度・最安・送料・推奨店舗）
+
+---
+
 # Phase 2 — attribute-gate（通知エンジン）
 
 検索 → 監視登録 → Cron → 通知の全ルートで `targetAttributes`（model / color / size）を保持。
@@ -169,6 +190,22 @@ RE-EYE-HUB は検索ツールではなく監視ツールであるため、
 通知直前に `evaluateAttributeGate()` を実行。3軸いずれか不一致 → `attribute_gate_skip` ログを出して通知しない。
 
 実装：`functions/lib/attribute-gate.js`（`monitor.js` / `poll.js`）
+
+---
+
+# Phase 3-A — 購入ファネル計測（v1.0 最後の必須）
+
+| stage | Redis | ログ |
+|-------|-------|------|
+| sent | `funnel:sent:{funnelId}` | `purchase_funnel` stage=sent |
+| click | `funnel:click:{funnelId}` | stage=click |
+| arrival | `funnel:arrival:{funnelId}` | stage=arrival |
+
+指標：CTR = click/sent、到達率 = arrival/sent、クリック後到達率 = arrival/click
+
+内部API：`GET /api/funnel-stats`（Bearer WEBHOOK_SECRET）
+
+実装：`functions/lib/purchase-funnel.js`
 
 ---
 

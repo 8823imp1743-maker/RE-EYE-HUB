@@ -46,6 +46,12 @@ alwaysApply: true
 `buy_now` / `watch_tower` / `check_stock` / `inquiry` を表示。
 `attribute_mismatch` は非表示。手動検索はモール一覧のみ、厳密PDPは Cron のみ。
 
+## v1.0 完成ライン（ここで止める）
+
+Phase3-A（ファネル計測 sent/click/arrival）までで v1.0 完成。
+それ以外は実装禁止：購入完了計測、BigQuery、AIレコメンド、SNS、コミュニティ、オークション、自動価格比較、商品ランキング、課金強化。
+Phase3-B/C は利用者増加後。
+
 ## ブレ禁止
 
 スニーカー専用化 / 検索エンジン化 / 通知乱発 / 広告まみれ化 に寄せない。

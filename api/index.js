@@ -31,6 +31,8 @@ import reportsHandler      from '../functions/api/reports.js';
 import systemHealthHandler from '../functions/api/system-health.js';
 import notifyHealthHandler from '../functions/api/notify-health.js';
 import ctrClickHandler     from '../functions/api/ctr-click.js';
+import funnelEventHandler  from '../functions/api/funnel-event.js';
+import funnelStatsHandler  from '../functions/api/funnel-stats.js';
 import usageStatusHandler  from '../functions/api/usage-status.js';
 import { discoverUrlsForKeyword, buildMonitorEntries } from '../functions/lib/scout-to-monitor-bridge.js';
 import ingestHandler from '../functions/api/webhook/ingest.js';
@@ -51,6 +53,8 @@ const ROUTES = {
   'system-health': { fn: systemHealthHandler,  rateTier: 'default' },
   'notify-health': { fn: notifyHealthHandler,  rateTier: 'default', noBody: true },
   'ctr-click':     { fn: ctrClickHandler,      rateTier: 'default' },
+  'funnel-event':  { fn: funnelEventHandler,   rateTier: 'default' },
+  'funnel-stats':  { fn: funnelStatsHandler,   rateTier: 'default', noBody: true },
   'usage-status':  { fn: usageStatusHandler,   rateTier: null      },
   'discover':      { fn: discoverHandler,       rateTier: 'heavy'  },
   'ingest':        { fn: ingestHandler,         rateTier: 'default' },

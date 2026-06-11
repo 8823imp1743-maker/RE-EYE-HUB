@@ -50,6 +50,7 @@ import {
   evaluateAttributeGate,
   attributeGateSkipLogPayload,
 } from '../lib/attribute-gate.js';
+import { buildFunnelPayloadFromEntry } from '../lib/purchase-funnel.js';
 
 /** fetch 失敗等 retryable PDP はログのみ（キュー・リトライ用 Redis フラグは持たない） */
 function scheduleRetry(item, meta = {}) {
@@ -189,6 +190,11 @@ async function sendMonitorDigest(r, payload) {
         ? 'digest_multi'
         : 'digest_single';
 
+  const digestFunnel = buildFunnelPayloadFromEntry(
+    { keyword: top.keyword || top.displayTitle || '', targetAttributes: top.targetAttributes },
+    target,
+    'monitor_digest',
+  );
   await sendOneSignalNotification({
     title,
     message: head,
@@ -201,6 +207,8 @@ async function sendMonitorDigest(r, payload) {
       ctrTemplate: tmpl,
       opsPlan,
       opsSource: 'monitor_digest',
+      itemUrl: url,
+      ...digestFunnel,
       ...(sizeTagKeys ? { sizeTagKeys } : {}),
     },
   });
@@ -1415,6 +1423,7 @@ const pdpParallel = Math.max(
         stockHint: 'ok',
       });
       const heatSig = computeHeatSignals(entry);
+      const serpFunnel = buildFunnelPayloadFromEntry(entry, userId, 'monitor_serp');
 
       if (useDigest) {
         await enqueueDigestItem(r, {
@@ -1427,10 +1436,12 @@ const pdpParallel = Math.max(
             url: item.url,
             itemUrl: item.url,
             keyword,
+            targetAttributes: entry.targetAttributes,
             shop: item.sourceId || '',
             ctrTemplate: ctrPack.templateId,
             heatLabel: heatSig.label,
             opsPlan: notifyPlan,
+            ...serpFunnel,
             ...(sizeKeys ? { sizeTagKeys: sizeKeys } : {}),
           },
           onFlush: async (p) => sendMonitorDigest(r, p),
@@ -1459,6 +1470,7 @@ const pdpParallel = Math.max(
                 : sizeInfo?.type === 'clothing'
                   ? `SIZE_${String(sizeInfo.raw || '').toUpperCase()}`
                   : undefined,
+            ...serpFunnel,
             ...(sizeKeys ? { sizeTagKeys: sizeKeys } : {}),
           },
         });
@@ -1647,6 +1659,7 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
       opsJsonLog('notify_skip_min_gap', { source: 'monitor_official' });
     } else {
       try {
+        const officialFunnel = buildFunnelPayloadFromEntry(entry, userId, 'monitor_official');
         await sendOneSignalNotification({
           title: ctrOff.title,
           message: ctrOff.message,
@@ -1664,6 +1677,7 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
             marketStatusMeta: newMarketStatus,
             pdpStructural: true,
             monitoredAt: Date.now(),
+            ...officialFunnel,
             ...(sizeKeysOfficial ? { sizeTagKeys: sizeKeysOfficial } : {}),
           },
         });

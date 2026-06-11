@@ -29,6 +29,7 @@ import {
 } from '../lib/user-settings.js';
 import { stampPollSizeRankAndSort, buildSerpRuleEntryForKeyword } from '../lib/serp-item-rule.js';
 import { evaluateAttributeGate, attributeGateSkipLogPayload } from '../lib/attribute-gate.js';
+import { buildFunnelPayloadFromKeyword } from '../lib/purchase-funnel.js';
 import {
   applyUserSizesToKeywordFromSettings,
   getUserMallPreserveTokens,
@@ -306,6 +307,7 @@ export default async function handler(req, res) {
                   });
                   let titleOut = ctrPack.title;
                   if (isImportant) titleOut = `[重要] ${titleOut}`.slice(0, 90);
+                  const pollFunnel = buildFunnelPayloadFromKeyword(baseKw, safeUserId, 'poll_in_stock');
 
                   if (useDigest) {
                     await enqueueDigestItem(rBurst, {
@@ -316,6 +318,7 @@ export default async function handler(req, res) {
                         displayMessage: ctrPack.message,
                         title: `${prefix}${top.shopName}で在庫あり`,
                         url: top.url,
+                        itemUrl: top.url,
                         category,
                         userId: safeUserId,
                         itemId: top.itemId,
@@ -323,6 +326,7 @@ export default async function handler(req, res) {
                         keyword: baseKw,
                         ctrTemplate: ctrPack.templateId,
                         opsPlan: notifyPlan,
+                        ...pollFunnel,
                         ...(sizeTagKeysPoll ? { sizeTagKeys: sizeTagKeysPoll } : {}),
                       },
                       onFlush: async ({ target, stamp, items }) => {
@@ -342,6 +346,11 @@ export default async function handler(req, res) {
                             : count > 1
                               ? 'digest_multi'
                               : 'digest_single';
+                        const digFunnel = buildFunnelPayloadFromKeyword(
+                          first.keyword || baseKw,
+                          target,
+                          'poll_digest',
+                        );
                         await sendOneSignalNotification({
                           title: ttl,
                           message: m,
@@ -355,6 +364,8 @@ export default async function handler(req, res) {
                             ctrTemplate: tmplDig,
                             opsPlan: first.opsPlan || 'FREE',
                             opsSource: 'poll_digest',
+                            itemUrl: first.url || '',
+                            ...digFunnel,
                             ...(Array.isArray(first.sizeTagKeys)
                               ? { sizeTagKeys: first.sizeTagKeys }
                               : {}),
@@ -378,6 +389,8 @@ export default async function handler(req, res) {
                         itemId: top.itemId,
                         sourceId: top.sourceId,
                         keyword: baseKw,
+                        itemUrl: top.url,
+                        ...pollFunnel,
                         ...(sizeTagKeysPoll ? { sizeTagKeys: sizeTagKeysPoll } : {}),
                       },
                     });
