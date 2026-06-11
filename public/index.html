@@ -1337,6 +1337,8 @@
         .stock-section-header.confirmed { color: var(--champagne-gold); border-color: rgba(247,231,206,0.35); }
         .stock-section-header.check { color: rgba(247,231,206,0.88); border-color: rgba(247,231,206,0.25); }
         .stock-section-header.watch { color: rgba(155,89,182,0.95); border-color: rgba(155,89,182,0.35); }
+        .stock-section-header.tower { color: var(--amethyst); border-color: rgba(155,89,182,0.55); box-shadow: 0 0 12px rgba(155,89,182,0.12); }
+        .stock-section-header.inquiry { color: rgba(247,231,206,0.72); border-color: rgba(247,231,206,0.22); }
         .stock-section-header.soldout { color: rgba(255,255,255,0.42); border-color: rgba(255,255,255,0.15); }
         .stock-ux-pill {
             display: inline-block; font-size: 11px; letter-spacing: 1.5px; padding: 4px 8px;
@@ -1344,6 +1346,8 @@
         }
         .stock-ux-pill.buy-now { color: #8fd99a; border: 1px solid rgba(143,217,154,0.45); background: rgba(143,217,154,0.08); }
         .stock-ux-pill.check { color: var(--champagne-gold); border: 1px solid rgba(247,231,206,0.35); background: rgba(247,231,206,0.06); }
+        .stock-ux-pill.tower { color: var(--amethyst); border: 1px solid rgba(155,89,182,0.55); background: rgba(155,89,182,0.1); }
+        .stock-ux-pill.inquiry { color: rgba(247,231,206,0.78); border: 1px solid rgba(247,231,206,0.28); background: rgba(247,231,206,0.05); }
         .stock-ux-pill.soldout { color: rgba(255,255,255,0.45); border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.03); }
         .stock-mall-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
         .stock-mall-filter-btn {
@@ -1360,6 +1364,8 @@
         .stock-status-line { font-size: 11px; margin-top: 6px; line-height: 1.45; letter-spacing: 0.4px; }
         .stock-status-line.confirmed { color: var(--champagne-gold); font-weight: 600; }
         .stock-status-line.watch-oos { color: rgba(255,255,255,0.45); }
+        .stock-status-line.watch-tower { color: var(--amethyst); font-weight: 600; }
+        .stock-status-line.inquiry { color: rgba(247,231,206,0.68); }
         .stock-status-line.watch-listed { color: rgba(247,231,206,0.72); }
         .stock-status-line.watch-likely { color: var(--champagne-gold); font-weight: 600; }
         .stock-buy-link-btn {
@@ -4655,8 +4661,8 @@ async function runStockSearch(keyword, forChild, loadMore) {
                 p.textContent = (data.msg && String(data.msg).trim())
                     ? String(data.msg)
                     : (data.inventoryRuleNoHits
-                        ? '条件に合う在庫が見つかりませんでした。'
-                        : '一覧では該当ショップが見つかりませんでした。再入荷監視で見張り続けます。');
+                        ? '今は買える店はありません。条件に合う商品の復活を零式監視で待ちましょう。'
+                        : '一覧では該当ショップが見つかりませんでした。復活したら知らせる監視を開始できます。');
                 const axes = data.watchAxes || {};
                 const axisLine = document.createElement('div');
                 axisLine.className = 'meta-11px';
@@ -4763,9 +4769,23 @@ function sanitizeStockTitle(title, suppress) {
 }
 function resolveStockUxTier(item) {
     if (item && item.stockUxTier) return item.stockUxTier;
-    if (item.listingExplicitOos && !item.listingStockLikely) return 'sold_out';
+    if (item.listingExplicitOos && !item.listingStockLikely) return 'watch_tower';
     if (item.showBuyNow || item.stockDisplayTier === 'confirmed') return 'buy_now';
     return 'check_stock';
+}
+function stockUxTierPillClass(uxTier) {
+    if (uxTier === 'buy_now') return 'buy-now';
+    if (uxTier === 'watch_tower') return 'tower';
+    if (uxTier === 'inquiry') return 'inquiry';
+    if (uxTier === 'sold_out') return 'soldout';
+    return 'check';
+}
+function stockUxTierPillLabel(uxTier) {
+    if (uxTier === 'buy_now') return '今すぐ購入可能';
+    if (uxTier === 'watch_tower') return '見張り台';
+    if (uxTier === 'inquiry') return '問い合わせ';
+    if (uxTier === 'sold_out') return '売り切れ';
+    return '要確認';
 }
 function buildStockResultCard(item, keyword) {
     const uxTier = resolveStockUxTier(item);
@@ -4783,12 +4803,8 @@ function buildStockResultCard(item, keyword) {
     card.appendChild(badge);
 
     const pill = document.createElement('span');
-    pill.className = 'stock-ux-pill ' + (uxTier === 'buy_now' ? 'buy-now' : uxTier === 'sold_out' ? 'soldout' : 'check');
-    pill.textContent = uxTier === 'buy_now'
-        ? '今すぐ購入可能'
-        : uxTier === 'sold_out'
-            ? '売り切れ'
-            : '在庫確認推奨';
+    pill.className = 'stock-ux-pill ' + stockUxTierPillClass(uxTier);
+    pill.textContent = stockUxTierPillLabel(uxTier);
     card.appendChild(pill);
 
     const t = document.createElement('div');
@@ -4817,9 +4833,12 @@ function buildStockResultCard(item, keyword) {
         status.textContent = item.pdpSizeVerified
             ? '在庫あり確定 — 今すぐ購入できます'
             : '一覧上は在庫あり（希望サイズ一致）— 購入ページで最終確認してください';
-    } else if (uxTier === 'sold_out') {
-        status.classList.add('watch-oos');
-        status.textContent = '現在は在庫なし — 零式監視で再入荷を待ちましょう';
+    } else if (uxTier === 'watch_tower' || uxTier === 'sold_out') {
+        status.classList.add(uxTier === 'watch_tower' ? 'watch-tower' : 'watch-oos');
+        status.textContent = '条件は一致。今は在庫なし — 零式監視で復活を待ちましょう';
+    } else if (uxTier === 'inquiry') {
+        status.classList.add('inquiry');
+        status.textContent = '取り寄せ・問い合わせ店 — 購入前に店舗確認。復活監視は零式監視へ';
     } else {
         status.classList.add('watch-listed');
         status.textContent = item.size_match
@@ -4840,7 +4859,8 @@ function buildStockResultCard(item, keyword) {
     const actionArea = document.createElement('div');
     actionArea.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:10px;';
 
-    const showBuy = item.showBuyBtn !== false && uxTier !== 'sold_out' && item.url;
+    const noBuyTier = uxTier === 'watch_tower' || uxTier === 'inquiry' || uxTier === 'sold_out';
+    const showBuy = item.showBuyBtn !== false && !noBuyTier && item.url;
     const showWatch = item.showWatchBtn !== false && uxTier !== 'buy_now';
     const watchHint = document.createElement('div');
     watchHint.className = 'meta-11px';
@@ -4941,15 +4961,19 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
         ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
         : '価格・送料の目安は各店舗条件により異なります。';
         aiBanner.textContent =
-            '検索は零式監視への入口です。監視登録には品番・色・サイズが必要です（例: エアマックス90 ホワイト CW2288-111 26.5cm）。' +
+            '欲しい条件だけ、復活した瞬間に知らせます。検索は監視登録の入口 — 品番・色・サイズを指定して零式監視を開始してください。' +
             ' ' + prefLine;
     list.appendChild(aiBanner);
 
     list.appendChild(renderStockMallFilterRow(items));
 
     const buyNow = (items || []).filter((it) => resolveStockUxTier(it) === 'buy_now');
+    const watchTower = (items || []).filter((it) => {
+        const t = resolveStockUxTier(it);
+        return t === 'watch_tower' || t === 'sold_out';
+    });
+    const inquiry = (items || []).filter((it) => resolveStockUxTier(it) === 'inquiry');
     const checkStock = (items || []).filter((it) => resolveStockUxTier(it) === 'check_stock');
-    const soldOut = (items || []).filter((it) => resolveStockUxTier(it) === 'sold_out');
 
     function appendSection(title, cls, arr, emptyMsg) {
         const hdr = document.createElement('div');
@@ -4967,9 +4991,10 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
         }
     }
 
-    appendSection('今すぐ購入可能', 'confirmed', buyNow, '一覧上、在庫ありと判断できる店はありません。下の「在庫確認推奨」から零式監視へ。');
-    appendSection('在庫確認推奨', 'check', checkStock, '在庫未確認の候補はありません。');
-    appendSection('売り切れ', 'soldout', soldOut, '売り切れ確認の店はありません。');
+    appendSection('今すぐ購入可能', 'confirmed', buyNow, '一覧上、在庫ありと判断できる店はありません。');
+    appendSection('見張り台 — 監視推奨', 'tower', watchTower, '希望条件に一致する店はありますが、現在は在庫なしです。零式監視で復活を待ちましょう。');
+    appendSection('問い合わせ・取り寄せ', 'inquiry', inquiry, '取り寄せ・問い合わせ店はありません。');
+    appendSection('要確認', 'check', checkStock, '在庫判定が曖昧な候補はありません。');
 
     applyStockMallFilter(_stockPageState.mallFilter || 'all');
 

@@ -27,7 +27,8 @@ import {
   sanitizeStoredUserSettings,
   userSettingsKey,
 } from '../lib/user-settings.js';
-import { stampPollSizeRankAndSort } from '../lib/serp-item-rule.js';
+import { stampPollSizeRankAndSort, buildSerpRuleEntryForKeyword } from '../lib/serp-item-rule.js';
+import { evaluateAttributeGate, attributeGateSkipLogPayload } from '../lib/attribute-gate.js';
 import {
   applyUserSizesToKeywordFromSettings,
   getUserMallPreserveTokens,
@@ -273,6 +274,14 @@ export default async function handler(req, res) {
                 } else if (!(await allowFreePushMinGap(rBurst, safeUserId, notifyPlan))) {
                   opsJsonLog('notify_skip_min_gap', { source: 'poll' });
                 } else {
+                  const pollEntry = { ...buildSerpRuleEntryForKeyword(baseKw), keyword: baseKw };
+                  const pollAttrGate = evaluateAttributeGate(pollEntry, top);
+                  if (!pollAttrGate.pass) {
+                    opsJsonLog('attribute_gate_skip', {
+                      ...attributeGateSkipLogPayload(pollAttrGate, top, 'poll'),
+                      userId: String(safeUserId).slice(0, 10),
+                    });
+                  } else {
                   const { category, isImportant } = getNotificationCategory(top.title, top.title);
                   const prefix = isImportant ? '[重要] ' : '';
 
@@ -372,6 +381,7 @@ export default async function handler(req, res) {
                         ...(sizeTagKeysPoll ? { sizeTagKeys: sizeTagKeysPoll } : {}),
                       },
                     });
+                  }
                   }
                 }
               }

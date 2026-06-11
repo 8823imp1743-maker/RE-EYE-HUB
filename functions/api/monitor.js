@@ -44,6 +44,12 @@ import {
 } from '../lib/push-rate-limit.js';
 import { enqueueDigestItem } from '../lib/digest.js';
 import { opsJsonLog } from '../lib/notify-ops-log.js';
+import {
+  buildTargetAttributesFromEntry,
+  resolveRegisteredSizeInfo,
+  evaluateAttributeGate,
+  attributeGateSkipLogPayload,
+} from '../lib/attribute-gate.js';
 
 /** fetch 失敗等 retryable PDP はログのみ（キュー・リトライ用 Redis フラグは持たない） */
 function scheduleRetry(item, meta = {}) {
@@ -411,6 +417,12 @@ async function handleRegister(req, res) {
     console.log(`[monitor] 色確定: ${registeredColors.join(', ')}`);
   }
 
+  const registeredSizeInfo = resolveRegisteredSizeInfo(keyword, body);
+  const targetAttributes = buildTargetAttributesFromEntry(
+    { keyword, modelNumbers: registeredModels, colorKeywords: registeredColors },
+    { size: body.size, sizeType: registeredSizeInfo?.type }
+  );
+
   const entry = {
     keyword,
     itemId,
@@ -428,6 +440,8 @@ async function handleRegister(req, res) {
     // 登録時のキーワードから確定した色ワード（例: ["ピンク"]）。
     // 空配列 = 色指定なし（フィルタースキップ）
     colorKeywords: registeredColors,
+    // ── Phase2: 3軸監視条件（model / color / size）────────────────────────
+    targetAttributes,
     // ── カテゴリ別監視モード ─────────────────────────────────────────────
     // sneaker: PDPサイズ検証あり / standard: HTML在庫変化監視
     mode:          body.mode === 'sneaker' ? 'sneaker' : 'standard',
@@ -494,6 +508,7 @@ async function handleRegister(req, res) {
       listPrice: resolvedListPrice,
       modelNumbers: registeredModels,
       colorKeywords: registeredColors,
+      targetAttributes,
       verify: { readBack: readBackOk, indexCount, globalHasKey, key },
     });
   } catch (e) {
@@ -1269,6 +1284,15 @@ const pdpParallel = Math.max(
       continue;
     }
 
+    const attrGate = evaluateAttributeGate(entry, item);
+    if (!attrGate.pass) {
+      opsJsonLog('attribute_gate_skip', {
+        ...attributeGateSkipLogPayload(attrGate, item, 'monitor_serp'),
+        userId: String(userId).slice(0, 10),
+      });
+      continue;
+    }
+
     const minLtqRaw = Number(process.env.RE_EYE_LTV_MIN_SCORE_FREE);
     const minLtq = Number.isFinite(minLtqRaw) ? minLtqRaw : 0;
     const ltqScore = computeLtqScore({
@@ -1605,11 +1629,15 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
     stockHint: 'ok',
   });
 
+  const officialAttrGate = evaluateAttributeGate(entry, { title, url });
+  const officialAttrOk = officialAttrGate.pass;
+
   if (
     transitionedToStructural &&
     userId &&
     officialPdpTask &&
     sizeGateOk &&
+    officialAttrOk &&
     !skipLtqOfficial &&
     dcOfficial.ok &&
     burstOk &&
@@ -1661,9 +1689,14 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
         userId: String(userId).slice(0, 10),
       });
     }
-    if (transitionedToStructural === false || !sizeGateOk) {
+    if (transitionedToStructural === false || !sizeGateOk || !officialAttrOk) {
       /* 通知しない */
-      if (!sizeGateOk) {
+      if (!officialAttrOk) {
+        opsJsonLog('attribute_gate_skip', {
+          ...attributeGateSkipLogPayload(officialAttrGate, { title, url }, 'monitor_official'),
+          userId: String(userId).slice(0, 10),
+        });
+      } else if (!sizeGateOk) {
         opsJsonLog('size_gate_skip', {
           source: 'monitor_official',
           userId: String(userId).slice(0, 10),

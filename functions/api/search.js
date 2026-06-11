@@ -363,25 +363,63 @@ function hasExplicitGlobalOos(hay) {
   return false;
 }
 
+/** 取り寄せ・問い合わせ系（購入前に店舗連絡が必要） */
+function hasInquiryListingSignal(hay) {
+  return /取り寄せ|お問い合わせ|問い合わせ|問合せ|入荷お知らせ|再入荷お知らせ|販売期間終了|在庫リクエスト|入荷通知|予約受付のみ|予約販売/i.test(
+    String(hay || '')
+  );
+}
+
 /**
- * UX 3分類（検索結果のボタン・セクション用）
- * buy_now     = 今買える（PDP確定 or 一覧強シグナル）
- * check_stock = 在庫不明（購入+監視）
- * sold_out    = 売切れ（監視のみ）
+ * Phase1 UX tier（監視プラットフォームの入口）
+ * 憲法: docs/RE-EYE-HUB-PRODUCT-CONSTITUTION.md
+ * - 最上位: 購入成功率最大化（通知数ではない）
+ * - 属性一致原則: attribute_mismatch は在庫ありでも非表示・非通知
+ * - 見張り台原則: 0件/OOS は watch_tower で監視候補提示
+ *
+ * buy_now      = 今すぐ購入可能
+ * watch_tower  = 属性一致・現在在庫なし・監視推奨
+ * check_stock  = 在庫判定が曖昧
+ * inquiry      = 取り寄せ・問い合わせ店
  */
-function resolveStockUxTier(row, src, confirmed, stockLikely, explicitOos) {
+function resolveStockUxTier(row, src, confirmed, stockLikely, explicitOos, hay, shoeTargets) {
+  if (hasInquiryListingSignal(hay)) return 'inquiry';
   if (confirmed && stockLikely) return 'buy_now';
+  const attrsOk =
+    row.size_match ||
+    (Array.isArray(shoeTargets) && shoeTargets.length && listingSupportsTargetCm(hay, shoeTargets));
   if (
     stockLikely &&
-    row.size_match &&
+    attrsOk &&
     src.available === true &&
     !explicitOos &&
     (row.gateTier === 'mall_cm_fallback' || row.gateTier === 'pdp_confirmed')
   ) {
     return 'buy_now';
   }
-  if (explicitOos && !stockLikely) return 'sold_out';
+  if (attrsOk && (!stockLikely || explicitOos || src.available === false)) {
+    return 'watch_tower';
+  }
   return 'check_stock';
+}
+
+/** 監視条件の構造化（将来 targetAttributes へ移行） */
+function buildTargetAttributes(keyword, shoeTargetNums, userGender, settings) {
+  const axes = buildWatchAxesFromKeyword(keyword, shoeTargetNums, userGender, settings);
+  const size =
+    axes.sizeCm != null
+      ? String(axes.sizeCm)
+      : shoeTargetNums && shoeTargetNums[0] != null
+        ? String(shoeTargetNums[0])
+        : null;
+  return {
+    size,
+    color: axes.colors && axes.colors[0] ? axes.colors[0] : null,
+    model: axes.models && axes.models[0] ? axes.models[0] : null,
+    keyword: axes.keywordDisplay || String(keyword || '').trim(),
+    gender: userGender || 'unknown',
+    colorRequired: !!axes.colorRequired,
+  };
 }
 
 function resolveWatchEligibility(hay, shoeTargets, searchKeyword = '') {
@@ -420,14 +458,15 @@ function enrichStockDisplayMeta(row, rawIt = null, metaOpts = {}) {
   const hay = buildFullHaystack(src);
   const stockLikely = hasMallListingStockSignal(src);
   const explicitOos = hasExplicitGlobalOos(hay) || !stockLikely;
-  const uxTier = resolveStockUxTier(row, src, confirmed, stockLikely, explicitOos);
+  const uxTier = resolveStockUxTier(row, src, confirmed, stockLikely, explicitOos, hay, shoeTargets);
   const tier = uxTier === 'buy_now' ? 'confirmed' : 'watch';
   const watchGate = resolveWatchEligibility(hay, shoeTargets, searchKeyword);
   let watchSub = 'size_unknown';
-  if (uxTier === 'sold_out') watchSub = 'oos';
+  if (uxTier === 'watch_tower' || uxTier === 'inquiry') watchSub = 'tower';
   else if (row.size_match && stockLikely) watchSub = 'stock_size_listed';
   else if (row.size_match) watchSub = 'size_listed';
   else if (stockLikely) watchSub = 'stock_likely';
+  const isTower = uxTier === 'watch_tower' || uxTier === 'inquiry';
 
   return {
     ...row,
@@ -446,11 +485,12 @@ function enrichStockDisplayMeta(row, rawIt = null, metaOpts = {}) {
     watchModels: watchGate.watchModels,
     mallApiInStock: src.available === true,
     showBuyBtn: uxTier === 'buy_now' || uxTier === 'check_stock',
-    showWatchBtn:
-      (uxTier === 'check_stock' || uxTier === 'sold_out') && watchGate.watchEligible,
+    showWatchBtn: isTower
+      ? watchGate.watchEligible
+      : uxTier === 'check_stock' && watchGate.watchEligible,
     showBuyNow: uxTier === 'buy_now',
     showBuyLink: uxTier === 'check_stock',
-    suppressStockHype: explicitOos,
+    suppressStockHype: explicitOos || isTower,
     available: uxTier === 'buy_now',
   };
 }
@@ -867,7 +907,8 @@ function mapShoeSearchItemWithSizeGate(
 
   const cmSignal = hasMallCmSizeSignal(rawIt, targets);
   const stockSignal = hasMallListingStockSignal(rawIt);
-  if (!cmSignal && !stockSignal) return null;
+  const attrMatch = targets.length > 0 && listingSupportsTargetCm(hay, targets);
+  if (!cmSignal && !stockSignal && !attrMatch) return null;
 
   const psc = mapped.pdpSizeCheck || {};
   const pdpFailed = psc.scanned === true && psc.ok === false;
@@ -879,13 +920,13 @@ function mapShoeSearchItemWithSizeGate(
 
   return enrichStockDisplayMeta({
     ...mapped,
-    size_match: !!cmSignal,
+    size_match: !!(cmSignal || attrMatch),
     sizeMatchPending: true,
     pdpSizeTentative: true,
     pdpSizeVerified: false,
     mallListingFallback: true,
     mallFallbackReason: fallbackReason,
-    gateTier: cmSignal ? 'mall_cm_fallback' : 'mall_stock_fallback',
+    gateTier: cmSignal || attrMatch ? 'mall_cm_fallback' : 'mall_stock_fallback',
     pdpSizeCheck: {
       ...psc,
       ok: null,
@@ -2029,10 +2070,12 @@ export default async function handler(req, res) {
         itemsFinal,
       });
       logStockAudit('search-trace', searchTrace);
+      const targetAttributes = buildTargetAttributes(baseKeyword, shoeTargetNums, userGender, settings);
       const stockSectionSummary = {
         buyNow: itemsFinal.filter((i) => i.stockUxTier === 'buy_now').length,
+        watchTower: itemsFinal.filter((i) => i.stockUxTier === 'watch_tower').length,
         checkStock: itemsFinal.filter((i) => i.stockUxTier === 'check_stock').length,
-        soldOut: itemsFinal.filter((i) => i.stockUxTier === 'sold_out').length,
+        inquiry: itemsFinal.filter((i) => i.stockUxTier === 'inquiry').length,
         confirmed: itemsFinal.filter((i) => i.stockUxTier === 'buy_now').length,
         watch: itemsFinal.filter((i) => i.stockUxTier !== 'buy_now').length,
         mallCounts: {
@@ -2046,6 +2089,7 @@ export default async function handler(req, res) {
         found: itemsFinal.length > 0,
         items: itemsFinal,
         stockSectionSummary,
+        targetAttributes,
         watchAxes,
         nextStartingItem,
         userSettings: us,
