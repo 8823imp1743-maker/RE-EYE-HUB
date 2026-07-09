@@ -17,6 +17,7 @@ import { verifyCronAuth } from '../functions/lib/cron-auth.js';
 import { guardVercelApi } from './_security.js';
 import { captureIfCritical } from './_sentry.js';
 import { applySearchMemoryShield } from './_search-vercel-memory.js';
+import { getRedis } from '../functions/lib/redis.js';
 
 // ── 内部ハンドラ（全量 import） ────────────────────────
 import cronHandler         from '../functions/api/cron.js';
@@ -157,9 +158,31 @@ async function discoverHandler(req, res) {
   });
 }
 
-// ── cron 暴走防止（インスタンス内メモリ） ────────────
-let _lastCronMs = 0;
-const CRON_COOLDOWN_MS = 55 * 60 * 1000; // 55分
+// ── cron 暴走防止（Redis ベース） ────────────────────
+// 旧実装はモジュールスコープの変数（_lastCronMs）にインスタンス内メモリで持っていたが、
+// Vercel サーバーレス関数はコールドスタートのたびにメモリがリセットされるため
+// クールダウンが効いたり効かなかったりする不安定なバグになっていた（2026-07 修正）。
+// Redis の SET NX EX による原子的ロックに置き換え、複数インスタンス・コールドスタートを跨いで
+// 確実に「55分未満の再実行はスキップ」を保証する。
+const CRON_COOLDOWN_SEC = 55 * 60; // 55分
+const CRON_LOCK_KEY = 're-eye:cron:lock';
+
+/**
+ * Redis上で55分TTLのロックを原子的に取得する。
+ * @returns {Promise<boolean>} true = ロック取得成功（実行してよい）／false = クールダウン中（スキップ）
+ */
+async function tryAcquireCronLock() {
+  try {
+    const r = getRedis();
+    // NX: キーが存在しなければ作成して成功（'OK'）、存在すれば null（＝クールダウン中）
+    const res = await r.set(CRON_LOCK_KEY, String(Date.now()), { nx: true, ex: CRON_COOLDOWN_SEC });
+    return res !== null;
+  } catch (e) {
+    // Redis 障害時は「誤って全スキップ」より「誤って多重実行」の方が実害が小さいためフェイルオープン
+    console.warn('[router/cron] Redisロック取得に失敗 — フェイルオープンで実行を許可:', e?.message || e);
+    return true;
+  }
+}
 
 // ── URLパスからルートキーを解決 ──────────────────────
 function resolveRoute(req) {
@@ -236,13 +259,13 @@ export default async function handler(req, res) {
       route,
     });
     // cron 実行間隔ガード（55分未満はスキップ）— /api/cron のみ
+    // Redisロックにより、Vercelのコールドスタート・複数インスタイン間でも確実に機能する
     if (route === 'cron') {
-      const now = Date.now();
-      if (_lastCronMs > 0 && now - _lastCronMs < CRON_COOLDOWN_MS) {
-        console.log(`[router/cron] cooldown — skip (${Math.round((now - _lastCronMs) / 60000)}min ago)`);
+      const acquired = await tryAcquireCronLock();
+      if (!acquired) {
+        console.log('[router/cron] cooldown（Redisロック中）— skip');
         return res.status(200).json({ ok: true, skipped: 'RATE_LIMITED' });
       }
-      _lastCronMs = now;
     }
   }
 
