@@ -1,4 +1,4 @@
-import { getRedis, withRedisRetry } from '../lib/redis.js';
+import { getRedis, withRedisRetry, probeRedisGet } from '../lib/redis.js';
 import { getCircuit } from '../lib/re-eye-circuit.js';
 import { redisGuardStatus } from '../lib/redis-guard.js';
 import { quotaStatus } from '../lib/quota-manager.js';
@@ -81,12 +81,18 @@ export default async function handler(req, res) {
     /* ignore */
   }
 
+  let redisProbe = null;
+  if (String(q.redisProbe || '') === '1') {
+    redisProbe = await probeRedisGet('re-eye:redis-probe');
+  }
+
   return res.status(200).json({
     avgScore,
     criticalRate,
     topFailQueries: topFailQueriesOut,
     apiHealth,
     circuitState,
+    ...(redisProbe ? { redisProbe } : {}),
     quota: {
       ...quotaStatus(),
       redis: redisGuardStatus(),

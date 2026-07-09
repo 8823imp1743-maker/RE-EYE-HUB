@@ -35,16 +35,28 @@
       OneSignalDeferred.push(async function(OneSignal) {
         try {
           await OneSignal.init({
-            appId: "9fb344ba-8b77-4508-a7c5-0009959c3561",
+            appId: "ccbbc3f3-1dcd-4fdc-9a49-cbc332b7c4ce",
+            serviceWorkerPath: "/OneSignalSDKWorker.js",
             serviceWorkerParam: { scope: "/" },
             notifyButton: { enable: false },
             allowLocalhostAsSecureOrigin: true,
           });
-          const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
-          if (isSubscribed) {
-            const uid = localStorage.getItem('re_eye_uid') || '';
-            if (uid) OneSignal.User.addTag("userId", uid);
+          window.__oneSignalInstance = OneSignal;
+          if (typeof PushMission !== 'undefined') {
+            PushMission.attachDebugListeners(OneSignal);
+            await PushMission.logPushState(OneSignal, 'init');
+            const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+            if (isSubscribed && PushMission.syncIdentity) {
+              await PushMission.syncIdentity(OneSignal);
+            }
           }
+          OneSignal.User.PushSubscription.addEventListener('change', function(event) {
+            if (typeof PushMission !== 'undefined') {
+              PushMission.logPushState(OneSignal, 'subscriptionChange', event).catch(function(){});
+              PushMission.syncIdentity(OneSignal).catch(function(){});
+              PushMission.refreshUI().catch(function(){});
+            }
+          });
           OneSignal.Notifications.addEventListener('click', function(event) {
             try {
               const data = (event && event.notification && event.notification.additionalData) || {};
@@ -58,7 +70,10 @@
               }
             } catch (_) { /* noop */ }
           });
-        } catch (e) { /* App not configured 等 — サイレント継続 */ }
+        } catch (e) {
+          window.__oneSignalInitError = String(e && e.message ? e.message : e);
+          console.warn('[PushDebug] OneSignal init failed:', e);
+        }
       });
     </script>
 
@@ -234,6 +249,25 @@
         #fixed-delete-exec:disabled { opacity: 0.3; cursor: not-allowed; }
         #fixed-delete-cancel { background: none; border: 1px solid rgba(247,231,206,0.2); color: rgba(247,231,206,0.55); font-size: 11px; letter-spacing: 1px; padding: 9px 12px; border-radius: 2px; cursor: pointer; }
         .edit-checkbox { accent-color: var(--amethyst); width: 14px; height: 14px; flex-shrink: 0; cursor: pointer; }
+        .history-section-box.edit-mode .history-card-selectable {
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .history-section-box.edit-mode .history-card-selected {
+            border-color: var(--amethyst);
+            box-shadow: 0 0 12px rgba(155,89,182,0.35);
+        }
+        .watch-cancel-btn {
+            width: 100%; padding: 8px 10px; font-size: 11px; letter-spacing: 2px;
+            background: none; border: 1px solid rgba(247,231,206,0.25); border-radius: 2px;
+            color: rgba(247,231,206,0.75); cursor: pointer; transition: 0.2s;
+        }
+        .watch-cancel-btn:hover { border-color: var(--amethyst); color: var(--amethyst); }
+        .watch-status-btn {
+            width: 100%; padding: 10px; font-size: 11px; letter-spacing: 2.5px;
+            background: rgba(155,89,182,0.05); border: 1px solid rgba(155,89,182,0.3);
+            border-radius: 2px; color: var(--amethyst); cursor: default;
+        }
         .history-section-box {
             padding: var(--gap-11);
             background: var(--dark-glass);
@@ -257,6 +291,8 @@
         .history-meta-row { font-size: 11px; color: var(--champagne-gold); opacity: 0.8; }
 
         .meta-11px, .shop-status-text, .item-meta, .link-guide-11px, .error-text-11px { font-size: 11px; color: var(--champagne-gold); opacity: 0.7; letter-spacing: 0.5px; margin-top: 2px; }
+        .home-search-hint { color: rgba(247, 231, 206, 0.88); opacity: 1; }
+        .home-search-hint-example { color: rgba(200, 175, 235, 0.92); }
         .link-guide-11px { color: var(--amethyst); font-weight: bold; opacity: 1; margin-top: var(--gap-11); display: block; cursor: pointer; }
         .error-text-11px { color: #ff6b6b; display: none; margin-bottom: 10px; }
         input[type="text"]::placeholder { font-size: 11px; color: rgba(255,255,255,0.35); }
@@ -274,6 +310,25 @@
         input[type="text"], textarea { background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 12px 16px; width: 100%; box-sizing: border-box; outline: none; font-size: 14px; border-radius: 2px; }
         input.invalid { border-color: var(--amethyst); box-shadow: 0 0 10px rgba(155, 89, 182, 0.5); }
         .btn-purple { background: var(--amethyst); color: #fff; border: none; padding: 15px; font-weight: bold; font-size: 12px; letter-spacing: 4px; width: 100%; cursor: pointer; margin-top: var(--gap-11); border-radius: 2px; }
+        .push-mission-box { margin-bottom: var(--gap-11); }
+        .push-mission-status { color: var(--amethyst); opacity: 0.9; margin: 8px 0 10px; letter-spacing: 0.5px; line-height: 1.6; }
+        .push-mission-guide { color: var(--champagne-gold); opacity: 0.85; margin: 6px 0 0; line-height: 1.7; }
+        .push-mission-btn { margin-top: 10px; min-height: 44px; }
+        .push-mission-banner {
+            border: 1px solid var(--border-purple);
+            background: var(--dark-glass);
+            border-radius: 2px;
+            padding: 10px 12px;
+            margin-bottom: var(--gap-11);
+            cursor: pointer;
+            text-align: center;
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .push-mission-banner .meta-11px { color: var(--champagne-gold); letter-spacing: 1px; margin: 0; }
+        .push-mission-ok { color: var(--amethyst); opacity: 1; }
                 
         /* 報酬バナー（FREEプラン限定 / 見守り枠が5枠に達したら自動で非表示） */
         #reward-video-banner {
@@ -569,6 +624,49 @@
         .delete-confirm-btn-no {
             border: 1px solid rgba(247,231,206,0.2); color: rgba(247,231,206,0.45);
         }
+        /* 見守り登録確認モーダル */
+        #watch-confirm-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9150;
+            background: rgba(0,0,0,0.72); display: none; align-items: center; justify-content: center;
+            padding: 16px; box-sizing: border-box;
+        }
+        .watch-confirm-box {
+            background: #050008; border: 1px solid var(--amethyst);
+            box-shadow: 0 0 28px rgba(155,89,182,0.55); border-radius: 2px;
+            padding: 22px 18px; width: 100%; max-width: 340px; max-height: 90vh;
+            overflow-y: auto; box-sizing: border-box;
+        }
+        .watch-confirm-item-title {
+            font-size: 12px; color: #fff; font-weight: bold; letter-spacing: 0.4px;
+            line-height: 1.55; margin-bottom: 8px;
+        }
+        .watch-confirm-url {
+            display: block; font-size: 11px; color: var(--amethyst);
+            letter-spacing: 0.3px; line-height: 1.45; margin-bottom: 12px;
+            text-decoration: underline; word-break: break-all;
+        }
+        .watch-confirm-judgment {
+            display: flex; flex-direction: column; gap: 6px;
+            margin-bottom: 14px; padding: 10px 12px;
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(155,89,182,0.25);
+            border-radius: 2px;
+        }
+        .watch-confirm-judgment-row {
+            display: flex; gap: 8px; font-size: 11px; line-height: 1.45;
+        }
+        .watch-confirm-jlbl {
+            color: rgba(247,231,206,0.55); flex-shrink: 0; min-width: 48px;
+        }
+        .watch-confirm-jval { color: rgba(247,231,206,0.88); flex: 1; }
+        .watch-confirm-field { margin-top: 4px; }
+        .watch-confirm-select {
+            width: 100%; margin-top: 6px; padding: 10px 12px;
+            font-size: 11px; letter-spacing: 0.5px; color: var(--champagne-gold);
+            background: rgba(0,0,0,0.5); border: 1px solid rgba(155,89,182,0.45);
+            border-radius: 2px; cursor: pointer; font-family: inherit;
+            -webkit-appearance: none; appearance: none;
+        }
+        .watch-confirm-btns { display: flex; gap: 8px; }
         /* フェードアウト */
         @keyframes fadeOutCard { to { opacity: 0; transform: translateX(12px); } }
         .fading-out { animation: fadeOutCard 0.3s ease forwards; pointer-events: none; }
@@ -1204,26 +1302,6 @@
         .ctx-menu-item:hover { background: rgba(155,89,182,0.18); color: #fff; }
         .ctx-menu-sep { height: 1px; background: rgba(155,89,182,0.2); margin: 3px 0; }
 
-        /* ── コーチマーク（初回ガイド）── */
-        #coach-mark {
-            position: fixed;
-            bottom: calc(var(--nav-height) + 20px); right: 15px;
-            background: rgba(8,0,16,0.97);
-            border: 1px solid var(--amethyst); border-radius: 2px;
-            padding: 14px 16px; z-index: 9000;
-            max-width: 260px;
-            box-shadow: 0 0 18px rgba(155,89,182,0.4);
-            display: none;
-            animation: coach-in 0.3s ease;
-        }
-        @keyframes coach-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-        .coach-title { font-size: 12px; font-weight: bold; letter-spacing: 1.5px; color: var(--champagne-gold); margin-bottom: 8px; }
-        .coach-body { font-size: 11px; color: rgba(247,231,206,0.8); letter-spacing: 0.5px; line-height: 1.7; margin-bottom: 11px; }
-        .coach-btn-row { display: flex; gap: 8px; }
-        .coach-btn { flex: 1; font-size: 11px; letter-spacing: 1px; padding: 8px 4px; border-radius: 2px; cursor: pointer; text-align: center; }
-        .coach-btn-ok { background: var(--amethyst); border: 1px solid var(--amethyst); color: #fff; font-weight: bold; }
-        .coach-btn-close { background: none; border: 1px solid rgba(155,89,182,0.3); color: rgba(247,231,206,0.55); }
-
         /* ── ホーム インライン検索結果（戦場スロット）── */
         #home-inline-results {
             display: none;
@@ -1273,6 +1351,19 @@
             padding: 1px 6px; margin-bottom: 4px;
         }
         .home-result-card .item-title { font-size: 14px; font-weight: bold; color: #fff; line-height: 1.4; }
+        .home-result-card .stock-item-title-link {
+            display: block; color: #fff; text-decoration: none; cursor: pointer;
+            transition: color 0.3s ease;
+        }
+        .home-result-card .stock-item-title-link:hover {
+            color: var(--amethyst); text-decoration: underline;
+        }
+        .home-result-card .stock-page-link {
+            font-size: 11px; color: var(--amethyst); letter-spacing: 0.5px;
+            text-decoration: underline; margin-top: 4px; display: inline-block;
+            cursor: pointer; opacity: 0.92; transition: opacity 0.3s ease;
+        }
+        .home-result-card .stock-page-link:hover { opacity: 1; }
         .home-result-card .result-meta { font-size: 11px; color: var(--champagne-gold); opacity: 0.65; letter-spacing: 0.4px; }
         .home-result-card .result-src { font-size: 11px; color: var(--amethyst); text-decoration: none; opacity: 0.9; }
         /* カード内 見守り開始ボタン（一撃見守り） */
@@ -1290,7 +1381,14 @@
         }
         .home-result-watch-btn.watching {
             background: rgba(155,89,182,0.05); color: var(--amethyst);
-            border-color: rgba(155,89,182,0.3); cursor: default;
+            border-color: rgba(155,89,182,0.3); cursor: pointer;
+        }
+        .btn-purple.watching {
+            background: rgba(155,89,182,0.05); color: var(--amethyst);
+            border-color: rgba(155,89,182,0.3); cursor: pointer;
+        }
+        .section-manage-btn:disabled {
+            opacity: 0.35; cursor: default; pointer-events: none;
         }
         /* カテゴリプリセット */
         .category-preset-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
@@ -1361,6 +1459,17 @@
         .stock-ux-pill.check { color: var(--champagne-gold); border: 1px solid rgba(247,231,206,0.35); background: rgba(247,231,206,0.06); }
         .stock-ux-pill.tower { color: var(--amethyst); border: 1px solid rgba(155,89,182,0.55); background: rgba(155,89,182,0.1); }
         .stock-ux-pill.inquiry { color: rgba(247,231,206,0.78); border: 1px solid rgba(247,231,206,0.28); background: rgba(247,231,206,0.05); }
+        .stock-match-label {
+            display: inline-block;
+            margin-top: 6px;
+            padding: 2px 6px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            color: rgba(210, 190, 255, 0.92);
+            border: 1px solid rgba(155, 89, 182, 0.45);
+            background: rgba(155, 89, 182, 0.12);
+            border-radius: 2px;
+        }
         .stock-ux-pill.soldout { color: rgba(255,255,255,0.45); border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.03); }
         .stock-mall-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
         .stock-mall-filter-btn {
@@ -1378,7 +1487,11 @@
         .stock-status-line.confirmed { color: var(--champagne-gold); font-weight: 600; }
         .stock-status-line.watch-oos { color: rgba(255,255,255,0.45); }
         .stock-status-line.watch-tower { color: var(--amethyst); font-weight: 600; }
-        .stock-status-line.inquiry { color: rgba(247,231,206,0.68); }
+        .stock-status-line.inquiry { color: rgba(247,231,206,0.88); opacity: 1; }
+        .stock-section-desc.inquiry-desc {
+            color: rgba(247,231,206,0.88); opacity: 1;
+            line-height: 1.55;
+        }
         .stock-status-line.watch-listed { color: rgba(247,231,206,0.72); }
         .stock-status-line.watch-likely { color: var(--champagne-gold); font-weight: 600; }
         .stock-buy-link-btn {
@@ -1507,6 +1620,9 @@
 
     <div id="home" class="screen active">
         <div class="screen-content">
+          <div id="push-mission-banner" class="push-mission-banner" style="display:none;" role="button" tabindex="0" onclick="show('settings')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();show('settings');}">
+            <span class="meta-11px">通知未設定 — タップで設定</span>
+          </div>
           <div class="tbx-wrap">
 
             <!-- ── HOME USER SETTINGS ── -->
@@ -1575,15 +1691,6 @@
 
             <!-- ── MONITOR INPUT ── -->
             <div class="transparent-box">
-                <!-- キャッチコピー -->
-                <div style="text-align:center;padding:8px 0 14px;border-bottom:1px solid rgba(155,89,182,0.2);margin-bottom:14px;">
-                    <p style="font-size:15px;font-weight:bold;color:var(--champagne-gold);letter-spacing:1px;margin:0 0 6px;">
-                        欲しい商品、気づいたら終わってた。<br>を防ぐ。
-                    </p>
-                    <p class="meta-11px" style="color:rgba(247,231,206,0.5);margin:0;letter-spacing:0.5px;">
-                        商品名・品番を入れる → 見守り登録 → 再入荷で即通知
-                    </p>
-                </div>
                 <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:var(--gap-11);">
                     <span class="gold-label" style="margin-bottom:0;display:inline;">見守りモード</span>
                     <span id="mode-guide-hint" class="mode-guide-hint" style="font-size:11px;color:rgba(247,231,206,0.5);">在庫復活通知 or 推し活ニュース</span>
@@ -1623,6 +1730,7 @@
                         <span id="scout-target-child-blocked-hint" class="meta-11px" style="display:none;width:100%;color:var(--amethyst);">お子様の性別をユーザーサイズ設定で選ぶと、ここが使えます。</span>
                     </div>
                     <div id="monitor-error-msg" class="error-text-11px">ガイドラインに沿わない内容が含まれています</div>
+                    <p class="meta-11px" style="font-size:11px;color:rgba(247,231,206,0.45);margin:0 0 6px;letter-spacing:0.5px;line-height:1.5;">商品名・品番を入れる → 見守り登録 → 再入荷で即通知</p>
                     <div id="monitor-input-wrap" style="position:relative;">
                         <input type="text" id="monitor-input" placeholder="例：ちいかわ ぬいぐるみ / AJ1 シカゴ" onkeydown="if(event.key==='Enter')scoutAndShow()">
                         <span class="monitor-search-icon-wrap" onclick="scoutAndShow()">
@@ -1630,10 +1738,8 @@
                             <span id="monitor-spinner"></span>
                         </span>
                     </div>
-                    <div class="meta-11px" style="color:rgba(247,231,206,0.55);margin-top:5px;letter-spacing:0.6px;line-height:1.5;">
-                        現在は<strong style="color:var(--champagne-gold);">楽天市場・Yahoo!ショッピング</strong>の入荷・在庫を最優先で監視しています（コスト最適化のため他モール横断検索は行いません）。<br>
-                        ※ 色まで指定したい方は品番（ハイフン以降）まで入力してください<br>
-                        <span style="color:rgba(155,89,182,0.7);">例：CW2288<strong style="color:var(--amethyst);">-111</strong>（-111 まで入力で白に固定）</span>
+                    <div class="meta-11px home-search-hint" style="margin-top:5px;letter-spacing:0.6px;line-height:1.5;">
+                        楽天・Yahoo!で在庫を監視します。色を固定したい場合は品番のハイフン以降まで入力（例：CW2288-111）
                     </div>
                     <div id="scout-status-text"></div>
                     <div id="intel-badge"></div>
@@ -1652,7 +1758,6 @@
                     </div>
                     <div id="home-watch-history-wrap" style="margin-top:14px;">
                         <span class="gold-label" style="font-size:11px;margin-bottom:6px;display:block;">監視履歴（サーバ同期）</span>
-                        <p class="meta-11px" style="color:rgba(247,231,206,0.55);margin:0 0 8px;letter-spacing:0.5px;">登録済みの見守りは Redis に保存され、下に一覧表示されます。</p>
                         <div id="watch-history-list" class="settings-stock-requests"></div>
                     </div>
                 </div>
@@ -1714,6 +1819,7 @@
                     </span>
                 </div>
                 <div id="insight-scout-status"></div>
+                <div id="insight-scout-results-container" style="display:none;"></div>
                 <p id="insight-idle-hint" class="meta-11px" style="margin-top:6px;color:var(--amethyst);opacity:0.7;letter-spacing:1px;">Enterキーまたは🔍を押して検索</p>
                 <p class="trend-intro-11px" style="margin-top: var(--gap-11); color: var(--amethyst); opacity: 1;">カードの「見守りに追加」をタップするだけで再販通知が届きます。</p>
             </div>
@@ -1732,9 +1838,9 @@
                 </div>
                 <div id="campaign-results-container" style="display:none;"></div>
             </div>
-            <div class="transparent-box">
+            <div class="transparent-box" id="insight-trend-results-box" style="display:none;">
                 <div class="section-header-row">
-                    <span class="gold-label" style="margin-bottom:0;">検索結果</span>
+                    <span class="gold-label" style="margin-bottom:0;">見守り候補</span>
                     <button class="section-manage-btn" id="trend-manage-btn" onclick="toggleSectionMenu('TREND')">削除 [×]</button>
                 </div>
                 <div id="trend-section-action-row"></div>
@@ -1746,6 +1852,13 @@
 
     <div id="settings" class="screen">
         <div class="screen-content">
+            <div id="push-mission-box" class="transparent-box push-mission-box">
+                <span class="gold-label">PUSH ALERT</span>
+                <p id="push-mission-status" class="meta-11px push-mission-status">確認中…</p>
+                <p id="push-mission-pwa-guide" class="meta-11px push-mission-guide" style="display:none;">iPhoneで通知を受け取るには、Safariの共有メニューから<strong style="color:var(--champagne-gold);">「ホーム画面に追加」</strong>したうえで、アプリとして起動してください。</p>
+                <p id="push-mission-debug" class="meta-11px push-mission-status" style="display:none;opacity:0.75;margin-top:6px;line-height:1.5;"></p>
+                <button type="button" id="push-mission-enable-btn" class="btn-purple push-mission-btn" style="display:none;" onclick="PushMission.onEnableClick()">通知を有効にする</button>
+            </div>
             <div class="transparent-box">
                 <span class="gold-label">見守りリスト</span>
                 <div id="settings-watch-list">
@@ -1979,6 +2092,25 @@
         </div>
     </div>
 
+    <!-- 見守り登録確認モーダル -->
+    <div id="watch-confirm-modal">
+        <div class="watch-confirm-box">
+            <span class="gold-label" style="margin-bottom:12px;">見守り登録の確認</span>
+            <div id="watch-confirm-title" class="watch-confirm-item-title"></div>
+            <a id="watch-confirm-url" class="watch-confirm-url" href="#" rel="noopener noreferrer"></a>
+            <div id="watch-confirm-judgment" class="watch-confirm-judgment"></div>
+            <div class="watch-confirm-field">
+                <span class="gold-label" style="font-size:11px;margin-bottom:0;">対象者</span>
+                <select id="watch-confirm-target" class="watch-confirm-select" aria-label="見守り対象者"></select>
+            </div>
+            <div id="watch-confirm-target-meta" class="meta-11px" style="color:var(--amethyst);margin-top:6px;line-height:1.45;"></div>
+            <div class="watch-confirm-btns" style="margin-top:16px;">
+                <button type="button" class="delete-confirm-btn delete-confirm-btn-no" onclick="closeWatchConfirmModal()">キャンセル</button>
+                <button type="button" class="delete-confirm-btn delete-confirm-btn-yes" onclick="confirmWatchFromModal()">見守りに追加</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 固定削除バー（選択モード中に画面下部に常駐） -->
     <div id="fixed-delete-bar">
         <span id="fixed-delete-count">0件選択中</span>
@@ -1993,18 +2125,7 @@
         <div class="ctx-menu-item" onclick="ctxCopyText()">テキストをコピー</div>
     </div>
 
-    <!-- 零式コーチマーク（初回のみ） -->
-    <div id="coach-mark">
-        <div class="coach-title">ZERO PASTE — 零式捕捉</div>
-        <div class="coach-body">記事のテキストをなぞって<br><strong style="color:var(--amethyst);">長押し（右クリック）</strong>するだけで<br>即座に見守り開始できます。</div>
-        <div class="coach-btn-row">
-            <button class="coach-btn coach-btn-ok" onclick="closeCoachMark(true)">わかった（二度と表示しない）</button>
-            <button class="coach-btn coach-btn-close" onclick="closeCoachMark(false)">閉じる</button>
-        </div>
-    </div>
-
-
-    <div class="screen-fade-overlay" aria-hidden="true"></div>
+    <!-- 右クリック コンテキストメニュー --></div>
     <div class="nav-bar">
         <button class="nav-item active" onclick="show('home', this)"><i data-lucide="home" class="lucide" aria-hidden="true"></i><span>ホーム</span></button>
         <button class="nav-item" onclick="show('history', this)"><i data-lucide="bell" class="lucide" aria-hidden="true"></i><span>履歴</span></button>
@@ -2113,12 +2234,8 @@ const PushHybrid = (() => {
 
     async function initPush() {
         if (!('PushManager' in window) || !('Notification' in window)) return false;
-        try {
-            const perm = await Notification.requestPermission();
-            if (perm !== 'granted') return false;
-            _pushActive = true;
-            return true;
-        } catch(e) { return false; }
+        _pushActive = Notification.permission === 'granted';
+        return _pushActive;
     }
 
     function fireNotification(title, body) {
@@ -2189,6 +2306,248 @@ function getUserId() {
     }
     return uid;
 }
+
+// ── PushMission（iOS PWA 対応・ユーザークリック必須）────────────
+const PushMission = (() => {
+    let _debugListenersAttached = false;
+
+    function isPwaStandalone() {
+        if (window.navigator.standalone === true) return true;
+        try {
+            return window.matchMedia('(display-mode: standalone)').matches ||
+                window.matchMedia('(display-mode: fullscreen)').matches;
+        } catch (_) { return false; }
+    }
+
+    async function collectPushSnapshot(OS) {
+        if (!OS) {
+            return {
+                optedIn: false,
+                permissionNative: Notification.permission || 'default',
+                permission: false,
+                subscriptionId: '',
+                token: '',
+                initError: window.__oneSignalInitError || '',
+                pwa: isPwaStandalone(),
+            };
+        }
+        let optedIn = false;
+        let permissionNative = 'default';
+        let permission = false;
+        let subscriptionId = '';
+        let token = '';
+        try { optedIn = !!(await OS.User.PushSubscription.optedIn); } catch (_) {}
+        try { permissionNative = OS.Notifications.permissionNative || Notification.permission || 'default'; } catch (_) {}
+        try { permission = !!OS.Notifications.permission; } catch (_) {}
+        try { subscriptionId = String(OS.User.PushSubscription.id || ''); } catch (_) {}
+        try { token = String(OS.User.PushSubscription.token || ''); } catch (_) {}
+        return {
+            optedIn,
+            permissionNative,
+            permission,
+            subscriptionId,
+            token: token ? (token.slice(0, 12) + '…') : '',
+            initError: window.__oneSignalInitError || '',
+            pwa: isPwaStandalone(),
+        };
+    }
+
+    async function logPushState(OS, label, extra) {
+        const snap = await collectPushSnapshot(OS);
+        const msg = '[PushDebug] ' + (label || 'state') + ' ' + JSON.stringify(snap);
+        console.log(msg, extra || '');
+        const debugEl = document.getElementById('push-mission-debug');
+        if (debugEl) {
+            debugEl.style.display = 'block';
+            debugEl.textContent =
+                'optedIn=' + snap.optedIn +
+                ' | permissionNative=' + snap.permissionNative +
+                (snap.subscriptionId ? ' | subId=' + snap.subscriptionId.slice(0, 8) + '…' : '') +
+                (snap.initError ? ' | initError=' + snap.initError : '');
+        }
+        return snap;
+    }
+
+    function attachDebugListeners(OS) {
+        if (!OS || _debugListenersAttached) return;
+        _debugListenersAttached = true;
+        try {
+            OS.Notifications.addEventListener('permissionPromptDisplay', function(event) {
+                console.log('[PushDebug] permissionPromptDisplay', event);
+            });
+            OS.Notifications.addEventListener('permissionChange', function(permission) {
+                console.log('[PushDebug] permissionChange', permission);
+                logPushState(OS, 'permissionChange').catch(function(){});
+            });
+        } catch (_) { /* noop */ }
+    }
+
+    async function syncIdentity(OS) {
+        const uid = getUserId();
+        if (!uid || !OS) return false;
+        try {
+            if (typeof OS.login === 'function') await OS.login(uid);
+        } catch (e) {
+            console.warn('[PushDebug] login failed:', e);
+        }
+        try {
+            OS.User.addTag('userId', uid);
+        } catch (e) {
+            console.warn('[PushDebug] addTag failed:', e);
+            return false;
+        }
+        return true;
+    }
+
+    async function readSubscriptionState(OS) {
+        const snap = await collectPushSnapshot(OS);
+        return { optedIn: snap.optedIn, permission: snap.permissionNative };
+    }
+
+    async function ensureSubscription(OS) {
+        await logPushState(OS, 'ensureSubscription:before');
+        let accepted = false;
+        try {
+            const native = OS.Notifications.permissionNative || Notification.permission;
+            if (native === 'granted') {
+                accepted = true;
+            } else {
+                accepted = await OS.Notifications.requestPermission(true);
+            }
+        } catch (e) {
+            console.warn('[PushDebug] requestPermission error:', e);
+        }
+        if (accepted) {
+            try {
+                await OS.User.PushSubscription.optIn();
+            } catch (e) {
+                console.warn('[PushDebug] optIn error:', e);
+            }
+        }
+        await syncIdentity(OS);
+        return logPushState(OS, 'ensureSubscription:after');
+    }
+
+    function isIosStandalonePwa() {
+        return window.navigator.standalone === true;
+    }
+
+    function shouldShowPushBanner(snap) {
+        if (!isIosStandalonePwa()) return false;
+        if (snap.optedIn) return false;
+        if (snap.permissionNative === 'denied') return false;
+        return true;
+    }
+
+    function setPushBannerVisible(show) {
+        const bannerEl = document.getElementById('push-mission-banner');
+        if (bannerEl) bannerEl.style.display = show ? 'flex' : 'none';
+    }
+
+    async function refreshUI() {
+        const statusEl = document.getElementById('push-mission-status');
+        const guideEl = document.getElementById('push-mission-pwa-guide');
+        const btnEl = document.getElementById('push-mission-enable-btn');
+        if (!statusEl) return;
+
+        const OS = window.__oneSignalInstance;
+        const snap = await collectPushSnapshot(OS);
+
+        if (window.__oneSignalInitError) {
+            statusEl.textContent = 'OneSignal初期化失敗 — ダッシュボードの Web Push セットアップを完了してください';
+            statusEl.classList.remove('push-mission-ok');
+            if (guideEl) guideEl.style.display = 'none';
+            if (btnEl) btnEl.style.display = 'none';
+            setPushBannerVisible(shouldShowPushBanner(snap));
+            await logPushState(OS, 'refreshUI:initError');
+            return;
+        }
+
+        if (!snap.pwa) {
+            statusEl.textContent = 'ブラウザ表示 — ホーム画面に追加が必要です';
+            statusEl.classList.remove('push-mission-ok');
+            if (guideEl) guideEl.style.display = 'block';
+            if (btnEl) btnEl.style.display = 'none';
+            setPushBannerVisible(false);
+            await logPushState(OS, 'refreshUI:browser');
+            return;
+        }
+
+        if (guideEl) guideEl.style.display = 'none';
+
+        if (snap.optedIn) {
+            statusEl.textContent = '通知：有効（OneSignal登録済み・在庫復活をお知らせします）';
+            statusEl.classList.add('push-mission-ok');
+            if (btnEl) btnEl.style.display = 'none';
+            setPushBannerVisible(false);
+            await logPushState(OS, 'refreshUI:optedIn');
+            return;
+        }
+
+        statusEl.classList.remove('push-mission-ok');
+        if (snap.permissionNative === 'granted') {
+            statusEl.textContent = 'iOS許可済み・OneSignal未登録 — 下のボタンをもう一度タップしてください';
+            if (btnEl) btnEl.style.display = 'block';
+        } else if (snap.permissionNative === 'denied') {
+            statusEl.textContent = '通知が拒否されています。アイコン削除→再追加後、設定から許可してください。';
+            if (btnEl) btnEl.style.display = 'none';
+        } else {
+            statusEl.textContent = '通知が未設定です。下のボタンをタップして許可してください。';
+            if (btnEl) btnEl.style.display = 'block';
+        }
+        setPushBannerVisible(shouldShowPushBanner(snap));
+        await logPushState(OS, 'refreshUI:notOptedIn');
+    }
+
+    async function onEnableClick() {
+        if (!isPwaStandalone()) return;
+        const btnEl = document.getElementById('push-mission-enable-btn');
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '処理中…'; }
+
+        const run = async function(OS) {
+            try {
+                await ensureSubscription(OS);
+            } catch (e) {
+                console.warn('[PushDebug] onEnableClick error:', e);
+            }
+            await refreshUI();
+            if (btnEl) { btnEl.disabled = false; btnEl.textContent = '通知を有効にする'; }
+        };
+
+        if (window.__oneSignalInstance) {
+            await run(window.__oneSignalInstance);
+        } else if (window.OneSignalDeferred) {
+            OneSignalDeferred.push(run);
+        } else if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.textContent = '通知を有効にする';
+        }
+    }
+
+    function init() {
+        if (window.OneSignalDeferred) {
+            OneSignalDeferred.push(async function(OS) {
+                attachDebugListeners(OS);
+                const snap = await collectPushSnapshot(OS);
+                if (snap.optedIn) await syncIdentity(OS);
+                await refreshUI();
+            });
+        } else {
+            refreshUI().catch(function(){});
+        }
+    }
+
+    return {
+        init,
+        refreshUI,
+        onEnableClick,
+        syncIdentity,
+        isPwaStandalone,
+        logPushState,
+        attachDebugListeners,
+        ensureSubscription,
+    };
+})();
 
 function getMonitoringIntervalMs() {
     const night = isNightJP();
@@ -2296,6 +2655,8 @@ let historyItems = [];
 let historyObserverTimer = null;
 /** 登録直後に GET が空でも一覧・履歴から消さない（サーバに現れるまでメモリ保持） */
 let _pendingMonitors = new Map();
+/** ホーム検索カードで「見守り中」表示する出品だけを記録（listingKey → monitor） */
+let _homeWatchPinned = new Map();
 /** loadWatchHistory 同時実行の最後の結果だけを採用（古い応答で UI を壊さない） */
 let _watchHistoryLoadGen = 0;
 /** 空 GET 時に直前の一覧を一時的に保持（論理削除・競合で消えたように見えるのを防ぐ） */
@@ -2511,6 +2872,65 @@ function _persistDeleteIds(arr) {
     try { localStorage.setItem('re_eye_del', JSON.stringify([..._deletedIds].slice(-500))); } catch(e) {}
 }
 
+(function _loadHomeWatchPins() {
+    try {
+        const raw = localStorage.getItem('re_eye_home_watch_pins');
+        if (!raw) return;
+        JSON.parse(raw).forEach(p => {
+            if (p && p.listingKey) _homeWatchPinned.set(p.listingKey, p);
+        });
+    } catch (e) {}
+})();
+function _persistHomeWatchPins() {
+    try {
+        localStorage.setItem('re_eye_home_watch_pins', JSON.stringify([..._homeWatchPinned.values()]));
+    } catch (e) {}
+}
+function _stockListingKey(item) {
+    if (!item) return '';
+    if (item.itemKey) return 'ik:' + String(item.itemKey);
+    const ns = normalizeMonitorId(item.sourceId);
+    const ni = normalizeMonitorId(item.itemId);
+    if (ns && ni) return 'si:' + ns + ':' + ni;
+    const url = String(item.url || '').trim();
+    if (url) return 'url:' + url.slice(0, 240);
+    return '';
+}
+function _pinHomeWatchListing(item, keyword, sourceId, itemId) {
+    const listingKey = _stockListingKey(item);
+    if (!listingKey) return;
+    _homeWatchPinned.set(listingKey, {
+        listingKey,
+        sourceId: normalizeMonitorId(sourceId),
+        itemId: normalizeMonitorId(itemId),
+        keyword: keyword || ''
+    });
+    _persistHomeWatchPins();
+}
+function _unpinWatchMonitor(sourceId, itemId) {
+    const mk = _watchRowKey({ sourceId, itemId });
+    let changed = false;
+    for (const [k, v] of [..._homeWatchPinned.entries()]) {
+        if (_watchRowKey(v) === mk) {
+            _homeWatchPinned.delete(k);
+            changed = true;
+        }
+    }
+    if (changed) _persistHomeWatchPins();
+}
+function _pruneHomeWatchPins(merged) {
+    const live = new Set((merged || []).map(sv => _watchRowKey(sv)));
+    _pendingMonitors.forEach((_, k) => live.add(k));
+    let changed = false;
+    for (const [k, v] of [..._homeWatchPinned.entries()]) {
+        if (!live.has(_watchRowKey(v))) {
+            _homeWatchPinned.delete(k);
+            changed = true;
+        }
+    }
+    if (changed) _persistHomeWatchPins();
+}
+
 let _watchedKeywords = new Set();
 (function _loadWatchedKeywords() {
     try {
@@ -2687,10 +3107,13 @@ function show(id, btn) {
     const target = document.getElementById(id);
     if (target) target.classList.add('active');
     btn.classList.add('active');
-    if (id === 'home')     { loadWatchHistory({ silent: true }); }
-    if (id === 'history')  { renderHistory(historyItems); syncWatchStatus(); }
-    if (id === 'insight')  renderTrendItems(document.getElementById('insight-search')?.value);
-    if (id === 'settings') { renderSettingsTrendWatching(); loadWatchHistory({ silent: true }); syncWatchStatus(); }
+    if (id === 'home')     { loadWatchHistory({ silent: true }); PushMission.refreshUI().catch(function(){}); }
+    if (id === 'history')  { loadWatchHistory({ silent: true }); syncWatchStatus(); }
+    if (id === 'insight')  {
+        renderTrendItems(document.getElementById('insight-search')?.value);
+        renderIntelScoutResults(document.getElementById('insight-search')?.value);
+    }
+    if (id === 'settings') { renderSettingsTrendWatching(); loadWatchHistory({ silent: true }); syncWatchStatus(); PushMission.refreshUI().catch(function(){}); }
     if (id === 'link')     { loadQuotaPanel(); }
     updateAdVisibility();
     requestAnimationFrame(() => { StateStore.restore(id); updateSb(target); refreshLucideIcons(); });
@@ -2936,52 +3359,92 @@ function renderHistory(items) {
     });
 }
 
+function _itemsForHistorySection(status) {
+    const cleaned = dedupeHistoryOnOffStock((historyItems || []).filter(i => cleanHistoryItem(i)));
+    if (status === 'ON') return cleaned.filter(i => i.status === 'ON');
+    if (status === 'OFF') return cleaned.filter(i => i.status === 'OFF');
+    if (status === 'NOTIFIED') return cleaned.filter(i => i.status === 'NOTIFIED');
+    return [];
+}
+function _buildHistoryCardHeader(item, card, status, parts) {
+    const inEdit = _sectionEditMode === status;
+    const hdr = document.createElement('div');
+    hdr.className = 'history-card-header';
+    if (inEdit) {
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'edit-checkbox';
+        cb.checked = _editSelected.has(String(item.id));
+        cb.onclick = (e) => { e.stopPropagation(); toggleSelectItem(String(item.id)); };
+        hdr.appendChild(cb);
+    }
+    (parts || []).forEach(p => hdr.appendChild(p));
+    const db = document.createElement('button');
+    db.className = 'card-del-btn';
+    db.textContent = '×';
+    db.onclick = (e) => { e.stopPropagation(); showDeleteConfirm('history', String(item.id), card); };
+    hdr.appendChild(db);
+    return hdr;
+}
+function _bindHistoryCardEditSelect(card, item, status) {
+    if (_sectionEditMode !== status) return;
+    card.classList.add('history-card-selectable');
+    if (_editSelected.has(String(item.id))) card.classList.add('history-card-selected');
+    card.addEventListener('click', (e) => {
+        if (e.target.closest('.card-del-btn') || e.target.closest('.edit-checkbox')) return;
+        toggleSelectItem(String(item.id));
+    });
+}
+
 function _buildHistorySections(container, onItems, offItems, notifiedItems, intelItems) {
     function mkSection(status, cls, label, items, builder) {
-        const box = document.createElement('div'); box.className='history-section-box';
+        const box = document.createElement('div');
+        box.className = 'history-section-box' + (_sectionEditMode === status ? ' edit-mode' : '');
         const hdr = document.createElement('div'); hdr.className='section-header-row';
         const lbl = document.createElement('span'); lbl.className=cls; lbl.textContent=label;
         const mb  = document.createElement('button');
         mb.className='section-manage-btn'+(_sectionEditMode===status?' open':'');
         mb.textContent=_sectionEditMode===status?'× 戻る':'削除';
-        mb.onclick=()=>toggleSectionMenu(status);
+        if(items.length===0){
+            mb.disabled=true;
+            mb.title='削除できる項目がありません';
+        } else {
+            mb.onclick=()=>toggleSectionMenu(status);
+        }
         hdr.appendChild(lbl); hdr.appendChild(mb); box.appendChild(hdr);
         const list=document.createElement('div'); list.className='history-list-box';
-        items.forEach(item=>list.appendChild(builder(item)));
+        if(items.length===0){
+            const em=document.createElement('p'); em.className='trend-intro-11px';
+            em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:12px 0;';
+            em.textContent=status==='ON'
+                ? '在庫ありの商品はここに表示されます'
+                : status==='OFF'
+                    ? '売り切れ監視中の商品はここに表示されます（見守りタブと同期）'
+                    : '通知済みの履歴はここに表示されます';
+            list.appendChild(em);
+        } else {
+            items.forEach(item=>list.appendChild(builder(item)));
+        }
         box.appendChild(list);
         if(_sectionEditMode===status){
             const bar=document.createElement('div'); bar.className='section-delete-bar';
-            const ct=document.createElement('span'); ct.className='count-text'; ct.textContent=_editSelected.size+'件選択中';
+            const ct=document.createElement('span'); ct.className='count-text';
+            ct.textContent=_editSelected.size+'件選択中'+(items.length===1?'（削除を実行で確定）':'');
             const ex=document.createElement('button'); ex.className='section-action-btn danger'; ex.textContent='削除を実行'; ex.disabled=_editSelected.size===0; ex.onclick=confirmSelectDelete;
             const cn=document.createElement('button'); cn.className='section-action-btn'; cn.textContent='キャンセル'; cn.onclick=cancelEditMode;
             bar.appendChild(ct); bar.appendChild(ex); bar.appendChild(cn); box.appendChild(bar);
         }
         return box;
     }
-    function mkCardHeader(item, statusEl) {
-        const h=document.createElement('div'); h.className='history-card-header';
-        const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
-        cb.checked=_editSelected.has(String(item.id));
-        cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
-        h.appendChild(cb); h.appendChild(statusEl);
-        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
-        db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
-        h.appendChild(db); return h;
-    }
     // ON
     container.appendChild(mkSection('ON','gold-label','購入可能',onItems,(item)=>{
         const card=document.createElement('div'); card.className='history-card history-card-on';
-        if(item.url){ card.style.cursor='pointer'; card.onclick=()=>openSafeUrl(item.url); }
+        const inEdit = _sectionEditMode === 'ON';
+        if(item.url && !inEdit){ card.style.cursor='pointer'; card.onclick=()=>openSafeUrl(item.url); }
         const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
         const sEl=document.createElement('span'); sEl.className='history-status-on'; sEl.textContent=getStockConfirmLabel(item.lastCheckedAt);
-        const hdr=document.createElement('div'); hdr.className='history-card-header';
-        const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
-        cb.checked=_editSelected.has(String(item.id));
-        cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
-        hdr.appendChild(cb); hdr.appendChild(tEl); hdr.appendChild(sEl);
-        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
-        db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
-        hdr.appendChild(db); card.appendChild(hdr);
+        card.appendChild(_buildHistoryCardHeader(item, card, 'ON', [tEl, sEl]));
+        _bindHistoryCardEditSelect(card, item, 'ON');
         if(item.watchMeta){
             const wm=document.createElement('div'); wm.className='item-meta history-meta-row';
             wm.style.opacity='0.9'; wm.textContent=item.watchMeta; card.appendChild(wm);
@@ -3006,24 +3469,18 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
     // OFF
     container.appendChild(mkSection('OFF','gray-label','売り切れ',offItems,(item)=>{
         const card=document.createElement('div'); card.className='history-card history-card-off';
-        const hdr=document.createElement('div'); hdr.className='history-card-header';
-        const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
-        cb.checked=_editSelected.has(String(item.id));
-        cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
-        hdr.appendChild(cb);
+        const inEdit = _sectionEditMode === 'OFF';
         const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
         const sEl=document.createElement('span'); sEl.className='history-status-off'; sEl.textContent='売り切れ';
-        hdr.appendChild(tEl); hdr.appendChild(sEl);
-        const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
-        db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
-        hdr.appendChild(db); card.appendChild(hdr);
+        card.appendChild(_buildHistoryCardHeader(item, card, 'OFF', [tEl, sEl]));
+        _bindHistoryCardEditSelect(card, item, 'OFF');
         if(item.watchMeta){
             const wm=document.createElement('div'); wm.className='item-meta history-meta-row';
             wm.style.opacity='0.9'; wm.textContent=item.watchMeta; card.appendChild(wm);
         }
         const meta=document.createElement('div'); meta.className='item-meta history-meta-row';
         meta.textContent=`${item.time} / ${item.shop}`; card.appendChild(meta);
-        if(item.url){
+        if(item.url && !inEdit){
             card.style.cursor='pointer';
             card.onclick=()=>openSafeUrl(item.url);
             const lr=document.createElement('div'); lr.className='item-meta history-meta-row';
@@ -3041,19 +3498,13 @@ function _buildHistorySections(container, onItems, offItems, notifiedItems, inte
     if(notifiedItems.length>0){
         container.appendChild(mkSection('NOTIFIED','gold-label','通知済み',notifiedItems,(item)=>{
             const card=document.createElement('div'); card.className='history-card history-card-notified';
-            if(item.url && item.kind==='stock'){ card.style.cursor='pointer'; card.onclick=()=>openSafeUrl(item.url); }
-            const hdr=document.createElement('div'); hdr.className='history-card-header';
-            const cb=document.createElement('input'); cb.type='checkbox'; cb.className='edit-checkbox';
-            cb.checked=_editSelected.has(String(item.id));
-            cb.onclick=(e)=>{e.stopPropagation();toggleSelectItem(String(item.id));};
-            hdr.appendChild(cb);
+            const inEdit = _sectionEditMode === 'NOTIFIED';
+            if(item.url && item.kind==='stock' && !inEdit){ card.style.cursor='pointer'; card.onclick=()=>openSafeUrl(item.url); }
             const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
             const sEl=document.createElement('span'); sEl.className='history-status-notified';
             sEl.textContent=item.releaseLabel||'発売日確定';
-            hdr.appendChild(tEl); hdr.appendChild(sEl);
-            const db=document.createElement('button'); db.className='card-del-btn'; db.textContent='×';
-            db.onclick=(e)=>{e.stopPropagation();showDeleteConfirm('history',String(item.id),card);};
-            hdr.appendChild(db); card.appendChild(hdr);
+            card.appendChild(_buildHistoryCardHeader(item, card, 'NOTIFIED', [tEl, sEl]));
+            _bindHistoryCardEditSelect(card, item, 'NOTIFIED');
             if(item.watchMeta){
                 const wm=document.createElement('div'); wm.className='item-meta history-meta-row';
                 wm.style.opacity='0.9'; wm.textContent=item.watchMeta; card.appendChild(wm);
@@ -3148,18 +3599,74 @@ function watchRewardVideo() {
 }
 
 // ── トレンドレンダリング ──────────────────────────────────────
+function renderIntelScoutResults(filterKeyword) {
+    const container = document.getElementById('insight-scout-results-container');
+    if (!container) return;
+    const kw = (filterKeyword || '').toLowerCase().trim();
+    container.innerHTML = '';
+    const filtered = dedupeByNormalizedTitle(
+        (intelScoutResults || []).filter(i =>
+            !isBlacklisted(i) &&
+            !_deletedIds.has(String(i.id)) &&
+            (!kw || (i.title || '').toLowerCase().includes(kw) || (i.keyword || '').toLowerCase().includes(kw))
+        )
+    );
+    if (filtered.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'block';
+    const hdr = document.createElement('p');
+    hdr.className = 'meta-11px';
+    hdr.style.cssText = 'color:var(--amethyst);margin:10px 0 8px;letter-spacing:1px;';
+    hdr.textContent = filtered.length + '件の新着情報';
+    container.appendChild(hdr);
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+    filtered.forEach(item => {
+        const c = document.createElement('div');
+        c.className = 'history-card history-card-notified';
+        c.style.cssText = 'cursor:pointer;margin-bottom:0;';
+        if (item.url) c.onclick = () => openSafeUrl(item.url);
+        const h = document.createElement('div');
+        h.className = 'history-card-header';
+        const tEl = document.createElement('span');
+        tEl.className = 'item-title';
+        tEl.textContent = item.title;
+        h.appendChild(tEl);
+        const db = document.createElement('button');
+        db.className = 'card-del-btn';
+        db.textContent = '×';
+        db.onclick = (e) => {
+            e.stopPropagation();
+            _persistDeleteId(String(item.id || item.title));
+            intelScoutResults = intelScoutResults.filter(r => String(r.id) !== String(item.id));
+            renderIntelScoutResults(filterKeyword);
+        };
+        h.appendChild(db);
+        c.appendChild(h);
+        const m = document.createElement('div');
+        m.className = 'intel-source-tag';
+        m.textContent = (item.keyword || '') + (item.time ? '  ｜  ' + item.time : '');
+        c.appendChild(m);
+        appendCalendarRegisterButton(c, item, 'intel-cal-btn');
+        list.appendChild(c);
+    });
+    container.appendChild(list);
+}
 function renderTrendItems(filterKeyword) {
     const container=document.getElementById('trend-list-container');
+    const trendBox=document.getElementById('insight-trend-results-box');
     if(!container) return;
     const kw=(filterKeyword||'').toLowerCase().trim();
     const safe=trendItems.filter(t=>!restrictedKeywords.some(rk=>t.title.includes(rk)));
     const list=kw?safe.filter(t=>t.title.toLowerCase().includes(kw)||(t.shop||'').toLowerCase().includes(kw)):safe;
     const limit=getTrendLimit(); const wc=trendWatching.size;
     container.innerHTML='';
+    if(trendBox) trendBox.style.display=(list.length>0||_sectionEditMode==='TREND')?'':'none';
     if(list.length===0){
-        const em=document.createElement('p'); em.className='trend-intro-11px';
-        em.style.cssText='text-align:center;color:rgba(247,231,206,0.35);margin:24px 0;';
-        em.textContent='気になるアイテムを検索して、見守りリストを作成しましょう'; container.appendChild(em);
+        if(trendBox) trendBox.style.display=_sectionEditMode==='TREND'?'':'none';
+        return;
     }
     list.forEach(item=>{
         const isW=trendWatching.has(item.id);
@@ -3185,31 +3692,6 @@ function renderTrendItems(filterKeyword) {
         }
         container.appendChild(card);
     });
-    // インテルスカウト結果も追記
-    if(intelScoutResults.length>0){
-        const filtered=dedupeByNormalizedTitle(intelScoutResults.filter(i=>!kw||i.title.toLowerCase().includes(kw)));
-        if(filtered.length>0){
-            const sect=document.createElement('div');
-            sect.style.cssText='margin-top:14px;border-top:1px solid rgba(155,89,182,0.2);padding-top:11px;';
-            const ih=document.createElement('span'); ih.className='notification-label'; ih.textContent='通知済み';
-            sect.appendChild(ih);
-            filtered.forEach(item=>{
-                const c=document.createElement('div'); c.className='history-card history-card-notified';
-                c.style.cssText='cursor:pointer;margin-bottom:8px;';
-                if(item.url) c.onclick=()=>openSafeUrl(item.url);
-                const h=document.createElement('div'); h.className='history-card-header';
-                const tEl=document.createElement('span'); tEl.className='item-title'; tEl.textContent=item.title;
-                const tg=document.createElement('span'); tg.className='notification-label';
-                tg.style.cssText='margin-bottom:0;font-size:11px;'; tg.textContent='INTEL';
-                h.appendChild(tEl); h.appendChild(tg); c.appendChild(h);
-                const m=document.createElement('div'); m.className='intel-source-tag';
-                m.textContent=(item.keyword||'')+(item.time?'  ｜  '+item.time:''); c.appendChild(m);
-                appendCalendarRegisterButton(c, item, 'intel-cal-btn');
-                sect.appendChild(c);
-            });
-            container.appendChild(sect);
-        }
-    }
     // トレンドセクションのアクションバー
     const tar=document.getElementById('trend-section-action-row');
     if(tar){ tar.innerHTML=''; }
@@ -3338,6 +3820,7 @@ async function deleteWatchMonitorOnServer(sourceId,itemId){
             return false;
         }
         _pendingMonitors.delete(_watchRowKey({ sourceId: ns, itemId: ni }));
+        _unpinWatchMonitor(ns, ni);
         return true;
     }catch(e){
         alert('見守りの削除に失敗しました（ネットワーク）');
@@ -3377,10 +3860,9 @@ function renderWatchMonitorInto(container,items){
         del.className='section-manage-btn';
         del.textContent='削除';
         del.style.cssText='flex-shrink:0;padding:2px 8px;font-size:10px;';
-        del.onclick=async (e)=>{
+        del.onclick=(e)=>{
             e.stopPropagation();
-            if(!confirm('この見守りを削除しますか？')) return;
-            if(await deleteWatchMonitorOnServer(sv.sourceId,sv.itemId)) await loadWatchHistory({ silent:true, forceEmpty:true });
+            showWatchMonitorDeleteConfirm(sv.sourceId, sv.itemId);
         };
         top.appendChild(t1); top.appendChild(del); row.appendChild(top);
         const local=historyItems.find(h=>_watchRowKey(h)===_watchRowKey(sv));
@@ -3565,17 +4047,40 @@ async function loadWatchHistory(opts){
     if(gen!==_watchHistoryLoadGen){ _reEyeDbg('abort: sync 直前で世代不一致', { gen: gen, current: _watchHistoryLoadGen }); return; }
     _reEyeDbg('syncHistoryFromMonitorSnapshot へ渡す merged', { mergedCount: merged.length });
     syncHistoryFromMonitorSnapshot(merged);
+    _pruneHomeWatchPins(merged);
     _persistHistory();
     targets.forEach(c=>renderWatchMonitorInto(c,merged));
     const hs=document.getElementById('history');
     if(hs&&hs.classList.contains('active')) renderHistory(historyItems);
+    refreshHomeStockWatchButtons();
+}
+function refreshHomeStockWatchButtons() {
+    const home = document.getElementById('home');
+    const items = _stockPageState && _stockPageState.accumulatedItems;
+    const kw = _lastStockSearchContext && _lastStockSearchContext.keyword;
+    if (!home || !home.classList.contains('active') || !items || !items.length || !kw) return;
+    const wrap = document.getElementById('home-inline-results');
+    if (!wrap || wrap.style.display === 'none') return;
+    renderStockResults(
+        items,
+        kw,
+        _lastStockSearchContext.displayKw || kw,
+        [],
+        { preserveScroll: true }
+    );
 }
 async function renderStockMonitorRequests(){ return loadWatchHistory({ silent: true }); }
 
 // ── 削除操作 ──────────────────────────────────────────────────
 function toggleSectionMenu(status) {
-    if(_sectionEditMode===status){_sectionEditMode=null;_editSelected.clear();}
-    else{_openSectionMenu=null;_sectionEditMode=status;_editSelected.clear();}
+    if(_sectionEditMode===status){
+        _sectionEditMode=null;_editSelected.clear();
+    } else {
+        _openSectionMenu=null;
+        _sectionEditMode=status;
+        _editSelected.clear();
+        _itemsForHistorySection(status).forEach(i => _editSelected.add(String(i.id)));
+    }
     if(status==='TREND') renderTrendItems(document.getElementById('insight-search')?.value);
     else renderHistory(historyItems);
 }
@@ -3615,7 +4120,18 @@ function cancelTrendEditMode() {
     _sectionEditMode=null;_editSelected.clear();_updateFixedDeleteBar();
     renderTrendItems(document.getElementById('insight-search')?.value);
 }
+function resetDeleteConfirmTitle() {
+    const el=document.getElementById('delete-confirm-title');
+    if(el) el.innerHTML='このアイテムを<br>監視対象から除外しますか？';
+}
+function showWatchMonitorDeleteConfirm(sourceId, itemId, triggerBtn) {
+    _deleteTarget={type:'watch-monitor', sourceId, itemId, triggerBtn: triggerBtn || null};
+    const el=document.getElementById('delete-confirm-title');
+    if(el) el.innerHTML='この見守りを<br>削除しますか？';
+    document.getElementById('delete-confirm-modal').style.display='flex';
+}
 function showDeleteConfirm(type,id,cardEl) {
+    resetDeleteConfirmTitle();
     _deleteTarget={type,id,cardEl};
     document.getElementById('delete-confirm-modal').style.display='flex';
 }
@@ -3623,7 +4139,19 @@ function confirmDelete() {
     if(!_deleteTarget) return;
     const t=_deleteTarget;
     document.getElementById('delete-confirm-modal').style.display='none';
-        if(t.type==='section-selected'){
+    resetDeleteConfirmTitle();
+        if(t.type==='watch-monitor'){
+        (async ()=>{
+            if(await deleteWatchMonitorOnServer(t.sourceId, t.itemId)){
+                if(t.triggerBtn) resetStockWatchButton(t.triggerBtn);
+                await loadWatchHistory({ silent:true, forceEmpty:true });
+                refreshHomeStockWatchButtons();
+                renderHistory(historyItems);
+            }
+        })();
+        _deleteTarget=null;
+        return;
+    } else if(t.type==='section-selected'){
         if(_sectionEditMode==='TREND'){
             _editSelected.forEach(id=>{trendWatching.delete(id);delete _trendWatchData[id];});
             scheduleTrendSync();
@@ -3673,7 +4201,9 @@ function confirmDelete() {
     _deleteTarget=null;
 }
 function cancelDelete() {
-    document.getElementById('delete-confirm-modal').style.display='none';_deleteTarget=null;
+    document.getElementById('delete-confirm-modal').style.display='none';
+    resetDeleteConfirmTitle();
+    _deleteTarget=null;
 }
 
 // ── 夜間モードステータス ──────────────────────────────────────
@@ -4336,8 +4866,18 @@ function setInsightLoading(on){
 }
 function triggerInsightScout(){
     const word=document.getElementById('insight-search').value.trim();
+    if(!word){
+        intelScoutResults=[];
+        renderIntelScoutResults('');
+        renderTrendItems('');
+        return;
+    }
     renderTrendItems(word);
-    if(word){updateBannerAdContent(word);hideIntelBadge();intelScoutResults=[];runIntelScout(word);}
+    updateBannerAdContent(word);
+    hideIntelBadge();
+    intelScoutResults=[];
+    renderIntelScoutResults(word);
+    runIntelScout(word);
 }
 
 // ── 初回起動 ─────────────────────────────────────────────────
@@ -4688,7 +5228,7 @@ async function runStockSearch(keyword, forChild, loadMore) {
                 p.textContent = (data.msg && String(data.msg).trim())
                     ? String(data.msg)
                     : (data.inventoryRuleNoHits
-                        ? '今は買える店はありません。条件に合う商品の復活を零式監視で待ちましょう。'
+                        ? '今は買える店はありません。条件に合う商品の復活を見守りで待ちましょう。'
                         : '一覧では該当ショップが見つかりませんでした。復活したら知らせる監視を開始できます。');
                 const axes = data.watchAxes || {};
                 const axisLine = document.createElement('div');
@@ -4704,7 +5244,7 @@ async function runStockSearch(keyword, forChild, loadMore) {
                 const btn = document.createElement('button');
                 btn.className = 'btn-purple';
                 btn.style.marginTop = '10px';
-                btn.textContent = 'この条件で「再入荷」を監視する';
+                btn.textContent = 'この条件で見守りに追加';
                 const manualId = 'manual_' + Date.now();
                 const dispTitle = data.normalizedKeyword || sk;
                 btn.onclick = () => watchStockItem({
@@ -4814,6 +5354,12 @@ function stockUxTierPillLabel(uxTier) {
     if (uxTier === 'sold_out') return '売り切れ';
     return '要確認';
 }
+function watchMatchLabelText(label) {
+    if (label === 'model_color_match') return '品番・色一致';
+    if (label === 'model_only_match') return '品番のみ一致';
+    if (label === 'keyword_match') return 'キーワード一致';
+    return '';
+}
 function buildStockResultCard(item, keyword) {
     const uxTier = resolveStockUxTier(item);
     const mallBucket = resolveStockMallBucket(item);
@@ -4834,10 +5380,38 @@ function buildStockResultCard(item, keyword) {
     pill.textContent = stockUxTierPillLabel(uxTier);
     card.appendChild(pill);
 
-    const t = document.createElement('div');
-    t.className = 'item-title';
-    t.textContent = sanitizeStockTitle(item.title || keyword, suppressHype);
-    card.appendChild(t);
+    const matchLabelText = watchMatchLabelText(item.watchMatchLabel);
+    if (matchLabelText) {
+        const matchLbl = document.createElement('span');
+        matchLbl.className = 'stock-match-label';
+        matchLbl.textContent = matchLabelText;
+        card.appendChild(matchLbl);
+    }
+
+    const titleText = sanitizeStockTitle(item.title || keyword, suppressHype);
+    if (item.url) {
+        const t = document.createElement('a');
+        t.className = 'item-title stock-item-title-link';
+        t.href = item.url;
+        t.target = '_blank';
+        t.rel = 'noopener noreferrer';
+        t.textContent = titleText;
+        t.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openSafeUrl(item.url); };
+        card.appendChild(t);
+        const pageLink = document.createElement('a');
+        pageLink.className = 'stock-page-link';
+        pageLink.href = item.url;
+        pageLink.target = '_blank';
+        pageLink.rel = 'noopener noreferrer';
+        pageLink.textContent = '商品ページを見る';
+        pageLink.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openSafeUrl(item.url); };
+        card.appendChild(pageLink);
+    } else {
+        const t = document.createElement('div');
+        t.className = 'item-title';
+        t.textContent = titleText;
+        card.appendChild(t);
+    }
 
     const wm = buildWatchMetaLine(_lastStockSearchContext.forChild);
     if (wm) {
@@ -4862,15 +5436,15 @@ function buildStockResultCard(item, keyword) {
             : '一覧上は在庫あり（希望サイズ一致）— 購入ページで最終確認してください';
     } else if (uxTier === 'watch_tower' || uxTier === 'sold_out') {
         status.classList.add(uxTier === 'watch_tower' ? 'watch-tower' : 'watch-oos');
-        status.textContent = '条件は一致。今は在庫なし — 零式監視で復活を待ちましょう';
+        status.textContent = '条件は一致。今は在庫なし — 見守りで復活を待ちましょう';
     } else if (uxTier === 'inquiry') {
         status.classList.add('inquiry');
-        status.textContent = '取り寄せ・問い合わせ店 — 購入前に店舗確認。復活監視は零式監視へ';
+        status.textContent = 'このサイズの在庫有無は確認できません。商品ページでご確認のうえ、見守りに追加してください';
     } else {
         status.classList.add('watch-listed');
         status.textContent = item.size_match
-            ? 'サイズ記載あり・在庫は未確定 — 購入前に確認、または零式監視へ'
-            : '在庫未確認 — リンク先で確認するか、零式監視に登録してください';
+            ? 'サイズ記載あり・在庫は未確定 — 購入前に確認、または見守りへ'
+            : '在庫未確認 — リンク先で確認するか、見守りに追加してください';
     }
     card.appendChild(status);
 
@@ -4894,12 +5468,18 @@ function buildStockResultCard(item, keyword) {
     watchHint.style.cssText = 'line-height:1.45;color:rgba(247,231,206,0.55);';
 
     if (showWatch) {
-        const watchBtn = document.createElement('button');
-        watchBtn.className = 'btn-purple';
-        watchBtn.style.cssText = 'width:100%;padding:10px;font-size:11px;letter-spacing:2.5px;';
-        watchBtn.textContent = '零式監視に追加';
-        watchBtn.onclick = (e) => { e.stopPropagation(); watchStockItem(item, keyword, watchBtn); };
-        actionArea.appendChild(watchBtn);
+        const watchEntry = getWatchEntryForItem(item, keyword);
+        if (watchEntry) {
+            const watchArea = buildWatchActionArea(item, keyword, watchEntry);
+            if (watchArea) actionArea.appendChild(watchArea);
+        } else {
+            const watchBtn = document.createElement('button');
+            watchBtn.className = 'btn-purple';
+            watchBtn.style.cssText = 'width:100%;padding:10px;font-size:11px;letter-spacing:2.5px;';
+            watchBtn.textContent = '見守りに追加';
+            watchBtn.onclick = (e) => { e.stopPropagation(); openWatchConfirmModal(item, keyword, watchBtn); };
+            actionArea.appendChild(watchBtn);
+        }
     } else if (uxTier !== 'buy_now' && item.watchBlockReason) {
         if (item.watchBlockReason === 'size_listing_mismatch') {
             watchHint.textContent = 'この店舗は希望サイズと一覧が一致しないため監視できません';
@@ -4907,6 +5487,8 @@ function buildStockResultCard(item, keyword) {
             watchHint.textContent = '監視には品番が必要です（例: IM3110-500 / CW2288-111）';
         } else if (item.watchBlockReason === 'color_recommended') {
             watchHint.textContent = '監視には色の指定が必要です（例: ホワイト / ライトパープル）';
+        } else if (item.watchBlockReason === 'keyword_mismatch') {
+            watchHint.textContent = 'キーワードと商品名の関連が弱いため監視できません';
         }
         if (watchHint.textContent) actionArea.appendChild(watchHint);
     }
@@ -4988,7 +5570,7 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
         ? `お届け先（目安）: ${formatPrefLabel(pref)} — 価格・送料は各店舗条件により異なります。`
         : '価格・送料の目安は各店舗条件により異なります。';
         aiBanner.textContent =
-            '欲しい条件だけ、復活した瞬間に知らせます。検索は監視登録の入口 — 品番・色・サイズを指定して零式監視を開始してください。' +
+            '欲しい条件だけ、復活した瞬間に知らせます。検索は見守り登録の入口 — 品番・色・サイズを指定して見守りを開始してください。' +
             ' ' + prefLine;
     list.appendChild(aiBanner);
 
@@ -5002,11 +5584,18 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
     const inquiry = (items || []).filter((it) => resolveStockUxTier(it) === 'inquiry');
     const checkStock = (items || []).filter((it) => resolveStockUxTier(it) === 'check_stock');
 
-    function appendSection(title, cls, arr, emptyMsg) {
+    function appendSection(title, cls, arr, emptyMsg, sectionDesc) {
         const hdr = document.createElement('div');
         hdr.className = 'stock-section-header ' + cls;
         hdr.textContent = title + '（' + arr.length + '件）';
         list.appendChild(hdr);
+        if (sectionDesc && arr.length) {
+            const desc = document.createElement('div');
+            desc.className = 'meta-11px stock-section-desc inquiry-desc';
+            desc.style.cssText = 'margin-bottom:10px;';
+            desc.textContent = sectionDesc;
+            list.appendChild(desc);
+        }
         if (!arr.length) {
             const empty = document.createElement('div');
             empty.className = 'meta-11px';
@@ -5019,8 +5608,10 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
     }
 
     appendSection('今すぐ購入可能', 'confirmed', buyNow, '一覧上、在庫ありと判断できる店はありません。');
-    appendSection('見張り台 — 監視推奨', 'tower', watchTower, '希望条件に一致する店はありますが、現在は在庫なしです。零式監視で復活を待ちましょう。');
-    appendSection('問い合わせ・取り寄せ', 'inquiry', inquiry, '取り寄せ・問い合わせ店はありません。');
+    appendSection('見張り台 — 監視推奨', 'tower', watchTower, '希望条件に一致する店はありますが、現在は在庫なしです。見守りで復活を待ちましょう。');
+    appendSection('問い合わせ・取り寄せ', 'inquiry', inquiry,
+        '取り寄せ・問い合わせ店はありません。',
+        '楽天・Yahooの検索結果にはサイズ別在庫が含まれません。在庫不明・要確認の候補です。商品ページで直接ご確認ください。');
     appendSection('要確認', 'check', checkStock, '在庫判定が曖昧な候補はありません。');
 
     applyStockMallFilter(_stockPageState.mallFilter || 'all');
@@ -5046,22 +5637,229 @@ function renderStockResults(items, keyword, displayKw, apiErrors, opts) {
     list.style.flexDirection = 'column';
 }
 function watchKeyword(kw,btn){
-    watchStockItem({itemId:'kw_'+Date.now(),sourceId:'keyword',title:kw,price:0,available:false,url:'',shopName:'監視キーワード'},kw,btn);
+    openWatchConfirmModal({itemId:'kw_'+Date.now(),sourceId:'keyword',title:kw,price:0,available:false,url:'',shopName:'監視キーワード'},kw,btn);
 }
 function watchBlockMessage(item) {
     const r = item && item.watchBlockReason;
-    if (r === 'size_listing_mismatch') return '希望サイズと一致しない商品は零式監視に登録できません。';
+    if (item && item.showWatchBtn === true && r === 'color_recommended') return '';
+    if (r === 'size_listing_mismatch') return '希望サイズと一致しない商品は見守りに登録できません。';
     if (r === 'model_required') return '品番が特定できません。キーワードに品番（例: CW2288-111）を入れてください。';
+    if (r === 'keyword_mismatch') return 'キーワードと商品名の関連が弱いため監視できません。';
     if (r === 'color_recommended') return '色が未指定です。キーワードに色（例: ホワイト）を入れてから監視してください。';
-    if (item && item.watchEligible === false) return 'この商品は監視条件を満たしていません。';
+    if (item && item.watchEligible === false && item.showWatchBtn !== true) return 'この商品は監視条件を満たしていません。';
     return '';
 }
-async function watchStockItem(item,keyword,btn){
+function _extractSkuFromText(text) {
+    const m = String(text || '').match(/\b([A-Z]{2,4}[0-9]{3,5}-[0-9]{2,4}|[A-Z]{2}[0-9]{4}|[A-Z][0-9]{5,6})\b/i);
+    return m ? m[1].toUpperCase() : '';
+}
+function getWatchEntryForItem(item, keyword) {
+    const listingKey = _stockListingKey(item);
+    if (listingKey && _homeWatchPinned.has(listingKey)) {
+        const pin = _homeWatchPinned.get(listingKey);
+        return { sourceId: pin.sourceId, itemId: pin.itemId };
+    }
+    const ns = normalizeMonitorId(item && item.sourceId);
+    const ni = normalizeMonitorId(item && item.itemId);
+    const ek = _watchRowKey({ sourceId: ns, itemId: ni });
+    if (!ek || ek === ':') return null;
+    if (_pendingMonitors.has(ek)) {
+        const p = _pendingMonitors.get(ek);
+        return {
+            sourceId: normalizeMonitorId(p.sourceId || ns),
+            itemId: normalizeMonitorId(p.itemId || ni)
+        };
+    }
+    const row = historyItems.find(h =>
+        (h.watchSource === 'redis' || h.watchSource === 'pending') && _watchRowKey(h) === ek
+    );
+    if (row) return { sourceId: row.sourceId, itemId: row.itemId };
+    return null;
+}
+function buildWatchActionArea(item, keyword, watchEntry) {
+    const entry = watchEntry || getWatchEntryForItem(item, keyword);
+    if (!entry) return null;
+    const listingKey = _stockListingKey(item);
+    const wrap = document.createElement('div');
+    wrap.className = 'watch-action-wrap';
+    wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;width:100%;';
+    wrap.dataset.watchSourceId = entry.sourceId;
+    wrap.dataset.watchItemId = entry.itemId;
+    wrap.dataset.watchKeyword = keyword || '';
+    if (listingKey) wrap.dataset.listingKey = listingKey;
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'watch-cancel-btn';
+    cancelBtn.textContent = 'キャンセル';
+    const statusBtn = document.createElement('button');
+    statusBtn.type = 'button';
+    statusBtn.className = 'watch-status-btn';
+    statusBtn.textContent = '見守り中';
+    statusBtn.disabled = true;
+    statusBtn.dataset.watchSourceId = entry.sourceId;
+    statusBtn.dataset.watchItemId = entry.itemId;
+    statusBtn.dataset.watchKeyword = keyword || '';
+    cancelBtn.onclick = (e) => {
+        e.stopPropagation();
+        showWatchMonitorDeleteConfirm(entry.sourceId, entry.itemId, wrap);
+    };
+    wrap.appendChild(cancelBtn);
+    wrap.appendChild(statusBtn);
+    return wrap;
+}
+function resetStockWatchButton(btnOrWrap, item, keyword) {
+    const wrap = btnOrWrap && btnOrWrap.classList && btnOrWrap.classList.contains('watch-action-wrap')
+        ? btnOrWrap
+        : (btnOrWrap && btnOrWrap.closest ? btnOrWrap.closest('.watch-action-wrap') : null);
+    const keywordResolved = (wrap && wrap.dataset.watchKeyword) || (btnOrWrap && btnOrWrap.dataset && btnOrWrap.dataset.watchKeyword) || keyword || '';
+    const itemId = (wrap && wrap.dataset.watchItemId) || (btnOrWrap && btnOrWrap.dataset && btnOrWrap.dataset.watchItemId);
+    const sourceId = (wrap && wrap.dataset.watchSourceId) || (btnOrWrap && btnOrWrap.dataset && btnOrWrap.dataset.watchSourceId);
+    const parent = wrap ? wrap.parentElement : (btnOrWrap ? btnOrWrap.parentElement : null);
+    if (parent && wrap) {
+        const newBtn = document.createElement('button');
+        newBtn.className = 'btn-purple';
+        newBtn.style.cssText = 'width:100%;padding:10px;font-size:11px;letter-spacing:2.5px;';
+        newBtn.textContent = '見守りに追加';
+        const itemObj = item || { itemId, sourceId, title: '', url: '', price: 0 };
+        newBtn.onclick = (e) => { e.stopPropagation(); openWatchConfirmModal(itemObj, keywordResolved, newBtn); };
+        parent.replaceChild(newBtn, wrap);
+        return;
+    }
+    if (!btnOrWrap) return;
+    btnOrWrap.classList.remove('watching');
+    btnOrWrap.disabled = false;
+    btnOrWrap.textContent = '見守りに追加';
+    delete btnOrWrap.dataset.watchSourceId;
+    delete btnOrWrap.dataset.watchItemId;
+    delete btnOrWrap.dataset.watchKeyword;
+    if (itemId && sourceId) {
+        const itemObj = item || { itemId, sourceId, title: '', url: '', price: 0 };
+        btnOrWrap.onclick = (e) => { e.stopPropagation(); openWatchConfirmModal(itemObj, keywordResolved, btnOrWrap); };
+    }
+}
+function bindStockWatchButton(btn, item, keyword, watchEntry) {
+    const area = buildWatchActionArea(item, keyword, watchEntry);
+    if (!area || !btn || !btn.parentElement) return;
+    btn.parentElement.replaceChild(area, btn);
+}
+let _pendingWatchConfirm = null;
+function getWatchTargetOptions() {
+    const opts = [];
+    let selfLabel = '自分';
+    if (userProfile.gender === 'male') selfLabel = '自分（男性）';
+    else if (userProfile.gender === 'female') selfLabel = '自分（女性）';
+    opts.push({ id: 'self', label: selfLabel, forChild: false });
+    if (userProfile.childGender === 'boy' || userProfile.childGender === 'girl') {
+        const cg = userProfile.childGender === 'girl' ? '女の子' : '男の子';
+        opts.push({ id: 'child', label: 'お子様（' + cg + '）', forChild: true });
+    }
+    return opts;
+}
+function buildWatchJudgmentRows(item, keyword) {
+    const rows = [];
+    const match = watchMatchLabelText(item && item.watchMatchLabel);
+    if (match) rows.push(['判定', match]);
+    const axes = _lastWatchAxes || {};
+    if (axes.keywordDisplay) rows.push(['商品', axes.keywordDisplay]);
+    if (axes.sizeCm != null) rows.push(['サイズ', String(axes.sizeCm) + 'cm']);
+    if (axes.colors && axes.colors.length) rows.push(['色', axes.colors.join(' / ')]);
+    else if (item && item.colorLabel) rows.push(['色', item.colorLabel]);
+    const models = (axes.models && axes.models.length) ? axes.models : (item && item.watchModels);
+    if (models && models.length) rows.push(['品番', models.join(' / ')]);
+    if (item && item.shopName && item.shopName !== '監視キーワード' && item.shopName !== 'キーワード監視') {
+        rows.push(['店舗', item.shopName]);
+    }
+    return rows;
+}
+function onWatchConfirmTargetChange() {
+    const targetSel = document.getElementById('watch-confirm-target');
+    const metaEl = document.getElementById('watch-confirm-target-meta');
+    if (!targetSel || !metaEl) return;
+    const opts = getWatchTargetOptions();
+    const picked = opts.find(o => o.id === targetSel.value) || opts[0];
+    const meta = buildWatchMetaLine(picked.forChild);
+    metaEl.textContent = meta ? 'サイズ設定: ' + meta : '';
+    metaEl.style.display = meta ? '' : 'none';
+}
+function openWatchConfirmModal(item, keyword, triggerBtn) {
     const blockMsg = watchBlockMessage(item);
     if (blockMsg && item && item.sourceId !== 'manual') {
         alert(blockMsg);
         return;
     }
+    _pendingWatchConfirm = { item, keyword, triggerBtn };
+    const titleEl = document.getElementById('watch-confirm-title');
+    const urlEl = document.getElementById('watch-confirm-url');
+    const judgmentEl = document.getElementById('watch-confirm-judgment');
+    const targetSel = document.getElementById('watch-confirm-target');
+    const dispTitle = sanitizeStockTitle(item.title || keyword, item.suppressStockHype === true);
+    if (titleEl) titleEl.textContent = dispTitle || keyword || '';
+    if (urlEl) {
+        if (item.url) {
+            urlEl.href = item.url;
+            urlEl.textContent = item.url.replace(/^https?:\/\//, '').slice(0, 80) + (item.url.length > 80 ? '…' : '');
+            urlEl.style.display = '';
+            urlEl.onclick = (e) => { e.preventDefault(); openSafeUrl(item.url); };
+        } else {
+            urlEl.href = '#';
+            urlEl.textContent = 'URL未指定（キーワード見守り）';
+            urlEl.style.display = '';
+            urlEl.onclick = (e) => e.preventDefault();
+        }
+    }
+    if (judgmentEl) {
+        judgmentEl.innerHTML = '';
+        buildWatchJudgmentRows(item, keyword).forEach(([lbl, val]) => {
+            const row = document.createElement('div');
+            row.className = 'watch-confirm-judgment-row';
+            const lblEl = document.createElement('span');
+            lblEl.className = 'watch-confirm-jlbl';
+            lblEl.textContent = lbl;
+            const valEl = document.createElement('span');
+            valEl.className = 'watch-confirm-jval';
+            valEl.textContent = val;
+            row.appendChild(lblEl);
+            row.appendChild(valEl);
+            judgmentEl.appendChild(row);
+        });
+    }
+    const opts = getWatchTargetOptions();
+    if (targetSel) {
+        targetSel.innerHTML = '';
+        opts.forEach(o => {
+            const opt = document.createElement('option');
+            opt.value = o.id;
+            opt.textContent = o.label;
+            targetSel.appendChild(opt);
+        });
+        const wantChild = _lastStockSearchContext && _lastStockSearchContext.forChild;
+        const defaultId = wantChild && opts.some(o => o.id === 'child') ? 'child' : 'self';
+        targetSel.value = defaultId;
+        targetSel.onchange = onWatchConfirmTargetChange;
+        onWatchConfirmTargetChange();
+    }
+    const modal = document.getElementById('watch-confirm-modal');
+    if (modal) modal.style.display = 'flex';
+}
+function closeWatchConfirmModal() {
+    const modal = document.getElementById('watch-confirm-modal');
+    if (modal) modal.style.display = 'none';
+    _pendingWatchConfirm = null;
+}
+async function confirmWatchFromModal() {
+    if (!_pendingWatchConfirm) return;
+    const { item, keyword, triggerBtn } = _pendingWatchConfirm;
+    const targetSel = document.getElementById('watch-confirm-target');
+    const opts = getWatchTargetOptions();
+    const picked = opts.find(o => o.id === (targetSel && targetSel.value)) || opts[0];
+    const forChild = picked.forChild;
+    closeWatchConfirmModal();
+    await executeWatchStockRegistration(item, keyword, triggerBtn, forChild);
+}
+function watchStockItem(item, keyword, btn) {
+    openWatchConfirmModal(item, keyword, btn);
+}
+async function executeWatchStockRegistration(item, keyword, btn, forChild) {
     if (btn) {
         btn.textContent = '登録中...';
         btn.disabled = true;
@@ -5112,10 +5910,17 @@ async function watchStockItem(item,keyword,btn){
 
         const _structuredSku  = (axes.models && axes.models[0])
             || (_skuM ? _normSku(_skuM[1]) : '');
-        const _ctxSize = _lastSearchUserSettings && _lastSearchUserSettings.shoeCm;
+        const _ctxSizeRaw = forChild
+            ? (userProfile.childShoeSize || (_lastSearchUserSettings && _lastSearchUserSettings.childShoeSize))
+            : ((_lastSearchUserSettings && _lastSearchUserSettings.shoeCm != null)
+                ? _lastSearchUserSettings.shoeCm
+                : userProfile.shoeSize);
+        const _ctxSize = _ctxSizeRaw != null && _ctxSizeRaw !== ''
+            ? parseFloat(String(_ctxSizeRaw).replace(/cm$/i, '').trim())
+            : null;
         const _structuredSize = _sizeM
             ? _normSize(_sizeM[1])
-            : (axes.sizeCm != null ? _normSize(String(axes.sizeCm)) : (_ctxSize != null ? _normSize(String(_ctxSize)) : ''));
+            : (axes.sizeCm != null ? _normSize(String(axes.sizeCm)) : (Number.isFinite(_ctxSize) ? _normSize(String(_ctxSize)) : ''));
 
         // canonical_id: normalizeBrandForCanonical(brand) + normalizeSku(sku) + normalizeSize(size)
         const _brand = _normBrand(userProfile.brand || '');
@@ -5146,19 +5951,14 @@ async function watchStockItem(item,keyword,btn){
 
         if (res.ok) {
             const json = await res.json();
-            // SKU または品番が確定していればフィードバックを出す
-            if (btn) {
-                const confirmedSku = json.sku || (json.modelNumbers && json.modelNumbers[0]) || '';
-                if (confirmedSku) {
-                    btn.textContent = 'SKU ' + confirmedSku + ' で固定監視中';
-                } else {
-                    btn.textContent = '見守りリストに追加しました';
-                }
-                btn.classList.add('watching');
-            }
-
             const nsId = normalizeMonitorId(json.sourceId != null ? json.sourceId : item.sourceId);
             const niId = normalizeMonitorId(json.itemId != null ? json.itemId : item.itemId);
+            if (btn) bindStockWatchButton(btn, { ...item, sourceId: nsId, itemId: niId }, keyword, {
+                sourceId: nsId,
+                itemId: niId
+            });
+            _pinHomeWatchListing(item, keyword, nsId, niId);
+
             const ek = _watchRowKey({ sourceId: nsId, itemId: niId });
             _pendingMonitors.set(ek, {
                 keyword,
@@ -5173,7 +5973,7 @@ async function watchStockItem(item,keyword,btn){
                 userId: getUserId()
             });
             await loadWatchHistory({ expectKey: ek, retry: true, silent: true });
-            const wm=buildWatchMetaLine(typeof _lastStockSearchContext.forChild==='boolean'?_lastStockSearchContext.forChild:false);
+            const wm = buildWatchMetaLine(typeof forChild === 'boolean' ? forChild : false);
             historyItems.forEach(h=>{
                 if((h.watchSource==='redis'||h.watchSource==='pending')&&_watchRowKey(h)===ek) h.watchMeta=wm;
             });
@@ -5520,6 +6320,7 @@ async function runIntelScout(forceKeyword,autoNavigate,homeInline,forChildScout)
             // 探索画面：intelScoutResults に格納して renderTrendItems で表示
             intelScoutResults=dedupeByNormalizedTitle((raw||[]).filter(it=>!isBlacklisted(it)&&!_deletedIds.has(String(it.id))));
             const word=document.getElementById('insight-search')?.value;
+            renderIntelScoutResults(word);
             renderTrendItems(word);
             // ステータス表示（CLAUDE.md 誠実な報告ロジック）
             const st=document.getElementById('insight-scout-status');
@@ -5584,7 +6385,7 @@ function _renderHomeInlineList(){
             }
         } else {
         const btn=document.createElement('button'); btn.className='home-result-watch-btn';
-        btn.textContent=isAv?'購入可能リストに追加':'見守り開始';
+        btn.textContent=isAv?'購入可能リストに追加':'見守りに追加';
         btn.onclick=(e)=>{
             e.stopPropagation();
             const entry={id:item.id||Date.now(),title:item.title,status:isAv?'ON':'OFF',
@@ -5630,16 +6431,6 @@ function ctxAddToWatch(){
 function ctxCopyText(){
     const m=document.getElementById('ctx-menu'); if(m)m.style.display='none';
     if(_ctxSelectedText&&navigator.clipboard)navigator.clipboard.writeText(_ctxSelectedText).catch(()=>{});
-}
-
-// ── コーチマーク ──────────────────────────────────────────────
-function showCoachMark(){
-    if(localStorage.getItem('re_eye_coach_done')==='1') return;
-    const m=document.getElementById('coach-mark'); if(m)m.style.display='block';
-}
-function closeCoachMark(permanent){
-    const m=document.getElementById('coach-mark'); if(m)m.style.display='none';
-    if(permanent)localStorage.setItem('re_eye_coach_done','1');
 }
 
 // ── ダイアルUI復元（size-chip / data-val 優先。ID 欠損は無視） ───
@@ -5706,23 +6497,8 @@ function restoreDialUI(profile) {
     }
 }
 
-// ── Service Worker ────────────────────────────────────────────
-if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'})
-    .then(reg=>{
-        reg.addEventListener('updatefound',()=>{
-            const nw=reg.installing;
-            nw.addEventListener('statechange',()=>{
-                if(nw.state==='installed'&&navigator.serviceWorker.controller)
-                    nw.postMessage({type:'SKIP_WAITING'});
-            });
-        });
-    }).catch(()=>{});
-    let refreshing=false;
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{
-        if(!refreshing){refreshing=true;window.location.reload();}
-    });
-}
+// Push 用 Service Worker は OneSignal.init() が OneSignalSDKWorker.js を scope "/" で登録する。
+// 旧 /sw.js の二重登録は iOS で optedIn=false の原因になるため廃止。
 
 // ════════════════════════════════════════════════
 //  window.onload — 10秒待機完全抹殺版
@@ -5754,27 +6530,13 @@ window.onload=()=>{
     void loadUserSettingsFromServerAndApply();
     initModeUI();
 
-    // Web Push 初期化（通知許可の取得のみ。発火はサーバー側 OneSignal に一元化済み）
-    PushHybrid.initPush().catch(()=>{});
-
-    // OneSignal: 通知許可後に userId タグを付与（狙い撃ち通知を有効化）
-    if (window.OneSignalDeferred) {
-      OneSignalDeferred.push(async function(OneSignal) {
-        try {
-          await OneSignal.Notifications.requestPermission();
-          const uid = getUserId();
-          OneSignal.User.addTag("userId", uid);
-        } catch(e) { /* サイレント — 通知拒否・未設定時はスキップ */ }
-      });
-    }
+    // PushMission: iOS PWA はユーザークリックでのみ requestPermission（onload 自動要求は禁止）
+    PushMission.init();
 
     // 曖昧→確定日付ウォッチャー（5秒ポーリング・即時起動）
     PushHybrid.startDateWatcher(()=>historyItems);
 
     requestAnimationFrame(()=>updateSb(getActiveScreen()));
-
-    // コーチマーク（3秒後・UXブロックしない）
-    setTimeout(showCoachMark, 3000);
 
     // セッション引き継ぎ復元
     try{

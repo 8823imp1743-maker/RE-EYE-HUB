@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   evaluateAttributeGate,
+  evaluateModelSizeMatch,
   buildTargetAttributesFromEntry,
   listingSupportsTargetCm,
 } from './attribute-gate.js';
@@ -85,5 +86,39 @@ describe('evaluateAttributeGate', () => {
       { title: 'Nike ホワイト 26.5cm' }
     );
     assert.equal(r.failedAxis, 'model');
+  });
+});
+
+describe('evaluateModelSizeMatch', () => {
+  const entry = {
+    keyword: 'NIKE AIR MAX 90 cn8490-002 男性 26.5cm',
+    modelNumbers: ['CN8490-002'],
+    colorKeywords: [],
+  };
+
+  it('別店舗でも品番+サイズ一致なら pass', () => {
+    const r = evaluateModelSizeMatch(entry, {
+      title: '【別ショップ】NIKE AIR MAX 90 CN8490-002 26.5cm',
+      sourceId: 'other_shop',
+      itemId: '99999',
+    });
+    assert.equal(r.pass, true);
+    assert.equal(r.reason, 'model_size_match');
+  });
+
+  it('品番不一致は reject', () => {
+    const r = evaluateModelSizeMatch(entry, {
+      title: 'NIKE AIR MAX 90 CW2288-111 26.5cm',
+    });
+    assert.equal(r.pass, false);
+    assert.equal(r.failedAxis, 'model');
+  });
+
+  it('サイズ不一致は reject', () => {
+    const r = evaluateModelSizeMatch(entry, {
+      title: 'NIKE AIR MAX 90 CN8490-002 27cm',
+    });
+    assert.equal(r.pass, false);
+    assert.equal(r.failedAxis, 'size');
   });
 });

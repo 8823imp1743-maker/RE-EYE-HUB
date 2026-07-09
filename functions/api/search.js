@@ -422,22 +422,53 @@ function buildTargetAttributes(keyword, shoeTargetNums, userGender, settings) {
   };
 }
 
-function resolveWatchEligibility(hay, shoeTargets, searchKeyword = '') {
+function resolveWatchEligibility(hay, shoeTargets, searchKeyword = '', item = null) {
   const kw = String(searchKeyword || '');
+  const itemModels = Array.isArray(item?.modelNumbers)
+    ? item.modelNumbers.map((m) => String(m || '').trim()).filter(Boolean)
+    : [];
   const models = [
     ...extractModelNumbers(hay),
     ...extractModelNumbers(kw),
+    ...itemModels,
   ].filter((v, i, a) => a.indexOf(v) === i);
   const colors = extractColorKeywords(kw);
   const sizeListingOk = listingSupportsTargetCm(hay, shoeTargets);
   const hasTargetSize = Array.isArray(shoeTargets) && shoeTargets.length > 0;
   const hasModel = models.length > 0;
   const hasColor = colors.length > 0;
+  const colorMatchOk = hasColor ? validateColorMatchForItem(item || { title: hay }, kw) : false;
+  const nameOnly = stripModelCodesAndSizeForNameQuery(kw);
+  const keywordRelevanceOk = matchesProductKeyword(
+    item || { title: String(hay).slice(0, 800) },
+    nameOnly,
+    normalizeBrand(nameOnly)
+  );
+
   let watchBlockReason = null;
-  if (hasTargetSize && !sizeListingOk) watchBlockReason = 'size_listing_mismatch';
-  else if (!hasModel) watchBlockReason = 'model_required';
-  else if (!hasColor) watchBlockReason = 'color_recommended';
-  const watchEligible = sizeListingOk && hasModel && hasTargetSize && hasColor;
+  let watchEligible = false;
+  /** @type {'model_color_match'|'model_only_match'|'keyword_match'|null} */
+  let watchMatchLabel = null;
+
+  if (hasModel) {
+    if (hasTargetSize && !sizeListingOk) watchBlockReason = 'size_listing_mismatch';
+    else if (!hasColor) watchBlockReason = 'color_recommended';
+    const modelSizeOk = !hasTargetSize || sizeListingOk;
+    watchEligible = modelSizeOk && hasTargetSize;
+    if (watchEligible) {
+      watchMatchLabel = hasColor && colorMatchOk ? 'model_color_match' : 'model_only_match';
+    }
+  } else {
+    if (hasTargetSize && !sizeListingOk) {
+      watchBlockReason = 'size_listing_mismatch';
+      watchEligible = false;
+    } else {
+      watchEligible = keywordRelevanceOk;
+      if (watchEligible) watchMatchLabel = 'keyword_match';
+      else watchBlockReason = 'keyword_mismatch';
+    }
+  }
+
   return {
     sizeListingOk,
     watchEligible,
@@ -445,6 +476,9 @@ function resolveWatchEligibility(hay, shoeTargets, searchKeyword = '') {
     watchModels: models,
     watchColors: colors,
     watchNeedsColor: !hasColor,
+    hasModel,
+    watchMatchLabel,
+    keywordRelevanceOk,
   };
 }
 
@@ -460,13 +494,23 @@ function enrichStockDisplayMeta(row, rawIt = null, metaOpts = {}) {
   const explicitOos = hasExplicitGlobalOos(hay) || !stockLikely;
   const uxTier = resolveStockUxTier(row, src, confirmed, stockLikely, explicitOos, hay, shoeTargets);
   const tier = uxTier === 'buy_now' ? 'confirmed' : 'watch';
-  const watchGate = resolveWatchEligibility(hay, shoeTargets, searchKeyword);
+  const watchGate = resolveWatchEligibility(hay, shoeTargets, searchKeyword, src);
   let watchSub = 'size_unknown';
   if (uxTier === 'watch_tower' || uxTier === 'inquiry') watchSub = 'tower';
   else if (row.size_match && stockLikely) watchSub = 'stock_size_listed';
   else if (row.size_match) watchSub = 'size_listed';
   else if (stockLikely) watchSub = 'stock_likely';
   const isTower = uxTier === 'watch_tower' || uxTier === 'inquiry';
+  const inquiryModelSizeOk =
+    uxTier === 'inquiry' &&
+    watchGate.hasModel &&
+    watchGate.sizeListingOk &&
+    shoeTargets.length > 0;
+  const showWatchBtn =
+    inquiryModelSizeOk ||
+    (isTower && uxTier !== 'inquiry' && watchGate.watchEligible) ||
+    (uxTier === 'inquiry' && !watchGate.hasModel && watchGate.watchEligible) ||
+    (uxTier === 'check_stock' && watchGate.watchEligible);
 
   return {
     ...row,
@@ -483,11 +527,10 @@ function enrichStockDisplayMeta(row, rawIt = null, metaOpts = {}) {
     watchBlockReason: watchGate.watchBlockReason,
     watchNeedsColor: watchGate.watchNeedsColor,
     watchModels: watchGate.watchModels,
+    watchMatchLabel: watchGate.watchMatchLabel,
     mallApiInStock: src.available === true,
     showBuyBtn: uxTier === 'buy_now' || uxTier === 'check_stock',
-    showWatchBtn: isTower
-      ? watchGate.watchEligible
-      : uxTier === 'check_stock' && watchGate.watchEligible,
+    showWatchBtn,
     showBuyNow: uxTier === 'buy_now',
     showBuyLink: uxTier === 'check_stock',
     suppressStockHype: explicitOos || isTower,
@@ -1211,6 +1254,54 @@ function sortByPriceAsc(items) {
   });
 }
 
+/** modelNumbers 配列の同一セットキー（空なら null） */
+function modelNumbersGroupKey(item) {
+  const arr = item?.modelNumbers;
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const norm = [...new Set(arr.map((m) => String(m || '').trim().toUpperCase()).filter(Boolean))].sort();
+  return norm.length ? norm.join('|') : null;
+}
+
+/**
+ * 同一 modelNumbers の商品を最安値1件に統合し、他店舗数を otherShopsCount に付与。
+ * modelNumbers が取れない商品は個別表示のまま。
+ */
+function consolidateItemsByModelNumbers(items) {
+  if (!Array.isArray(items) || items.length < 2) return items || [];
+
+  const groups = new Map();
+  for (const item of items) {
+    const key = modelNumbersGroupKey(item);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+
+  const processed = new Set();
+  const out = [];
+
+  for (const item of items) {
+    const key = modelNumbersGroupKey(item);
+    if (!key) {
+      out.push(item);
+      continue;
+    }
+    if (processed.has(key)) continue;
+    processed.add(key);
+    const group = groups.get(key);
+    if (group.length === 1) {
+      out.push(group[0]);
+    } else {
+      const sorted = [...group].sort(
+        (a, b) => (Number(a?.price) || 0) - (Number(b?.price) || 0)
+      );
+      out.push({ ...sorted[0], otherShopsCount: sorted.length - 1 });
+    }
+  }
+
+  return out;
+}
+
 /**
  * 除外・中古などの生一覧を作る
  */
@@ -1351,6 +1442,7 @@ function buildShoeMallListingOnlyResult(ctx) {
     enrichStockDisplayMeta(row, row, { shoeTargets: shoeTargetNums, searchKeyword: baseKeyword })
   );
   gatedAll = sortGatedWithMallInterleave(gatedAll);
+  gatedAll = consolidateItemsByModelNumbers(gatedAll);
 
   for (const row of gatedAll) {
     const sm = row.dedupeSellerModel || sellerModelDedupeKey(row);
@@ -1696,7 +1788,8 @@ async function runPdpShoeWithMallPaging({
     mapShoeSearchItemForClient,
     12
   );
-  const gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums, userGender, forChild);
+  let gatedAll = buildGatedShoeSortedList(finalOrdered, shoeTargetNums, userGender, forChild);
+  gatedAll = consolidateItemsByModelNumbers(gatedAll);
   let displayItems = gatedAll.slice(0, displayCap);
   if (displayItems.length === 0 && finalOrdered.length > 0) {
     displayItems = buildShoeMallFallbackList(finalOrdered, displayCap, userGender, forChild);
@@ -2277,6 +2370,7 @@ export default async function handler(req, res) {
     if (lastRejectSummary) lastRejectSummary.stockExcluded = rawCount - finalPool.length;
 
     pool = sortByPriceAsc(pool);
+    pool = consolidateItemsByModelNumbers(pool);
 
     const sizeModeList = detectSizeMode({
       category: isCloth || isAccessoryGlove ? 'cloth' : 'other',

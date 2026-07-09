@@ -30,6 +30,7 @@ import userSettingsHandler from '../functions/api/user-settings.js';
 import reportsHandler      from '../functions/api/reports.js';
 import systemHealthHandler from '../functions/api/system-health.js';
 import notifyHealthHandler from '../functions/api/notify-health.js';
+import testNotifyHandler   from '../functions/api/test-notify.js';
 import ctrClickHandler     from '../functions/api/ctr-click.js';
 import funnelEventHandler  from '../functions/api/funnel-event.js';
 import funnelStatsHandler  from '../functions/api/funnel-stats.js';
@@ -52,6 +53,7 @@ const ROUTES = {
   'reports':       { fn: reportsHandler,       rateTier: 'default' },
   'system-health': { fn: systemHealthHandler,  rateTier: 'default' },
   'notify-health': { fn: notifyHealthHandler,  rateTier: 'default', noBody: true },
+  'test-notify':   { fn: testNotifyHandler,    rateTier: null,      specialAuth: 'cron' },
   'ctr-click':     { fn: ctrClickHandler,      rateTier: 'default' },
   'funnel-event':  { fn: funnelEventHandler,   rateTier: 'default' },
   'funnel-stats':  { fn: funnelStatsHandler,   rateTier: 'default', noBody: true },
@@ -231,14 +233,17 @@ export default async function handler(req, res) {
       bearerOk: auth.bearerOk,
       xSecretOk: auth.xSecretOk,
       envSecretLen: auth.envSecretLen,
+      route,
     });
-    // cron 実行間隔ガード（55分未満はスキップ）
-    const now = Date.now();
-    if (_lastCronMs > 0 && now - _lastCronMs < CRON_COOLDOWN_MS) {
-      console.log(`[router/cron] cooldown — skip (${Math.round((now - _lastCronMs) / 60000)}min ago)`);
-      return res.status(200).json({ ok: true, skipped: 'RATE_LIMITED' });
+    // cron 実行間隔ガード（55分未満はスキップ）— /api/cron のみ
+    if (route === 'cron') {
+      const now = Date.now();
+      if (_lastCronMs > 0 && now - _lastCronMs < CRON_COOLDOWN_MS) {
+        console.log(`[router/cron] cooldown — skip (${Math.round((now - _lastCronMs) / 60000)}min ago)`);
+        return res.status(200).json({ ok: true, skipped: 'RATE_LIMITED' });
+      }
+      _lastCronMs = now;
     }
-    _lastCronMs = now;
   }
 
   // ── レート制限ガード ─────────────────────────────

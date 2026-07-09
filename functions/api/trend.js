@@ -9,7 +9,7 @@
  * 上限チェックはバックエンドでも二重ガードする。
  */
 
-import { getRedis } from '../lib/redis.js';
+import { getRedis, withRedisRetry } from '../lib/redis.js';
 import { userPlanKey } from '../lib/monitor-constants.js';
 
 /** ブラウザ・CDN が 304 / 古いボディを返さないようにする */
@@ -81,14 +81,24 @@ async function handleGet(req, res) {
 
   try {
     const r = getRedis();
-    const raw = await r.get(`user:trend:items:${userId}`);
+    const raw = await withRedisRetry(
+      () => r.get(`user:trend:items:${userId}`),
+      { label: 'trend:get' }
+    );
     setNoStore(res);
     if (!raw) return res.status(200).json({ found: false, items: [] });
-    const items = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return res.status(200).json({ found: true, items: Array.isArray(items) ? items : [] });
+    let items = [];
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      items = Array.isArray(parsed) ? parsed : [];
+    } catch (parseErr) {
+      console.warn('[trend] corrupt data, treating as empty:', parseErr.message);
+    }
+    return res.status(200).json({ found: items.length > 0, items });
   } catch(e) {
     console.error('[trend] GET 失敗:', e.message);
-    return res.status(500).json({ error: 'internal error', items: [] });
+    setNoStore(res);
+    return res.status(200).json({ found: false, items: [], degraded: true });
   }
 }
 

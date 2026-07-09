@@ -333,9 +333,14 @@ async function expandKeywords(seeds, mode = '') {
     // oshi / campaign: 各ワードをダブルクォートで囲い厳格フレーズ AND 検索
     // "BTS" "抽選" 形式 → Google News がフレーズ一致でAND処理
     if (mode === 'oshi' || mode === 'campaign') {
-      // "BTS" "グッズ" -中古... の形式で送信
-      // ※ when:7d をクエリに埋め込むと Google News RSS が空レスポンスを返す（同 &when=2m と同現象）
-      //   鮮度フィルタリングはフィルター①（pubDate チェック）が担当する
+      if (mode === 'campaign') {
+        const words = q.trim().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return `${NOISE_MINUS}`;
+        if (words.length === 1) return `"${words[0]}" ${NOISE_MINUS}`;
+        const primary = `"${words[0]}"`;
+        const rest = words.slice(1).join(' ');
+        return `${primary} ${rest} ${NOISE_MINUS}`;
+      }
       const quotedWords = q.trim().split(/\s+/).filter(Boolean).map(w => `"${w}"`).join(' ');
       return `${quotedWords} ${NOISE_MINUS}`;
     }
@@ -406,10 +411,10 @@ export default async function handler(req, res) {
   // campaign：商取引シグナル無しは足切り（入荷・在庫・販売・抽選のいずれも無い記事は不要）
   let postCommerce = noiseFiltered;
   if (mode === 'campaign') {
-    const COMMERCE_SIG = /入荷|在庫|販売|抽選/;
+    const CAMPAIGN_SIG = /入荷|在庫|販売|抽選|懸賞|プレゼント|キャンペーン|当選|応募|配布|無料|コラボ|記念/;
     postCommerce = noiseFiltered.filter((item) => {
       const hay = (item.title || '') + (item.description || '');
-      return COMMERCE_SIG.test(hay);
+      return CAMPAIGN_SIG.test(hay);
     });
   }
 

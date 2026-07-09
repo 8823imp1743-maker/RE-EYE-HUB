@@ -45,6 +45,17 @@ export function notifySentDedupeKey(userId, sourceId, itemId) {
 }
 
 /**
+ * 横断監視: 店舗 listing ID ではなく URL で短期 dedupe（4h TTL）
+ * @param {string} userId
+ * @param {string} url
+ */
+export function notifySentDedupeKeyByUrl(userId, url) {
+  const uid = String(userId ?? '').trim().slice(0, 48);
+  const h = createHash('sha256').update(String(url ?? '').trim()).digest('hex').slice(0, 24);
+  return `notify:sent:${uid}:url:${h}`;
+}
+
+/**
  * 監視エントリ本体のキーか（SMEMBERS / KEYS のフィルタ用）
  * @param {string} k
  */

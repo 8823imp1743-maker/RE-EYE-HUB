@@ -211,6 +211,43 @@ export function evaluateAttributeGate(entry, item, opts = {}) {
   return { pass: true, reason: 'attribute_gate_pass', targetAttributes: ta };
 }
 
+/**
+ * 監視 Cron 用: 品番（modelNumbers）+ サイズのみ一致（店舗 sourceId/itemId は問わない）
+ * @param {object} entry
+ * @param {object} item
+ * @param {{ extras?: object }} [opts]
+ */
+export function evaluateModelSizeMatch(entry, item, opts = {}) {
+  const ta = buildTargetAttributesFromEntry(entry, opts.extras || {});
+  const hay = buildSerpPlainTextHaystack(item);
+
+  if (!ta.models.length) {
+    return fail('model', 'model_missing', ta);
+  }
+  if (!itemMatchesModel(hay, ta.models)) {
+    return fail('model', 'model_mismatch', ta);
+  }
+
+  const sizeInfos =
+    ta.sizeInfos.length > 0
+      ? ta.sizeInfos
+      : ta.size
+        ? [sizeInfoFromRaw(ta.size, ta.sizeType)].filter(Boolean)
+        : [];
+
+  if (!sizeInfos.length) {
+    return fail('size', 'size_missing', ta);
+  }
+
+  for (const si of sizeInfos) {
+    if (!itemMatchesSingleSize(hay, si)) {
+      return fail('size', 'size_mismatch', ta);
+    }
+  }
+
+  return { pass: true, reason: 'model_size_match', targetAttributes: ta };
+}
+
 function fail(axis, detail, ta, color) {
   return {
     pass: false,

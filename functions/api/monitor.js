@@ -48,6 +48,7 @@ import {
   buildTargetAttributesFromEntry,
   resolveRegisteredSizeInfo,
   evaluateAttributeGate,
+  evaluateModelSizeMatch,
   attributeGateSkipLogPayload,
 } from '../lib/attribute-gate.js';
 import { buildFunnelPayloadFromEntry } from '../lib/purchase-funnel.js';
@@ -82,6 +83,7 @@ import {
   userWatchIndexKey,
   userPlanKey,
   notifySentDedupeKey,
+  notifySentDedupeKeyByUrl,
   itemHashKey,
   parseMonitorEntriesFromMget,
   isMonitorEntryRedisKey,
@@ -147,6 +149,53 @@ function monitorSerpDomUrlKey(url) {
   const n = normalizeRakutenUrl(url);
   const s = n && String(n).trim() ? String(n) : String(url || '').trim();
   return s;
+}
+
+/** 登録品番+サイズ一致の横断候補（店舗 sourceId/itemId は不問） */
+function filterCrossShopModelSizeCandidates(entry, items) {
+  const out = [];
+  if (!Array.isArray(items)) return out;
+  for (const item of items) {
+    if (!item?.url) continue;
+    if (evaluateModelSizeMatch(entry, item).pass) out.push(item);
+  }
+  return out;
+}
+
+/** 品番+サイズ一致時は v5 分類に依存せず PDP を発火 */
+function resolveMonitorCrossShopPdpTask(row, item, entry, kwSizeForPdp) {
+  const task = resolveSerpV5PdpTask(row, item, entry, kwSizeForPdp);
+  if (task) return task;
+  if (!evaluateModelSizeMatch(entry, item).pass) return null;
+  if (kwSizeForPdp?.type === 'shoe') {
+    return { kind: 'shoe', raw: kwSizeForPdp.raw };
+  }
+  if (kwSizeForPdp?.type === 'clothing') {
+    return { kind: 'clothing', raw: String(kwSizeForPdp.raw || '').toUpperCase() };
+  }
+  return { kind: 'generic' };
+}
+
+/** 未通知 URL の横断候補を最大 max 件（dom_structural 済み URL は除外） */
+function pickCrossShopPdpCandidates(entry, modelSizeMatched, max = 10) {
+  const domPrev =
+    entry.serpPdpDomStructural &&
+    typeof entry.serpPdpDomStructural === 'object' &&
+    !Array.isArray(entry.serpPdpDomStructural)
+      ? entry.serpPdpDomStructural
+      : {};
+  const picked = [];
+  const seenUrls = new Set();
+  for (const item of modelSizeMatched) {
+    if (picked.length >= max) break;
+    const urlKey = monitorSerpDomUrlKey(item.url);
+    if (domPrev[urlKey] === true) continue;
+    const norm = urlKey || String(item.url || '').trim();
+    if (!norm || seenUrls.has(norm)) continue;
+    seenUrls.add(norm);
+    picked.push(item);
+  }
+  return picked;
 }
 
 function shoeSizeTagKeysFromKeywordSizeInfo(sizeInfo) {
@@ -1092,13 +1141,15 @@ async function checkAndNotifySerp(r, entry) {
   }
 
   const newItems = allItems.filter(i => i.url && !prevUrls.includes(i.url));
+  const modelSizeMatched = filterCrossShopModelSizeCandidates(entry, allItems);
+  const itemsToEvaluate = pickCrossShopPdpCandidates(entry, modelSizeMatched, 10);
 
   console.log(
-    `[SERP] 現在${currentUrls.length}件 前回${prevUrls.length}件 新着${newItems.length}件`,
+    `[SERP] 現在${currentUrls.length}件 前回${prevUrls.length}件 新着URL${newItems.length}件 ` +
+      `横断候補(model+size)${modelSizeMatched.length}件 PDP対象${itemsToEvaluate.length}件`,
   );
 
-  if (newItems.length === 0) {
-    // 変化なし → タイムスタンプ更新のみ
+  if (itemsToEvaluate.length === 0) {
     const hash = itemHashKey(sourceId, itemId);
     await r.set(watchKey(userId, hash), JSON.stringify({
       ...entry,
@@ -1106,15 +1157,18 @@ async function checkAndNotifySerp(r, entry) {
       lastCheckedAt: Date.now(),
       schemaVersion: MONITOR_SCHEMA_VERSION,
     }), { ex: WATCH_TTL });
+    const outcome =
+      modelSizeMatched.length === 0
+        ? (searchErrs.length ? '横断候補なし（検索APIにエラーあり）' : '横断候補なし（品番・サイズ不一致）')
+        : (searchErrs.length ? '横断候補あり・通知済み/PDP済（検索APIエラーあり）' : '横断候補あり・通知済み/PDP済');
     return {
       label,
-      outcome: searchErrs.length ? '新着なし（検索APIにエラーあり）' : '新着なし',
+      outcome,
       detail:  searchErrs.length ? searchErrs.join('; ') : undefined,
     };
   }
 
-  /** prevUrls に無い URL のみ PDP。ソース配列先頭から最大10件だけ走査（配列 slice は使わない） */
-  const itemsToEvaluate = newItems;
+  /** 品番+サイズ一致の全店舗候補 → PDP（最大10件） */
   /** 直近サイクルで PDP した URL の dom_structural 真偽（entry にマージ） */
   const pdpDomStructuralDelta = {};
 
@@ -1160,7 +1214,7 @@ const pdpParallel = Math.max(
     const rec = scored[i];
     const item = rec.item;
     const itemPrice = Number(item.price) || 0;
-    const task = resolveSerpV5PdpTask(rec.row, item, entry, kwSizeForPdp);
+    const task = resolveMonitorCrossShopPdpTask(rec.row, item, entry, kwSizeForPdp);
     if (task) {
       console.log(
         `[SERP] v5 PDP arm=${task.kind}: "${(item.title || '').slice(0, 50)}" ¥${itemPrice.toLocaleString()} ${(item.url || '').slice(0, 50)}`,
@@ -1188,7 +1242,8 @@ const pdpParallel = Math.max(
       const clsRow = row.row;
       const urlKey = monitorSerpDomUrlKey(item.url);
       const strictPdpOk = isSerpV5PdpDomStructuralOn(pdpv);
-      const serpStrong = serpV5AnchorProgramMatch(entry, item);
+      const modelSizeOk = evaluateModelSizeMatch(entry, item).pass;
+      const serpStrong = modelSizeOk || serpV5AnchorProgramMatch(entry, item);
       const ce = evaluateContradictionEngine({
         llmCategory: String(clsRow?.category || 'other'),
         llmConfidence: Number(clsRow?.confidence) || 0,
@@ -1292,6 +1347,7 @@ const pdpParallel = Math.max(
       continue;
     }
 
+    // 通知直前は 3 軸ゲート（品番+色+サイズ）。横断候補抽出は model+size のまま維持
     const attrGate = evaluateAttributeGate(entry, item);
     if (!attrGate.pass) {
       opsJsonLog('attribute_gate_skip', {
@@ -1379,7 +1435,7 @@ const pdpParallel = Math.max(
       continue;
     }
 
-    const dedupeKey = notifySentDedupeKey(userId, item.sourceId || '', item.itemId || '');
+    const dedupeKey = notifySentDedupeKeyByUrl(userId, item.url || '');
     let dedupeOk = true;
     try {
       const nx = await withRedisRetry(
@@ -1415,6 +1471,7 @@ const pdpParallel = Math.max(
       const ctrPack = buildStockMonitorCtr({
         itemTitle: item.title,
         keywordLabel: title || keyword,
+        shopName: item.shopName || item.sourceId || '',
         shoeRaw: sizeInfo?.type === 'shoe' ? sizeInfo.raw : undefined,
         clothingAlpha: sizeInfo?.type === 'clothing' ? sizeInfo.raw : undefined,
         price: itemPrice,
@@ -1633,6 +1690,7 @@ async function checkOfficialAndNotify(r, entry, lastStatus) {
   const ctrOff = buildStockMonitorCtr({
     itemTitle: title,
     keywordLabel: title || keyword,
+    shopName: sourceId || '',
     shoeRaw: kwSizeForPdp?.type === 'shoe' ? kwSizeForPdp.raw : undefined,
     clothingAlpha: kwSizeForPdp?.type === 'clothing' ? kwSizeForPdp.raw : undefined,
     price: Number(price) || 0,

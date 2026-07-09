@@ -122,9 +122,16 @@ export function buildStockMonitorCtr(opts) {
 
   title = title.replace(/\s+/g, ' ').trim().slice(0, 52);
 
-  const message = sizePart
+  const shopName = String(opts.shopName || opts.shop || '').trim();
+  const productShort = (itemTitle || keywordFallback).replace(/\s+/g, ' ').trim().slice(0, 48);
+  let message = sizePart
     ? `${sizePart} を開く`.slice(0, 120)
     : `${keywordFallback.slice(0, 28)} を確認`.slice(0, 120);
+  if (shopName && productShort) {
+    message = `${shopName}｜${productShort}`.slice(0, 120);
+  } else if (productShort) {
+    message = productShort.slice(0, 120);
+  }
 
   const templateId = `st_${variant}_${mode}`;
 

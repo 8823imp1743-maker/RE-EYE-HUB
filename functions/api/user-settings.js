@@ -46,7 +46,7 @@ async function handleGet(req, res) {
     return res.status(200).json({ found: true, userId, settings });
   } catch (e) {
     console.error('[user-settings] GET 失敗:', e.message);
-    return res.status(500).json({ error: 'internal error', found: false, userId, settings: null });
+    return res.status(200).json({ error: 'redis_unavailable', found: false, userId, settings: null, degraded: true });
   }
 }
  

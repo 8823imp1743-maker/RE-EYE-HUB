@@ -1,9 +1,7 @@
 /**
- * /api/cron — GitHub Actions 無料 Cron からのみ呼び出される監視トリガー。
- *
  * 認証: X-Cron-Secret ヘッダーと環境変数 CRON_SECRET が一致するか検証。
  * 実行: checkAllWatched() を呼び出し、全エントリのSERP監視を1サイクル実行。
- * コスト: 30分ごと・昼のみ（plan-config.js の STOCK_CONFIG による間隔制御が有効）。
+ * トリガー: cron-job.org（推奨）または workflow_dispatch（GitHub Actions 手動）
  */
 
 import { checkAllWatched } from './monitor.js';

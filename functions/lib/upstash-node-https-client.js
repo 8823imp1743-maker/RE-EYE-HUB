@@ -43,7 +43,12 @@ function mergeHeaders(base, extra) {
 }
 
 function httpsPostJson(requestUrlStr, headers, bodyObj, timeoutMs) {
-  const u = new URL(requestUrlStr);
+  let u;
+  try {
+    u = new URL(requestUrlStr);
+  } catch (e) {
+    throw new Error(`Upstash REST URL invalid (${String(requestUrlStr).slice(0, 96)}): ${e.message}`);
+  }
   const payload = Buffer.from(JSON.stringify(bodyObj), 'utf8');
   const hdrs = { ...headers, 'Content-Length': String(payload.length) };
 
