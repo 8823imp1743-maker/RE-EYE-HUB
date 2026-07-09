@@ -907,9 +907,15 @@ export async function checkAllWatched() {
 
   // ── プラン別インターバルフィルター ──────────────────────────────────────
   // ユーザーごとのプランを一括取得し、「まだ監視する時間ではない」アイテムをスキップ。
-  // VIP/PRO = 300秒ごと（5分Cron毎に全チェック）
-  // STANDARD = 900秒ごと（3回に1回チェック）
-  // FREE     = 3600秒ごと（12回に1回チェック）
+  // 実際の設定値は plan-config.js の STOCK_CONFIG 参照（このコメントは古かったため2026-07修正）:
+  //   VIP      = 300秒（±60秒jitter）
+  //   PRO      = 1800秒（昼夜共通）
+  //   STANDARD = 900秒（昼） / 3600秒（夜）
+  //   FREE     = 3600秒（昼） / 夜間スキップ
+  // 注意: cron-job.org のトリガー自体が30分（1800秒）ごとにしか来ないため、
+  // 900秒や300秒のように cron 間隔より短い設定値は「Cronが来るたび毎回チェック」
+  // ＝実質30分間隔にしかならない（cron自体を高頻度化しない限り差は出ない）。
+  // STANDARD/PRO/VIP の実効差は現状ほぼ無い。表示側は public/index.html 側で修正済み。
   const userIds = [...new Set(allEntries.map(e => e.userId).filter(Boolean))];
   const planMap = await getUserPlanBatch(r, userIds);
 
