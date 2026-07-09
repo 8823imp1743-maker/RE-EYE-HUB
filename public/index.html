@@ -3841,10 +3841,14 @@ function renderWatchMonitorInto(container,items){
     }
     const night=isNightJP();
     let planLbl='';
+    // [2026-07 修正] cron-job.org のトリガー間隔が実際には30分ごとのため、
+    // STANDARD(900s)/PRO(1800s)/VIP(300s)のいずれも30分より速くはチェックできない。
+    // 表示だけ「15分」「5分」と謳っていたのを実態（30分間隔）に合わせて修正。
+    // plan-config.js の STOCK_CONFIG を変えずに、cron自体を高頻度化すれば将来ここも変わる。
     if(currentPlan==='FREE') planLbl=night?'夜間スリープ':'60分間隔';
-    else if(currentPlan==='STANDARD') planLbl=night?'夜間60分':'15分間隔';
-    else if(currentPlan==='PRO') planLbl=night?'夜間60分':'5分間隔';
-    else if(currentPlan==='VIP') planLbl='5分間隔・常時';
+    else if(currentPlan==='STANDARD') planLbl=night?'夜間60分':'30分間隔';
+    else if(currentPlan==='PRO') planLbl='30分間隔・常時';
+    else if(currentPlan==='VIP') planLbl='30分間隔・常時';
     list.forEach(sv=>{
         const row=document.createElement('div');
         row.className='watch-item-row';
