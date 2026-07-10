@@ -157,23 +157,56 @@ function filterCrossShopModelSizeCandidates(entry, items) {
   if (!Array.isArray(items)) return out;
   for (const item of items) {
     if (!item?.url) continue;
-    if (evaluateModelSizeMatch(entry, item).pass) out.push(item);
+    const m = evaluateModelSizeMatch(entry, item);
+    // [2026-07 修正・本命] ここが実は最初の関門で、ここで弾かれると
+    // resolveMonitorCrossShopPdpTask のサイズフォールバックまで到達すらしない致命的な穴だった。
+    // 品番が一致していれば、サイズがテキストで確認できない（Yahoo!ショッピングの
+    // バリエーション商品など）場合でも横断候補として残し、後段の実ページ確認に委ねる。
+    if (m.pass || m.failedAxis === 'size') out.push(item);
   }
   return out;
+}
+
+// ── サイクル全体のタイムバジェット管理 ──────────────────────────────
+// [2026-07 追加] vercel.json で maxDuration=60 に拡張したが、
+// resolveMonitorCrossShopPdpTask のサイズフォールバックにより実ページ確認(PDP)の
+// 発火数が増える可能性があるため、念のため上限を明示的に監視する。
+// 予算を超えたエントリは PDP 確認をスキップ（＝今回は見送り、次回サイクルで再試行）。
+let _cycleStartMs = 0;
+const PDP_CYCLE_BUDGET_MS = 42000; // 60秒中42秒までPDPに使ってよい（残り18秒は安全マージン）
+
+function isPdpCycleBudgetExceeded() {
+  if (!_cycleStartMs) return false;
+  return Date.now() - _cycleStartMs > PDP_CYCLE_BUDGET_MS;
 }
 
 /** 品番+サイズ一致時は v5 分類に依存せず PDP を発火 */
 function resolveMonitorCrossShopPdpTask(row, item, entry, kwSizeForPdp) {
   const task = resolveSerpV5PdpTask(row, item, entry, kwSizeForPdp);
   if (task) return task;
-  if (!evaluateModelSizeMatch(entry, item).pass) return null;
-  if (kwSizeForPdp?.type === 'shoe') {
-    return { kind: 'shoe', raw: kwSizeForPdp.raw };
+  const modelSizeMatch = evaluateModelSizeMatch(entry, item);
+  if (modelSizeMatch.pass) {
+    if (kwSizeForPdp?.type === 'shoe') {
+      return { kind: 'shoe', raw: kwSizeForPdp.raw };
+    }
+    if (kwSizeForPdp?.type === 'clothing') {
+      return { kind: 'clothing', raw: String(kwSizeForPdp.raw || '').toUpperCase() };
+    }
+    return { kind: 'generic' };
   }
-  if (kwSizeForPdp?.type === 'clothing') {
-    return { kind: 'clothing', raw: String(kwSizeForPdp.raw || '').toUpperCase() };
+  // [2026-07 修正] 品番は一致しているのに「サイズだけ」不一致・情報なしの場合、
+  // Yahoo!ショッピングのバリエーション型商品（商品名にサイズが載らず、
+  // 実際のサイズ在庫はページ内のバリエーション選択でしか分からない）の可能性が高い。
+  // テキスト一致だけで諦めず、実ページ(PDP)を取得して該当サイズの在庫を直接確認する。
+  if (modelSizeMatch.failedAxis === 'size') {
+    if (kwSizeForPdp?.type === 'shoe') {
+      return { kind: 'shoe', raw: kwSizeForPdp.raw };
+    }
+    if (kwSizeForPdp?.type === 'clothing') {
+      return { kind: 'clothing', raw: String(kwSizeForPdp.raw || '').toUpperCase() };
+    }
   }
-  return { kind: 'generic' };
+  return null;
 }
 
 /** 未通知 URL の横断候補を最大 max 件（dom_structural 済み URL は除外） */
@@ -831,6 +864,7 @@ function makeMonitorCycleStats(overrides = {}) {
 
 export async function checkAllWatched() {
   cliLog('[run-cli] Upstash（Redis）に接続して監視エントリを読み込みます');
+  _cycleStartMs = Date.now();
 
   // cron 実行回数チェック（24/day）— 超過なら全体スキップ
   if (!quotaCheck('cron')) {
@@ -1229,9 +1263,13 @@ const pdpParallel = Math.max(
     rowsWithTask.push({ item, itemPrice, row: rec.row, score: rec.score, task });
   }
 
-  const needPdp = rowsWithTask.filter((r) => r.task);
+  let needPdp = rowsWithTask.filter((r) => r.task);
   if (scored.length > 0 && needPdp.length === 0) {
     console.log('[SERP] v5: スコア通過ありだが PDP 発火条件なし（靴／服サイズ・カテゴリ+キーワード・main+confidence）');
+  }
+  if (needPdp.length > 0 && isPdpCycleBudgetExceeded()) {
+    console.warn(`[monitor] PDPタイムバジェット超過（${PDP_CYCLE_BUDGET_MS}ms）— このエントリのPDP確認は次回サイクルに見送り（${needPdp.length}件）`);
+    needPdp = [];
   }
 
   /** @type {{ item: object, itemPrice: number }[]} */
@@ -1335,7 +1373,13 @@ const pdpParallel = Math.max(
         continue;
       }
 
-      rowsNotify.push({ item, itemPrice });
+      rowsNotify.push({
+        item,
+        itemPrice,
+        // [2026-07 追加] このtrueは「実ページ確認(PDP)で該当サイズの在庫を直接確認済み」の意味。
+        // 通知直前の3軸ゲートで、テキストにサイズが載らない商品による二重拒否を防ぐために使う。
+        pdpVerifiedSize: task?.kind === 'shoe' || task?.kind === 'clothing',
+      });
     }
   }
 
@@ -1355,7 +1399,11 @@ const pdpParallel = Math.max(
 
     // 通知直前は 3 軸ゲート（品番+色+サイズ）。横断候補抽出は model+size のまま維持
     const attrGate = evaluateAttributeGate(entry, item);
-    if (!attrGate.pass) {
+    // [2026-07 修正] 実ページ確認(PDP)で該当サイズの在庫をすでに直接確認済み(row.pdpVerifiedSize)
+    // の場合、商品名にサイズが載らないバリエーション型商品で「テキスト上のサイズ不一致」だけを
+    // 理由に二重で拒否してしまわないようにする（品番・色は引き続きテキストで確認する）。
+    const gatePass = attrGate.pass || (row.pdpVerifiedSize && attrGate.failedAxis === 'size');
+    if (!gatePass) {
       opsJsonLog('attribute_gate_skip', {
         ...attributeGateSkipLogPayload(attrGate, item, 'monitor_serp'),
         userId: String(userId).slice(0, 10),
