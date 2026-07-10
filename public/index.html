@@ -521,7 +521,7 @@
         }
         .monitor-mode-item.selected .mode-name { color: #fff; font-weight: bold; }
         .monitor-mode-item.selected .mode-freq { color: rgba(247,231,206,0.75) !important; }
-        .monitor-mode-item.mode-faded { opacity: 0.22; }
+        .monitor-mode-item.mode-faded { opacity: 0.55; }
         .mode-name {
             font-size: 11px; color: var(--champagne-gold); letter-spacing: 0.8px;
             line-height: 1.4; pointer-events: none;
@@ -1739,7 +1739,7 @@
                         </span>
                     </div>
                     <div class="meta-11px home-search-hint" style="margin-top:5px;letter-spacing:0.6px;line-height:1.5;">
-                        楽天・Yahoo!で在庫を監視します。色を固定したい場合は品番のハイフン以降まで入力（例：CW2288-111）
+                        色を固定したい場合は品番のハイフン以降まで入力（例：CW2288-111）
                     </div>
                     <div id="scout-status-text"></div>
                     <div id="intel-badge"></div>
@@ -4779,7 +4779,7 @@ function checkUserSetup(){
 // ── モード切替 ────────────────────────────────────────────────
 const MODE_KW_CHIPS={oshi:['チケット','グッズ','出演','特典','限定']};
 const MODE_HINTS={
-    stock:'楽天・Yahoo・Amazonで在庫を検索し、再入荷を監視します。',
+    stock:'楽天・Yahoo!で在庫を検索し、再入荷を監視します。',
     oshi:'SNS・ニュースから公式情報・グッズ情報を収集します。'
 };
 const MODE_PLACEHOLDERS={stock:'商品名・ブランド名（例：ちいかわ ぬいぐるみ）',oshi:'アーティスト名・グループ名（例：櫻坂46）'};
